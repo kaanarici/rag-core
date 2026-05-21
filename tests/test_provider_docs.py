@@ -10,7 +10,7 @@ def test_provider_docs_match_current_install_story() -> None:
 
     assert 'uv add "rag-core @ git+https://github.com/kaanarici/rag-core.git"' in readme
     assert "QdrantConfig" in vector_store_docs
-    assert "v1 ships **Qdrant**" in vector_store_docs
+    assert "default wheel** ships **Qdrant**" in vector_store_docs
 
 
 def test_readme_first_run_names_module_smokes() -> None:
@@ -66,6 +66,7 @@ def test_readme_documents_all_declared_extras() -> None:
         "rerank",
         "voyage",
         "zeroentropy",
+        "turbopuffer",
         "opentelemetry",
         "anthropic",
         "langchain",

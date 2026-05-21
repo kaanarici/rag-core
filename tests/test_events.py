@@ -727,7 +727,7 @@ def test_search_completed_reports_unapplied_sidecar_when_scope_rejects_hits() ->
                 namespace="ns",
                 corpus_ids=["corp"],
                 limit=5,
-                use_sidecar=True,
+                use_lexical_search=True,
             )
         )
         [completed] = [event for event in buffer.events if isinstance(event, SearchCompleted)]
@@ -863,7 +863,7 @@ def test_search_plan_trace_uses_provider_aware_default_plan() -> None:
         document_ids=None,
         metadata_filter=None,
         rerank_budget=None,
-        use_sidecar=False,
+        use_lexical_search=False,
         query_plan=None,
         pipeline=default_search_pipeline(reranker_present=False, sidecar_present=False),
         store=store,

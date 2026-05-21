@@ -27,6 +27,10 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
 
+      - name: Developer journey smoke (Journey A)
+        if: matrix.python-version == '3.12'
+        run: ./scripts/dx_smoke.sh
+
       - name: Lint
         run: uv run ruff check .
 

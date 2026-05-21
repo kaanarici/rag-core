@@ -47,6 +47,31 @@ def _module_env() -> dict[str, str]:
     return env
 
 
+def test_rag_core_quickstart_runs_as_module() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "rag_core.quickstart"],
+        check=True,
+        cwd=Path.cwd(),
+        env=_module_env(),
+        capture_output=True,
+        text=True,
+    )
+    assert "Context to pass into your model call:" in result.stdout
+    assert "Citations:" in result.stdout
+
+
+def test_embedded_service_runs_as_module() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "examples.embedded_service"],
+        check=True,
+        cwd=Path.cwd(),
+        env=_module_env(),
+        capture_output=True,
+        text=True,
+    )
+    assert "card" in result.stdout.lower() or "ach" in result.stdout.lower()
+
+
 def test_minimal_app_runs_as_module() -> None:
     result = subprocess.run(
         [sys.executable, "-m", "examples.minimal_app"],

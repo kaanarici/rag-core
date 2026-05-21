@@ -18,7 +18,7 @@ from rag_core.search.types import SearchSidecar, StoredDocumentRecord
 
 if TYPE_CHECKING:
     from rag_core.events.sink import EventSink
-    from rag_core.search.indexer import QdrantIndexer
+    from rag_core.search.indexer import DocumentIndexer
 
 
 def sync_sidecar_or_emit_error(
@@ -50,7 +50,7 @@ def sync_sidecar_or_emit_error(
 
 async def delete_indexed_document(
     *,
-    indexer: "QdrantIndexer",
+    indexer: "DocumentIndexer",
     sidecar: SearchSidecar | None,
     document_id: str,
     namespace: str,
@@ -71,7 +71,7 @@ async def delete_indexed_document(
 
 async def rollback_indexed_document(
     *,
-    indexer: "QdrantIndexer",
+    indexer: "DocumentIndexer",
     sidecar: SearchSidecar | None,
     namespace: str,
     corpus_id: str,

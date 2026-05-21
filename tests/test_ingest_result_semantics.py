@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from rag_core.core_models import IngestedDocument
-from rag_core.local_corpus import LocalIngestRequest, run_local_ingest
+from rag_core.local_ingest import LocalIngestRequest, run_local_ingest
 from rag_core.sources import document_key as local_document_key
 
 

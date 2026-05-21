@@ -4,6 +4,7 @@
 .claude/
 .env
 .env.local
+/dev/project_identity.local.toml
 /AGENTS.md
 /CLAUDE.md
 /CONTEXT.md

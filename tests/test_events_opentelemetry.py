@@ -90,7 +90,7 @@ def test_open_telemetry_sink_emits_prefixed_safe_attributes(
                 "rag_core.rerank_timeout_ms": 1500.0,
                 "rag_core.rerank_max_output": 0,
                 "rag_core.rerank_fallback_on_error": True,
-                "rag_core.use_sidecar": False,
+                "rag_core.use_lexical_search": False,
                 "rag_core.retrieve_stage": "",
                 "rag_core.fuse_stage": "",
                 "rag_core.rerank_stage": "",

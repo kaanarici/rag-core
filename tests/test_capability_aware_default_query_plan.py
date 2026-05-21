@@ -40,7 +40,7 @@ class _DenseOnlyStore(RecordingVectorStore):
     capabilities = StoreCapabilities(
         per_point_delete=True,
         document_record_lookup=True,
-        query_plan=TURBOPUFFER_QUERY_PLAN_CAPABILITIES,
+        query_plan=QueryPlanCapabilities(dense=True),
     )
 
 
@@ -103,16 +103,18 @@ def test_default_query_plan_prefers_hybrid_when_declared() -> None:
     assert plan.fuse.kind == "rrf"
 
 
-def test_default_query_plan_uses_dense_only_for_dense_only_store() -> None:
+def test_default_query_plan_uses_hybrid_when_turbopuffer_declares_hybrid() -> None:
     plan = default_query_plan_for_capabilities(
         capabilities=TURBOPUFFER_QUERY_PLAN_CAPABILITIES,
         result_limit=5,
     )
 
     assert plan is not None
-    assert len(plan.prefetches) == 1
+    assert len(plan.prefetches) == 2
     assert isinstance(plan.prefetches[0].channel, DenseChannel)
-    assert plan.fuse is None
+    assert isinstance(plan.prefetches[1].channel, SparseChannel)
+    assert plan.fuse is not None
+    assert plan.fuse.kind == "rrf"
 
 
 def test_default_query_plan_uses_sparse_only_when_only_sparse_is_declared() -> None:

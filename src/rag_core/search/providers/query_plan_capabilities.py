@@ -19,4 +19,8 @@ QDRANT_QUERY_PLAN_CAPABILITIES = QueryPlanCapabilities(
     nested_prefetch=True,
 )
 
-TURBOPUFFER_QUERY_PLAN_CAPABILITIES = QueryPlanCapabilities(dense=True)
+TURBOPUFFER_QUERY_PLAN_CAPABILITIES = QueryPlanCapabilities(
+    dense=True,
+    sparse=True,
+    hybrid_rrf=True,
+)

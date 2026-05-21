@@ -79,4 +79,4 @@ def test_core_retrieval_bridges_lexical_request_to_internal_sidecar_flag() -> No
         )
     )
 
-    assert search.requests[0].use_sidecar is False
+    assert search.requests[0].use_lexical_search is False

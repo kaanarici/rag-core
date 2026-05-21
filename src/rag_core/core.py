@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from rag_core.documents.contextualizer import ChunkContextualizer
     from rag_core.documents.ocr import OcrProvider
     from rag_core.events.sink import EventSink
-    from rag_core.search.indexer import QdrantIndexer
+    from rag_core.search.indexer import DocumentIndexer
     from rag_core.search.providers.embedding_cache import (
         ChunkContextCache,
         EmbeddingCache,
@@ -49,7 +49,7 @@ class RAGCore(
     _store: "VectorStore"
     _reranker: "RerankerProvider"
     _sidecar: "SearchSidecar | None"
-    _indexer: "QdrantIndexer"
+    _indexer: "DocumentIndexer"
     _search: "SearchOrchestrator"
     _ingest: "CoreIngestor"
     _collection_name: str

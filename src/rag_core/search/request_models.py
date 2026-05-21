@@ -79,11 +79,14 @@ class SearchQuery:
     limit: int = 20
     query_plan: "QueryPlan | None" = None
     metadata_filter: Filter | None = None
+    lexical_query: str | None = None
 
     def __post_init__(self) -> None:
         _validate_dense_vector(self.dense_vector, "SearchQuery.dense_vector")
         _require_non_blank_string(self.namespace, "SearchQuery.namespace")
         _require_positive_int(self.limit, "SearchQuery.limit")
+        if self.lexical_query is not None and not isinstance(self.lexical_query, str):
+            raise ValueError("SearchQuery.lexical_query must be a string")
 
     def all_sparse_vectors(self) -> dict[str, SparseVector]:
         """Return query sparse vectors keyed by channel name (always includes bm25)."""

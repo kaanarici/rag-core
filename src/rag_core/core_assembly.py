@@ -13,7 +13,7 @@ from rag_core.core_vector_store_factory import (
     create_configured_vector_store,
     require_vector_store_capabilities,
 )
-from rag_core.search.indexer import QdrantIndexer
+from rag_core.search.indexer import DocumentIndexer
 from rag_core.search.lexical_sidecar import PortableLexicalSidecar
 from rag_core.search.searcher import SearchOrchestrator
 
@@ -37,7 +37,7 @@ class CoreComponents:
     store: VectorStore
     reranker: RerankerProvider
     sidecar: SearchSidecar | None
-    indexer: QdrantIndexer
+    indexer: DocumentIndexer
     search: SearchOrchestrator
     ingest: CoreIngestor
     collection_name: str
@@ -129,7 +129,7 @@ def build_core_components(
     if sidecar is None and config.ingest.enable_lexical_search:
         sidecar = PortableLexicalSidecar([])
 
-    indexer = QdrantIndexer(
+    indexer = DocumentIndexer(
         embedding_provider=embedding,
         sparse_embedder=sparse,
         vector_store=store,

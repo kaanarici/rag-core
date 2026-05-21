@@ -20,7 +20,7 @@ from rag_core.documents.local_parse import LocalParseError, parse_file_bytes
 from rag_core.core_prepare import prepare_document_bytes, prepare_text_chunks
 from rag_core.core_prepare_figure_locators import with_figure_locators
 from rag_core.core_models import PreparedChunk
-from rag_core.local_corpus import ManifestPreviewRequest, preview_manifest
+from rag_core.local_ingest import ManifestPreviewRequest, preview_manifest
 from rag_core.manifest_entries import sanitize_manifest_metadata
 
 

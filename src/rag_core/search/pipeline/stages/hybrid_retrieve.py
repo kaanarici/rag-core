@@ -153,6 +153,7 @@ class HybridRetrieve:
             limit=query.limit,
             query_plan=plan,
             metadata_filter=query.metadata_filter,
+            lexical_query=query.query.strip() or None,
         )
         query.query_plan = plan
         query.emit_search_plan(plan, query.limit)

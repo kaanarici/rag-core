@@ -6,6 +6,7 @@ from urllib.parse import parse_qsl, urlsplit
 
 from rag_core.config import SUPPORTED_VECTOR_STORE_PROVIDERS
 from rag_core.config.embedding_config import DEFAULT_EMBEDDING_BATCH_SIZE
+from rag_core.config.vector_store_config import DEFAULT_TURBOPUFFER_DELETE_CONTINUATION_LIMIT
 from rag_core.config.env_access import (
     get_env,
     get_env_stripped,
@@ -52,6 +53,7 @@ class _WarnSensitiveUrlAction(argparse.Action):
 
 _SENSITIVE_FLAG_ENVS: dict[str, str] = {
     "--qdrant-api-key": "RAG_CORE_QDRANT_API_KEY env var",
+    "--turbopuffer-api-key": "TURBOPUFFER_API_KEY env var",
 }
 _SENSITIVE_URL_QUERY_KEYS = frozenset(
     {
@@ -130,6 +132,42 @@ def add_config_flags(parser: argparse.ArgumentParser) -> None:
         "--dimension-aware-collection",
         action=argparse.BooleanOptionalAction,
         default=None,
+    )
+    parser.add_argument(
+        "--turbopuffer-namespace",
+        default=_env_or_none("RAG_CORE_TURBOPUFFER_NAMESPACE"),
+        help="TurboPuffer namespace used as the physical vector-store collection.",
+    )
+    parser.add_argument(
+        "--turbopuffer-api-key",
+        default=_env_or_none("TURBOPUFFER_API_KEY"),
+        action=_WarnSensitiveFlagAction,
+        help="TurboPuffer API key. Never printed by doctor output.",
+    )
+    parser.add_argument(
+        "--turbopuffer-region",
+        default=_env_or_none("TURBOPUFFER_REGION"),
+    )
+    parser.add_argument(
+        "--turbopuffer-base-url",
+        default=_env_or_none("TURBOPUFFER_BASE_URL"),
+    )
+    parser.add_argument(
+        "--turbopuffer-distance-metric",
+        default=env_or_default(
+            "RAG_CORE_TURBOPUFFER_DISTANCE_METRIC",
+            "cosine_distance",
+        ),
+    )
+    parser.add_argument(
+        "--turbopuffer-delete-continuation-limit",
+        type=int,
+        default=None,
+        help=(
+            "Maximum partial delete-by-filter writes before TurboPuffer delete "
+            "fails with continuation state. "
+            f"Default: {DEFAULT_TURBOPUFFER_DELETE_CONTINUATION_LIMIT}."
+        ),
     )
 
 

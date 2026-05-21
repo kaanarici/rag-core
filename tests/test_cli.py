@@ -1,7 +1,7 @@
 """CLI surface tests.
 
 The CLI is intentionally thin — most behavior lives behind ``RAGCore``,
-``local_corpus``. These tests focus on the seams the CLI
+``local_ingest``. These tests focus on the seams the CLI
 owns: argparse wiring, validation before runtime setup, structured JSON
 output shape, and the exit-code contract.
 """
@@ -172,12 +172,14 @@ def test_doctor_json_reports_planned_runtime(capsys: pytest.CaptureFixture[str])
     assert payload["embedding"]["dimensions"] == 1536
     assert payload["reranker"]["effective"] == "none"
     assert payload["vector_store"]["configured"] == "qdrant"
-    assert set(payload["vector_store"]["registered"]) == {"memory", "qdrant"}
+    assert {"qdrant", "turbopuffer"}.issubset(payload["vector_store"]["registered"])
     qdrant = payload["vector_store"]["providers"]["qdrant"]
     assert qdrant["support_level"] == "default"
     assert qdrant["configured"] is True
     assert qdrant["dimension_aware_collection"] is True
-    assert "turbopuffer" not in payload["vector_store"]["providers"]
+    turbopuffer = payload["vector_store"]["providers"]["turbopuffer"]
+    assert turbopuffer["support_level"] == "first_party_optional"
+    assert turbopuffer["configured"] is False
     provider_categories = payload["providers"]
     assert provider_categories["sparse"]["configured"] == "fastembed"
     fastembed = provider_categories["sparse"]["providers"]["fastembed"]
@@ -196,6 +198,69 @@ def test_doctor_json_reports_planned_runtime(capsys: pytest.CaptureFixture[str])
     assert "" not in provider_categories["search_sidecar"]["providers"]
     assert provider_categories["event_sink"]["configured"] == "none"
     assert "pdf_inspector" in payload
+
+
+def test_doctor_json_reports_turbopuffer_env_without_secret(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("TURBOPUFFER_API_KEY", "secret-key")
+    monkeypatch.setenv("TURBOPUFFER_REGION", "aws-us-west-2")
+    monkeypatch.setenv("TURBOPUFFER_BASE_URL", "https://example.invalid")
+
+    exit_code = main(
+        [
+            "doctor",
+            "--json",
+            "--qdrant-location",
+            ":memory:",
+            "--embedding-model",
+            "text-embedding-3-small",
+        ]
+    )
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "secret-key" not in output
+    payload = json.loads(output)
+    turbopuffer = payload["vector_store"]["providers"]["turbopuffer"]
+    assert turbopuffer["api_key_configured"] is True
+    assert turbopuffer["region"] == "aws-us-west-2"
+    assert turbopuffer["base_url_configured"] is True
+    assert turbopuffer["configured"] is False
+
+
+def test_doctor_json_reports_turbopuffer_selection_without_secret(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = main(
+        [
+            "doctor",
+            "--json",
+            "--vector-store",
+            "turbopuffer",
+            "--turbopuffer-namespace",
+            "prod-docs",
+            "--turbopuffer-api-key",
+            "secret-key",
+            "--turbopuffer-region",
+            "aws-us-west-2",
+            "--embedding-model",
+            "text-embedding-3-small",
+        ]
+    )
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "secret-key" not in output
+    payload = json.loads(output)
+    assert payload["collection_name"] == "prod-docs"
+    assert payload["vector_store"]["configured"] == "turbopuffer"
+    assert payload["vector_store"]["providers"]["qdrant"]["configured"] is False
+    turbopuffer = payload["vector_store"]["providers"]["turbopuffer"]
+    assert turbopuffer["configured"] is True
+    assert turbopuffer["namespace"] == "prod-docs"
+    assert turbopuffer["api_key_configured"] is True
 
 
 def test_doctor_json_redacts_qdrant_url_sensitive_parts(

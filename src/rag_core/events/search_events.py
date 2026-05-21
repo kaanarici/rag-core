@@ -40,7 +40,7 @@ class SearchPlanned:
     rerank_timeout_ms: float = 0.0
     rerank_max_output: int = 0
     rerank_fallback_on_error: bool = True
-    use_sidecar: bool = False
+    use_lexical_search: bool = False
     query_transforms: tuple[str, ...] = ()
     retrieve_stage: str = ""
     fuse_stage: str = ""

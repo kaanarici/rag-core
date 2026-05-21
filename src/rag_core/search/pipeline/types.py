@@ -47,7 +47,7 @@ class PipelineQuery:
     document_ids: Optional[list[str]] = None
     content_types: Optional[list[str]] = None
     rerank: bool = False
-    use_sidecar: bool = True
+    use_lexical_search: bool = True
     query_plan: "QueryPlan | None" = None
     query_vector: Optional[list[float]] = None
     query_sparse_vectors: Optional[dict[str, SparseVector]] = None

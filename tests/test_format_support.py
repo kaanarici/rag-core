@@ -16,7 +16,7 @@ from rag_core.documents.converters.format_support import (
 )
 from rag_core.documents.converters.registry_maps import EXTENSION_MAP, MIME_TYPE_MAP
 from rag_core.documents.converters.registry_specs import CONVERTER_SPEC_BY_KEY
-from rag_core.local_corpus import validate_supported_local_file
+from rag_core.local_ingest import validate_supported_local_file
 from rag_core.remote_sources import _extension_for_mime_type
 from rag_core.sources import is_supported_local_file
 

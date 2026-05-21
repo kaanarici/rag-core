@@ -9,7 +9,7 @@ import pytest
 from rag_core.core_models import IngestedDocument
 from rag_core.events.sinks import EventBuffer
 from rag_core.events.types import IngestBatchFailed, IngestBatchProgress
-from rag_core.local_corpus import LocalIngestRequest, run_local_ingest
+from rag_core.local_ingest import LocalIngestRequest, run_local_ingest
 from rag_core.remote_ingest import RemoteUrlIngestRequest, run_remote_url_ingest
 
 

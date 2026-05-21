@@ -46,6 +46,14 @@ def resolve_runtime_collection_name(
             dimensions=dimensions,
             dimension_aware=config.qdrant.dimension_aware_collection,
         )
+    if config.vector_store.provider == "turbopuffer":
+        namespace = config.vector_store.turbopuffer.namespace
+        if not namespace:
+            raise ValueError(
+                "TurboPuffer requires --turbopuffer-namespace or "
+                "RAG_CORE_TURBOPUFFER_NAMESPACE"
+            )
+        return namespace
     raise ValueError(
         f"Unsupported vector store provider: {config.vector_store.provider}"
     )

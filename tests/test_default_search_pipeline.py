@@ -155,7 +155,7 @@ def test_sidecar_can_be_skipped_per_request_and_failures_are_isolated() -> None:
                 query="fox query",
                 corpus_ids=["corpus-1"],
                 namespace="space-1",
-                use_sidecar=False,
+                use_lexical_search=False,
             )
         )
         assert [r.id for r in skipped] == ["doc-store"]

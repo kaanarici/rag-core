@@ -3,7 +3,7 @@
 What this file owns:
 - Built-in adapters expose the right ``StoreCapabilities`` shape.
 - ``RAGCore`` rejects a vector store missing required capabilities.
-- ``QdrantIndexer`` and ``CoreIngestor`` honor missing capabilities by
+- ``DocumentIndexer`` and ``CoreIngestor`` honor missing capabilities by
   failing unsafe replacements and skipping document-record lookups when needed.
 - ``VECTOR_STORES`` registry round-trip, normalization, and validation.
 """
@@ -18,7 +18,7 @@ import pytest
 from rag_core import RAGCore
 from rag_core.core_ingest import CoreIngestor
 from rag_core.core_models import PreparedDocument, ProcessingFingerprint
-from rag_core.search.indexer import IndexRequest, QdrantIndexer
+from rag_core.search.indexer import DocumentIndexer, IndexRequest
 from rag_core.search.providers.memory_store import InMemoryVectorStore
 from rag_core.search.providers.qdrant_store import QdrantVectorStore
 from rag_core.search.providers.registry import VECTOR_STORES
@@ -219,7 +219,7 @@ def test_rag_core_round_trip_against_memory_vector_store() -> None:
 def test_indexer_rejects_unsafe_shrink_when_per_point_delete_unsupported() -> None:
     async def _run() -> None:
         store = _MinimalVectorStore()
-        indexer = QdrantIndexer(
+        indexer = DocumentIndexer(
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(),
             vector_store=store,
@@ -251,7 +251,7 @@ def test_indexer_rejects_unsafe_shrink_when_per_point_delete_unsupported() -> No
 def test_indexer_skips_stale_handling_when_no_existing_chunk_count() -> None:
     async def _run() -> None:
         store = _MinimalVectorStore()
-        indexer = QdrantIndexer(
+        indexer = DocumentIndexer(
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(),
             vector_store=store,
@@ -295,7 +295,7 @@ def test_core_ingestor_skips_existing_lookup_when_capability_absent() -> None:
 
     async def _run() -> None:
         store = _MinimalVectorStore()
-        indexer = QdrantIndexer(
+        indexer = DocumentIndexer(
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(),
             vector_store=store,

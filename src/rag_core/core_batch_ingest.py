@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from rag_core.local_corpus import run_local_ingest_with_core
+from rag_core.local_ingest import run_local_ingest_with_core
 from rag_core.local_ingest_models import LocalIngestRequest
 from rag_core.remote_ingest import (
     run_remote_url_ingest_with_core,
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from rag_core.events.sink import EventSink
     from rag_core.fetch_security import FetchLimits, FetchSecurityPolicy
     from rag_core.fetching import FetchClient
-    from rag_core.local_corpus import LocalIngestCore
+    from rag_core.local_ingest import LocalIngestCore
     from rag_core.local_ingest_models import LocalIngestResult
     from rag_core.remote_ingest_results import RemoteUrlIngestResult
     from rag_core.remote_ingest_runner import RemoteUrlIngestCore

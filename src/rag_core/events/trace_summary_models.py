@@ -79,7 +79,7 @@ class SearchTraceSummary:
     rerank_truncation_reason: str = ""
     rerank_duration_ms: float = 0.0
     rerank_succeeded: bool = False
-    use_sidecar: bool = False
+    use_lexical_search: bool = False
     sidecar_attempted: bool = False
     sidecar_applied: bool = False
     sidecar_provider: str = ""

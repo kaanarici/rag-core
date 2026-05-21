@@ -81,7 +81,7 @@ def test_search_request_carries_query_plan_directly() -> None:
     )
 
     assert req.query_plan is plan
-    assert req.use_sidecar is True
+    assert req.use_lexical_search is True
 
 
 def test_empty_document_scope_returns_no_results_without_provider_search() -> None:
@@ -350,7 +350,7 @@ def test_search_can_disable_sidecar_per_request() -> None:
                 query="fox query",
                 corpus_ids=["corpus-1"],
                 namespace="space-1",
-                use_sidecar=False,
+                use_lexical_search=False,
             )
         )
 

@@ -1,16 +1,17 @@
 # Vector Store Providers
 
-`rag-core` keeps vector stores behind one base contract so applications can change storage backends without forking the engine. v1 ships **Qdrant** as the first-party vector store in the default wheel.
+`rag-core` keeps vector stores behind one base contract so applications can change storage backends without forking the engine. The **default wheel** ships **Qdrant** as the first-party vector store.
 
 ## Provider Maturity
 
 - `first-party default`: repo-owned contract, diagnostics, tests, and the default runtime path
+- `first-party optional`: managed adapter behind `--extra`; same contract tests where applicable
 - `utility adapter`: useful for tests or local smoke flows, not a production storage recommendation
-- `first-party optional (v1.1)`: TurboPuffer returns as a managed adapter with restored contract tests and doctor diagnostics
 
 | Provider | Maturity | Best fit | Current entrypoint | Notes |
 | --- | --- | --- | --- | --- |
 | Qdrant | first-party default | local development, self-hosting, persistent CLI ingest/search, and self-managed production deployments | `QdrantConfig`, CLI `--qdrant-*` flags, `QdrantVectorStore` | Default CLI and runtime path. Supports dense, sparse, hybrid RRF/DBSF/weighted RRF, MMR, and boost query plans, document lookup, deletes, and collection compatibility checks. |
+| TurboPuffer | first-party optional | managed vector + FTS without operating Qdrant | `--vector-store turbopuffer`, `--turbopuffer-*`, `uv sync --extra turbopuffer` | Not in the default wheel. Dense ANN, BM25 hybrid (RRF), SparseKNN. Fail-closed on unsupported query-plan stages. |
 | In-memory | utility adapter | unit tests and no-service smoke flows | `InMemoryVectorStore` | Not a production storage backend. |
 
 ## First-Party Support Contract
@@ -31,6 +32,7 @@ These paths are source-checkout validation references. The sdist ships docs and 
 | `tests/test_vector_store_contract.py` | Cross-provider search, scoping, filters, document records, deletes, point deletes, and health behavior. |
 | `tests/test_store_capabilities.py` | Declared capabilities, core assembly requirements, and capability-aware ingest/delete behavior. |
 | `tests/test_qdrant_helpers.py` | Qdrant collection, query, dimension, payload, and health edge cases outside the shared contract. |
+| `tests/test_turbopuffer_*.py` | TurboPuffer wire shape, query-plan guards, and result validation. |
 | `rag-core doctor --json` | Runtime selection, dimension shape, collection identity, query-plan support, and secret-redacted provider env state. |
 | CI wheel smoke | Base wheel import, doctor, and consumer smoke app. |
 
@@ -69,9 +71,26 @@ core = RAGCore(
 )
 ```
 
-## TurboPuffer (v1.1)
+## TurboPuffer (optional extra)
 
-TurboPuffer is deferred from the v1 wheel. ADR-0001 still targets a first-party managed adapter in v1.1 with contract tests, doctor diagnostics, and explicit query-plan limits restored together. Do not assume TurboPuffer parity from older docs in this repository history.
+TurboPuffer is **not** in the default wheel. Install the extra and point the CLI at a namespace:
+
+```bash
+uv sync --extra turbopuffer
+export TURBOPUFFER_API_KEY=...
+uv run rag-core doctor --json \
+  --vector-store turbopuffer \
+  --turbopuffer-namespace my-docs \
+  --embedding-model text-embedding-3-small
+```
+
+**Research:** [docs/research/turbopuffer-landscape.md](../research/turbopuffer-landscape.md) — phased slices TP1 (dense) → TP2 (hybrid) → TP3 (sparse).
+
+**Supported today:** dense ANN, namespace/corpus/document filters, upsert/delete, health, doctor diagnostics, hybrid RRF (BM25 + dense when `lexical_query` is set), SparseKNN for sparse channels.
+
+**Not supported:** DBSF, weighted RRF, MMR, boost, nested prefetches — fail closed with `UnsupportedQueryStage`.
+
+Do not use TurboPuffer for no-key Journey A or default `docker compose` smoke (requires API key).
 
 ## Migration Notes
 

@@ -1,6 +1,6 @@
 """Targeted unit tests for the ingest and query CLI surface.
 
-Full ingest+search end-to-end is already covered by ``test_local_corpus``
+Full ingest+search end-to-end is already covered by ``test_local_ingest``
 and ``test_indexer_behavior`` against fake providers. This file covers the
 CLI-side seams:
 

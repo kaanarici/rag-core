@@ -41,6 +41,6 @@ The stronger standard is first-party quality. A vector-store option is not truly
 - **Keep the protocol but never validate it.** Rejected: drifts to Qdrant-shaped behavior over time and traps users.
 - **Claim all vector stores are equally supported.** Rejected: misleading and worse for users than an honest first-party support matrix.
 
-## v1 addendum (2026-05-20)
+## v0 addendum (2026-05-20)
 
-v1.0 ships **Qdrant only** in the default wheel and CLI doctor surfaces. The TurboPuffer adapter is deferred to v1.1 with contract tests and doctor diagnostics restored together. The `VectorStore` protocol and registry remain; only the first-party adapter set is narrowed for the initial release.
+The default wheel ships **Qdrant** on the default CLI and doctor path. **TurboPuffer** is a first-party **optional** adapter (`uv sync --extra turbopuffer`): contract tests, doctor diagnostics, dense + hybrid RRF + SparseKNN with honest unsupported-stage errors. The `VectorStore` protocol and registry are unchanged; only install surface and docs distinguish default vs optional backends.

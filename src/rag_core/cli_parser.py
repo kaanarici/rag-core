@@ -9,7 +9,7 @@ from rag_core.cli_doctor_parser import add_doctor_command
 from rag_core.cli_ingest_parser import add_ingest_command
 from rag_core.cli_local_search_parser import add_local_search_command
 from rag_core.cli_manifest_parser import add_manifest_commands
-from rag_core.cli_query_parser import add_query_command
+from rag_core.cli_search_parser import add_search_command
 from rag_core.cli_remote_parser import add_remote_commands
 from rag_core.cli_serve_parser import add_serve_command
 
@@ -58,7 +58,7 @@ def _build_parser() -> argparse.ArgumentParser:
         manifest_dir_help_default=DEFAULT_MANIFEST_DIRECTORY,
     )
 
-    add_query_command(subparsers)
+    add_search_command(subparsers)
 
     add_serve_command(subparsers)
 

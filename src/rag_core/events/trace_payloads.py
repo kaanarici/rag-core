@@ -29,6 +29,15 @@ from rag_core.events.types import (
 )
 
 
+def _lexical_search_flag(payload: Mapping[str, object]) -> bool:
+    """Read lexical flag from trace JSON; accept legacy ``use_sidecar`` key."""
+    if "use_lexical_search" in payload:
+        return bool_field(payload, "use_lexical_search")
+    if "use_sidecar" in payload:
+        return bool_field(payload, "use_sidecar")
+    return False
+
+
 def search_event_from_payload(payload: Mapping[str, object]) -> Event | None:
     event_type = payload.get("event_type")
     if event_type == "search.started":
@@ -62,7 +71,7 @@ def search_event_from_payload(payload: Mapping[str, object]) -> Event | None:
                 "rerank_fallback_on_error",
                 default=True,
             ),
-            use_sidecar=bool_field(payload, "use_sidecar"),
+            use_lexical_search=_lexical_search_flag(payload),
             query_transforms=safe_stage_label_tuple_field(payload, "query_transforms"),
             retrieve_stage=safe_stage_label_field(payload, "retrieve_stage"),
             fuse_stage=safe_stage_label_field(payload, "fuse_stage"),

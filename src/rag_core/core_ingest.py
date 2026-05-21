@@ -41,7 +41,7 @@ from rag_core.manifest_persistence import (
     write_entry,
     write_entry_if_stale,
 )
-from rag_core.search.indexer import QdrantIndexer
+from rag_core.search.indexer import DocumentIndexer
 from rag_core.search.policy import DEFAULT_POLICY, VectorStorePolicy
 from rag_core.search.types import SearchSidecar, VectorStore
 
@@ -69,7 +69,7 @@ class CoreIngestor:
         embedding_model: str,
         processing_version: ProcessingFingerprint,
         store: VectorStore,
-        indexer: QdrantIndexer,
+        indexer: DocumentIndexer,
         sidecar: SearchSidecar | None,
         prepare_bytes: PrepareBytes,
         event_sink: "EventSink | None" = None,

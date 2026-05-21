@@ -20,9 +20,9 @@ if TYPE_CHECKING:
     from rag_core.search.searcher import SearchRequest
 
 
-def use_sidecar_for_request(req: SearchRequest) -> bool:
+def use_lexical_search_for_request(req: SearchRequest) -> bool:
     """Use sidecar only for implicit default planning, not explicit query plans."""
-    if not req.use_sidecar:
+    if not req.use_lexical_search:
         return False
     return req.query_plan is None
 
@@ -49,7 +49,7 @@ def default_search_pipeline(
 def pipeline_query_from_search_request(
     req: SearchRequest,
     *,
-    use_sidecar: bool | None = None,
+    use_lexical_search: bool | None = None,
 ) -> PipelineQuery:
     return PipelineQuery(
         query=req.query,
@@ -59,7 +59,7 @@ def pipeline_query_from_search_request(
         document_ids=req.document_ids,
         content_types=req.content_types,
         rerank=req.rerank,
-        use_sidecar=use_sidecar_for_request(req) if use_sidecar is None else use_sidecar,
+        use_lexical_search=use_lexical_search_for_request(req) if use_lexical_search is None else use_lexical_search,
         query_plan=req.query_plan,
         query_vector=req.query_vector,
         query_sparse_vectors=req.query_sparse_vectors,

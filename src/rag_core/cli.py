@@ -17,7 +17,7 @@ from rag_core.cli_inputs import cli_safe_error_message
 from rag_core.cli_local_search import run_local_search_command
 from rag_core.cli_manifest import run_manifest_command, run_manifest_compact_command
 from rag_core.cli_parser import _build_parser
-from rag_core.cli_query import run_query_command
+from rag_core.cli_search import run_search_command
 from rag_core.cli_serve import run_serve_command
 from rag_core.cli_remote import (
     run_discover_remote_command,
@@ -101,7 +101,7 @@ async def async_main(argv: Sequence[str] | None = None) -> int:
         if args.command in {"search", "retrieve-context"}:
             return await _run_with_event_sink(
                 args,
-                lambda event_sink: run_query_command(
+                lambda event_sink: run_search_command(
                     args,
                     core_factory=RAGCore,
                     event_sink=event_sink,

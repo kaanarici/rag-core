@@ -13,7 +13,7 @@ from rag_core.cli_provider_errors import (
     provider_bootstrap_message,
 )
 from rag_core.core_models import RAGCoreConfig
-from rag_core.local_corpus import (
+from rag_core.local_ingest import (
     build_local_ingest_plan,
     reconcile_local_ingest_plan,
     run_local_ingest,

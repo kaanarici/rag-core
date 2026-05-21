@@ -46,7 +46,7 @@ def test_summarize_search_trace_exports_safe_app_facing_shape() -> None:
                 rerank_timeout_ms=250.0,
                 rerank_max_output=4,
                 rerank_fallback_on_error=False,
-                use_sidecar=True,
+                use_lexical_search=True,
                 retrieve_stage="HybridRetrieve",
                 fuse_stage="ReciprocalRankFusion",
                 rerank_stage="ProviderRerank",

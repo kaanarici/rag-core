@@ -47,6 +47,7 @@ def main() -> None:
         env = _clean_env()
         env["RAG_CORE_WHEEL_SMOKE_REPO_ROOT"] = str(repo_root)
         _run([str(python), str(app_path)], cwd=app_dir, env=env)
+        _run([str(python), "-m", "rag_core.quickstart"], cwd=app_dir, env=env)
     finally:
         if args.keep_temp:
             print(f"kept wheel smoke directory: {temp_root}")

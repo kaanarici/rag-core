@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class QdrantIndexer:
+class DocumentIndexer:
     def __init__(
         self,
         embedding_provider: EmbeddingProvider,
@@ -125,7 +125,7 @@ class QdrantIndexer:
         *,
         corpus_id: str,
     ) -> None:
-        """Delete all chunks for a document from Qdrant."""
+        """Delete all chunks for a document from the vector store."""
         namespace_scoped, corpus_scoped = validate_delete_scope(namespace, corpus_id)
         await self._store.delete(
             DeleteFilter(
@@ -134,3 +134,9 @@ class QdrantIndexer:
                 document_id=document_id,
             ),
         )
+
+
+# Backwards-compatible alias; prefer DocumentIndexer (store-agnostic name).
+QdrantIndexer = DocumentIndexer
+
+__all__ = ["DocumentIndexer", "IndexRequest", "IndexResult", "QdrantIndexer"]

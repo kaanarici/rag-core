@@ -44,7 +44,7 @@ provider = create_embedding_provider(provider="my-embeddings")
 
 The same registry shape is used for rerankers, sparse embedders, OCR providers, vector stores, search sidecars, and caches. Keep provider names stable in your app config, and pass explicit config into `RAGCoreConfig` instead of relying on hidden environment loading.
 
-Install the matching extra before selecting an optional first-party provider: `rerank` for Cohere, `voyage`, `zeroentropy`, `runtime` for `rag-core serve`, `anthropic`, `opentelemetry`, `langchain`, or `openai-agents`. The `semantic` and `html` extras add local parsing/chunking helpers rather than remote provider clients.
+Install the matching extra before selecting an optional first-party provider: `rerank` for Cohere, `voyage`, `zeroentropy`, `turbopuffer` for the TurboPuffer vector store, `runtime` for `rag-core serve`, `anthropic`, `opentelemetry`, `langchain`, or `openai-agents`. The `semantic` and `html` extras add local parsing/chunking helpers rather than remote provider clients.
 
 ## Support Levels And Diagnostics
 

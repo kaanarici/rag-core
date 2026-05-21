@@ -9,7 +9,7 @@ from rag_core.cli_profile_help import query_plan_preset_help, search_profile_hel
 from rag_core.search.planning import QUERY_PLAN_PRESETS, SEARCH_PROFILES
 
 
-def add_query_command(
+def add_search_command(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
     _add_query_like_command(
@@ -117,4 +117,4 @@ def _add_query_like_command(
     return query
 
 
-__all__ = ["add_query_command"]
+__all__ = ["add_search_command"]

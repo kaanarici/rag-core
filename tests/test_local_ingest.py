@@ -20,7 +20,7 @@ from rag_core.events.types import (
 )
 from rag_core.manifest_persistence import ManifestSource, write_entry
 from rag_core.sources import document_key as local_document_key
-from rag_core.local_corpus import (
+from rag_core.local_ingest import (
     LocalIngestRequest,
     LocalSearchRequest,
     ManifestPreviewRequest,
@@ -989,7 +989,7 @@ def test_run_local_ingest_single_file_reuses_initial_read_for_ingest_bytes(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from rag_core import local_corpus as local_corpus_module
+    from rag_core import local_ingest as local_ingest_module
 
     file_path = tmp_path / "guide.txt"
     file_path.write_text("guide", encoding="utf-8")
@@ -1000,7 +1000,7 @@ def test_run_local_ingest_single_file_reuses_initial_read_for_ingest_bytes(
         read_paths.append(path)
         return path.read_bytes()
 
-    monkeypatch.setattr(local_corpus_module, "read_file_bytes", read_once)
+    monkeypatch.setattr(local_ingest_module, "read_file_bytes", read_once)
 
     result = asyncio.run(
         run_local_ingest(
@@ -1027,7 +1027,7 @@ def test_local_ingest_source_read_failures_are_unknown_manifest_status(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from rag_core import local_corpus as local_corpus_module
+    from rag_core import local_ingest as local_ingest_module
     from rag_core import sources as sources_module
 
     file_path = tmp_path / "blocked.txt"
@@ -1088,7 +1088,7 @@ def test_local_ingest_source_read_failures_are_unknown_manifest_status(
             raise PermissionError("blocked")
         return path.read_bytes()
 
-    monkeypatch.setattr(local_corpus_module, "read_file_bytes", fail_read)
+    monkeypatch.setattr(local_ingest_module, "read_file_bytes", fail_read)
 
     core = _FakeLocalIngestCore()
     buffer = EventBuffer()

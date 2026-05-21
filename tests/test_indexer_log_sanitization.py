@@ -5,7 +5,7 @@ import logging
 
 import pytest
 
-from rag_core.search.indexer import IndexRequest, QdrantIndexer
+from rag_core.search.indexer import DocumentIndexer, IndexRequest
 from tests.support import FakeEmbeddingProvider, FakeSparseEmbedder, RecordingVectorStore
 
 
@@ -14,7 +14,7 @@ def test_index_document_info_log_omits_document_identity(
 ) -> None:
     async def run() -> None:
         store = RecordingVectorStore()
-        indexer = QdrantIndexer(
+        indexer = DocumentIndexer(
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(include_extra_channel=False),
             vector_store=store,

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from rag_core.cli_inputs import parse_metadata_fields
 from rag_core.cli_output import require_mapping
-from rag_core.local_corpus import (
+from rag_core.local_ingest import (
     preview_manifest,
     validate_supported_local_file,
 )

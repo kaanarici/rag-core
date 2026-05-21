@@ -129,6 +129,20 @@ def _build_voyage_provider(
     )
 
 
+def _build_demo_provider(
+    *,
+    model: str = "demo-dense-v1",
+    dimensions: int | None = None,
+    **_: Any,
+) -> EmbeddingProvider:
+    from rag_core.demo import DemoEmbeddingProvider, _DEMO_EMBEDDING_DIMENSIONS
+
+    if model != "demo-dense-v1":
+        pass  # v1 demo provider uses a fixed model name
+    resolved = dimensions if dimensions is not None else _DEMO_EMBEDDING_DIMENSIONS
+    return DemoEmbeddingProvider(dimensions=resolved)
+
+
 def _build_zeroentropy_provider(
     *,
     model: str = "zembed-1",
@@ -157,5 +171,6 @@ def create_embedding_provider(
 
 
 EMBEDDING_PROVIDERS.register("openai", _build_openai_provider)
+EMBEDDING_PROVIDERS.register("demo", _build_demo_provider)
 EMBEDDING_PROVIDERS.register("voyage", _build_voyage_provider)
 EMBEDDING_PROVIDERS.register("zeroentropy", _build_zeroentropy_provider)

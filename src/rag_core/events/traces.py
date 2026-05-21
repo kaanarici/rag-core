@@ -157,7 +157,7 @@ def _apply_search_event(
             rerank_timeout_ms=event.rerank_timeout_ms,
             rerank_max_output=event.rerank_max_output,
             rerank_fallback_on_error=event.rerank_fallback_on_error,
-            use_sidecar=event.use_sidecar,
+            use_lexical_search=event.use_lexical_search,
             query_transforms=tuple(_safe_stage_labels(event.query_transforms)),
             retrieve_stage=_safe_stage_label(event.retrieve_stage),
             fuse_stage=_safe_stage_label(event.fuse_stage),

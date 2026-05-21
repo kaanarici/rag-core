@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rag_core.cli_output import float_value, require_mapping
-from rag_core.local_corpus import LocalSearchCoreFactory, run_local_search
+from rag_core.local_ingest import LocalSearchCoreFactory, run_local_search
 from rag_core.local_search_models import LocalSearchRequest
 
 if TYPE_CHECKING:

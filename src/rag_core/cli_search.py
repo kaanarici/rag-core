@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from rag_core.search.types import SearchResult
 
 
-async def run_query_command(
+async def run_search_command(
     args: argparse.Namespace,
     *,
     core_factory: Callable[..., "RAGCore"],

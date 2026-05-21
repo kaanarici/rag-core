@@ -289,7 +289,7 @@ def test_sidecar_prefetch_is_cancelled_when_query_opts_out_after_transform() -> 
         query = await SidecarPrefetchTransform().transform(query, ctx)
         task = _prefetched_task(query)
         await asyncio.wait_for(sidecar.started.wait(), timeout=1)
-        query.use_sidecar = False
+        query.use_lexical_search = False
 
         result = await SidecarPostprocess().postprocess(vector_results, query, ctx)
 
@@ -344,7 +344,7 @@ def test_sidecar_prefetch_cancel_logs_cleanup_failure_without_private_text(
         query = await SidecarPrefetchTransform().transform(query, ctx)
         task = _prefetched_task(query)
         await asyncio.wait_for(sidecar.started.wait(), timeout=1)
-        query.use_sidecar = False
+        query.use_lexical_search = False
 
         result = await SidecarPostprocess().postprocess(vector_results, query, ctx)
 

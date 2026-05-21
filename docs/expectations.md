@@ -29,7 +29,7 @@ Manifest JSONL records ingest fingerprints and skip-by-hash reconciliation. It i
 
 - Hosted chat, webhooks, billing, teams, admin UI
 - `rag-core eval` / `trace-summary` CLI (use `rag_core.evals`, `examples/retrieval_eval.py`, and `summarize_search_trace` on events JSONL)
-- TurboPuffer in the v1 wheel (v1.1 adapter)
+- TurboPuffer in the default wheel (use `--extra turbopuffer`)
 - Eval HTTP on `rag-core serve`
 
 ## Self-host runtime (optional)

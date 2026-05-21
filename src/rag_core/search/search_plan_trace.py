@@ -25,7 +25,7 @@ def emit_search_planned(
     document_ids: list[str] | None,
     metadata_filter: Filter | None,
     rerank_budget: RerankBudget | None,
-    use_sidecar: bool,
+    use_lexical_search: bool,
     query_plan: QueryPlan | None,
     pipeline: RetrievalPipeline,
     store: VectorStore,
@@ -56,7 +56,7 @@ def emit_search_planned(
             rerank_timeout_ms=_timeout_ms(budget.timeout_seconds),
             rerank_max_output=budget.max_output or 0,
             rerank_fallback_on_error=budget.fallback_on_error,
-            use_sidecar=use_sidecar and _has_sidecar_postprocess(pipeline),
+            use_lexical_search=use_lexical_search and _has_sidecar_postprocess(pipeline),
             query_transforms=tuple(
                 _stage_name(stage) for stage in pipeline.query_transforms
             ),

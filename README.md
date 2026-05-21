@@ -1,239 +1,105 @@
 # rag-core
 
-`rag-core` is a Python retrieval engine for applications, services, and workers that need embedded RAG.
+**Own the retrieval layer** — parsing, chunking, hybrid search, reranking, citations, and model-ready context — without renting a black-box RAG API or adopting a full OSS platform.
 
-It covers the retrieval path between documents and model calls: parsing, PDF routing, chunking, indexing, hybrid search, reranking, citations, context assembly, and traces.
+Your app keeps auth, chat, connectors, and billing. rag-core keeps everything between raw documents and the prompt.
 
-It is not a hosted platform, chat framework, UI, queue system, or auth layer. Your app owns those pieces. `rag-core` owns the retrieval layer.
+> Product identifiers (`rag_core`, `rag-core`, `RAGCore`) are stable on purpose. To try a different **display name** locally (README/compose only), see [dev/REBRAND.md](dev/REBRAND.md).
 
-Good starting points:
+## Who this is for
 
-- `demo` for the shortest zero-config smoke
-- `local-search` for a no-key first run on your own folder using embedded Qdrant
-- `RAGCore` in your app when you want persistent indexes, app-owned auth and scope, and explicit provider config
+- Teams leaving **managed RAG** (Ragie-class APIs) who still want familiar hit JSON and context packs.
+- Teams who rejected **RAGFlow / Haystack / LlamaIndex** as the core dependency but want the same retrieval seriousness.
+- Engineers who need **traces and eval hooks**, not a hosted console.
 
-## Quick Start
+## Who this is not for
 
-Prerequisites: Python 3.11+ and `uv`.
+- Drop-in hosted ingest + Drive/Notion connectors + SaaS auth (by design).
+- “One curl and never think about namespaces again” (you bind tenancy in your app).
 
-Run a no-key local search against your own files:
+## Maintainers (us)
+
+```bash
+uv sync --group dev
+./scripts/dx_smoke.sh
+uv run ruff check . && uv run mypy src tests examples && uv run pytest -q
+```
+
+Optional: `./scripts/self_host_smoke.sh` after `docker compose up -d --build`. Config truth: `uv run rag-core doctor --json`.
+
+## Try it in ten minutes (no API keys)
+
+You need Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 git clone https://github.com/kaanarici/rag-core.git
 cd rag-core
 uv sync
+./scripts/dx_smoke.sh
+```
+
+That single script runs demo search, folder ingest, trace summary, doctor, context + citations, and a small library eval. Step-by-step output expectations: [docs/quickstart.md](docs/quickstart.md).
+
+**After `pip install`** (no git checkout):
+
+```bash
+pip install rag-core
+python -m rag_core.quickstart
+```
+
+**Your own folder** (still no keys): `local-search` indexes a folder into embedded Qdrant (use `--max-files` to cap batch size).
+
+```bash
 mkdir -p /tmp/rag-core-quickstart
-printf "Billing invoices can be paid by card or ACH. Audit logs export as CSV.\\n" > /tmp/rag-core-quickstart/guide.md
-uv run rag-core demo --json
+printf "Invoices can be paid by ACH.\n" > /tmp/rag-core-quickstart/guide.md
 uv run rag-core local-search /tmp/rag-core-quickstart "How can invoices be paid?" --json
 ```
 
-`demo` is the shortest zero-config check. `local-search` indexes a folder into embedded Qdrant with local demo providers, runs the query, and prints the top chunks.
-
-`local-search` returns raw search hits, not a model-ready context pack. Pass `--max-files` when you want a larger local smoke. For no-key context text with citations, run the small library example below. Use `retrieve-context` once you have a persistent index and provider config.
-
-To capture a trace:
+Trace on the bundled demo corpus (see [docs/quickstart.md](docs/quickstart.md)):
 
 ```bash
 uv run rag-core local-search examples/demo_corpus "corpus lifecycle" \
-  --events-jsonl traces.jsonl
+  --events-jsonl traces.jsonl --json
 ```
 
-Trace events land as JSONL. Embedded callers can summarize them with
-`summarize_search_trace(...)` / `summarize_embedding_trace(...)` from
-`rag_core.events`, which surface plan shape, stage timings, rerank and lexical
-diagnostics, and sanitized errors.
-
-### Agent-friendly CLI invocations
-
-Coding agents can drive the ops surface from `--help` Examples alone:
+## Self-host the HTTP API (optional)
 
 ```bash
-uv run rag-core demo --json
-uv run rag-core doctor --qdrant-location :memory: --embedding-model text-embedding-3-small --json
-uv run rag-core ingest ./docs --namespace acme --corpus-id help --qdrant-location :memory:
-uv run rag-core search "billing policy" --namespace acme --corpus-id help --qdrant-location :memory: --json
-uv run rag-core local-search ./docs "billing policy" --events-jsonl traces.jsonl --json
+docker compose up -d --build
+curl -s http://127.0.0.1:8787/health/ready
 ```
 
-The `examples/` modules below are checkout examples. They are not installed into the wheel. For installed-package code, use the library snippet in [Library Usage](#library-usage).
+Full path: [docs/self-host/quickstart.md](docs/self-host/quickstart.md). Contract: [docs/self-host/openapi.yaml](docs/self-host/openapi.yaml). Auth stays in your gateway: [docs/self-host/auth.md](docs/self-host/auth.md).
 
-For model-ready context with citations:
+## Embed in your app
 
-```bash
-uv run python -m examples.minimal_app
-```
-
-For an endpoint helper that binds scope before retrieval:
-
-```bash
-uv run python -m examples.search_endpoint
-```
-
-For local, archive, and URL source ingest through one `RAGCore`:
-
-```bash
-uv run python -m examples.source_ingest
-```
-
-For retrieval-quality checks with the library eval runner:
-
-```bash
-uv run python -m examples.retrieval_eval
-```
-
-## Install
-
-Install from GitHub source:
-
-```bash
-uv add "rag-core @ git+https://github.com/kaanarici/rag-core.git"
-```
-
-For local development:
-
-```bash
-uv sync
-uv sync --group dev
-```
-
-Optional extras are grouped by integration and provider:
-
-```bash
-uv sync --extra rerank --extra voyage --extra zeroentropy
-uv sync --extra semantic --extra html --extra anthropic
-uv sync --extra opentelemetry
-uv sync --extra langchain --extra openai-agents
-uv sync --extra runtime
-```
-
-For installed-package consumers, request extras on the package spec:
-
-```bash
-uv add "rag-core[langchain,openai-agents] @ git+https://github.com/kaanarici/rag-core.git"
-```
-
-Declared extras: `rerank` for Cohere reranking, `voyage` for Voyage embeddings and reranking, `zeroentropy` for ZeroEntropy embeddings and reranking, `semantic` for semantic/code chunking helpers, `html` for the faster Rust-backed HTML converter path, `anthropic` for chunk contextualization, `opentelemetry` for tracing sinks, `runtime` for `rag-core serve`, `langchain` for LangChain tools, and `openai-agents` for OpenAI Agents tools. Base installs still parse HTML through the fallback converter.
-
-For PDF routing with page-level OCR signals, install PDF Inspector:
-
-```bash
-cargo install --git https://github.com/firecrawl/pdf-inspector --bin detect-pdf --bin pdf2md
-uv run rag-core doctor --json
-```
-
-## Mental Model
-
-`rag-core` keeps the public model small:
-
-- **Sources** are files, bytes, ZIP members, or explicit URLs.
-- **Documents** are parsed source items with stable identity and metadata.
-- **Corpora** are application-owned partitions, scoped by `namespace` and `corpus_id`.
-- **Collections** are physical vector-store indexes.
-- **Indexes** are stored chunks, vectors, sparse signals, payloads, and document records.
-- **Search profiles** are named retrieval shapes such as `balanced`, `fast`, `lexical`, `coverage`, and `diverse`.
-- **Query plans** are lower-level typed retrieval recipes when you need exact control.
-- **Context packs** turn search results into model-ready text with citations and source previews.
-- **Events and traces** make ingest and retrieval behavior inspectable.
-
-The normal flow:
-
-```text
-sources -> parse -> chunk -> index -> search -> context pack -> your model call
-```
-
-## Persistent Search
-
-Use Qdrant for the default persistent path:
-
-```bash
-docker run --rm -p 6333:6333 qdrant/qdrant &
-export OPENAI_API_KEY=...
-
-uv run rag-core ingest examples \
-  --namespace acme \
-  --corpus-id help \
-  --qdrant-url http://localhost:6333 \
-  --embedding-model text-embedding-3-small \
-  --embedding-dimensions 1536
-
-uv run rag-core search "corpus lifecycle" \
-  --namespace acme \
-  --corpus-id help \
-  --qdrant-url http://localhost:6333 \
-  --embedding-model text-embedding-3-small \
-  --embedding-dimensions 1536 \
-  --search-profile balanced \
-  --json
-```
-
-Supported local ingest includes text, code, HTML, CSV/TSV, JSON/JSONL, XML, PDF, DOCX, PPTX, and XLSX. Images require an injected OCR provider. Binary Office files such as `.doc`, `.ppt`, and `.xls` are skipped.
-
-See [docs/parsing/formats.md](docs/parsing/formats.md) for the full format matrix.
-
-## CLI
-
-The CLI uses the same concepts as the library. Common commands:
-
-```bash
-uv run rag-core doctor --json
-uv run rag-core local-search /path/to/folder "billing policy" --limit 5
-uv run rag-core ingest /path/to/folder --namespace acme --corpus-id help --json
-uv run rag-core ingest-url https://example.com/docs/guide --namespace acme --corpus-id help --json
-uv run rag-core ingest-urls urls.txt --namespace acme --corpus-id help --json
-uv run rag-core discover-remote https://example.com/llms.txt --kind llms-txt --json
-uv run rag-core search "billing policy" --namespace acme --corpus-id help --search-profile balanced --json
-uv run rag-core retrieve-context "billing policy" --namespace acme --corpus-id help --qdrant-url http://localhost:6333
-```
-
-Useful notes:
-
-- `doctor` reports runtime metadata, processing fingerprints, provider readiness, vector-store diagnostics, and retrieval-profile descriptions without printing secrets.
-- `ingest` supports local files, directories, and globs. It writes JSONL manifests and skips unchanged documents by content hash.
-- `ingest-archive`, `ingest-url`, and `ingest-urls` add ZIP and explicit remote-source paths. They do not crawl.
-- `discover-remote` reads a sitemap or `llms.txt` artifact and can write URLs for later ingest. Output URL files are redacted by default; any query-bearing discovered URL makes the redacted file lossy, so the command refuses it unless you pass `--output-url-file-raw-queries`.
-- `search` returns raw search hits.
-- `retrieve-context` returns the library context-pack payload with `context_text`.
-- Most commands with `--json` write one JSON document to stdout. Batch ingest commands such as `ingest`, `ingest-archive`, and `ingest-urls` stream one JSON object per record. `--events-jsonl`, manifest files, and batch ingest stdout are JSONL: one JSON object per line.
-
-## Library Usage
-
-Create one `RAGCore` per app process or worker. Reuse it for requests and jobs. Close it on shutdown.
-
-For a no-key embedded smoke, use the package demo helper. It creates an in-memory Qdrant-backed `RAGCore` with local demo providers, so it works from an installed wheel without API keys:
+One `RAGCore` per worker. Bind `namespace` / `corpus_id` from **your** auth — not from model text.
 
 ```python
 import asyncio
-
 from rag_core.demo import build_demo_core
-
 
 async def main() -> None:
     async with build_demo_core(collection="quickstart") as core:
         await core.ingest_bytes(
-            file_bytes=b"Billing is due monthly and invoices can be paid by card.",
+            file_bytes=b"Invoices can be paid by card or ACH.",
             filename="billing.txt",
             mime_type="text/plain",
-            namespace="acme",
-            corpus_id="help-center",
+            namespace="tenant:acme",
+            corpus_id="help",
         )
-
-        context = await core.retrieve_context(
-            query="How can I pay invoices?",
-            namespace="acme",
-            corpus_ids=["help-center"],
-            limit=3,
-            rerank=False,
+        pack = await core.retrieve_context(
+            query="How can customers pay?",
+            namespace="tenant:acme",
+            corpus_ids=["help"],
+            limit=5,
         )
-
-        print(context.as_text())
-        print([citation.source_id for citation in context.citations])
-
+        print(pack.as_text())
 
 asyncio.run(main())
 ```
 
-For a no-key persistent local smoke, give the same helper a Qdrant storage directory:
+For a persistent local directory without API keys:
 
 ```python
 async with build_demo_core(
@@ -243,163 +109,96 @@ async with build_demo_core(
     ...
 ```
 
-For a persistent production-style path, configure Qdrant and your embedding provider explicitly:
+`build_demo_core` works from an installed wheel without API keys.
 
-```python
-import asyncio
+Production lifecycle, shutdown, and connector replacement: [docs/embedding/production-guide.md](docs/embedding/production-guide.md) and [docs/embedding/connector-pattern.md](docs/embedding/connector-pattern.md). Example worker pattern: [examples/embedded_service.py](examples/embedded_service.py).
 
-from rag_core import RAGCore, RAGCoreConfig
-from rag_core.config import EmbeddingConfig, QdrantConfig
+## How the pieces fit together
 
-
-async def main() -> None:
-    core = RAGCore(
-        RAGCoreConfig(
-            qdrant=QdrantConfig(
-                url="http://localhost:6333",
-                collection="product_docs",
-            ),
-            embedding=EmbeddingConfig(
-                model="text-embedding-3-small",
-                dimensions=1536,
-            ),
-        )
-    )
-
-    async with core:
-        await core.ingest_file(
-            "/path/to/faq.pdf",
-            namespace="acme",
-            corpus_id="help-center",
-        )
-
-        context = await core.retrieve_context(
-            query="How does billing work?",
-            namespace="acme",
-            corpus_ids=["help-center"],
-            limit=5,
-            max_chars=4_000,
-        )
-
-        print(context.as_text())
-
-
-asyncio.run(main())
+```text
+sources → parse → chunk → index → search → context pack → your LLM call
 ```
 
-Use `search(...)` when you want raw ranked `SearchResult` rows. Use `retrieve_context(...)` when you want a model-ready context pack with citations, snippets, source previews, truncation state, and approximate token counts.
+| Term | Meaning |
+|------|---------|
+| **namespace** | Tenant or app partition you control |
+| **corpus_id** | Logical collection inside a namespace |
+| **search** | Raw ranked hits (Ragie-shaped JSON) |
+| **retrieve_context** | Model-ready text + citations |
+| **events / traces** | JSONL you can summarize without a vendor UI |
 
-The CLI and library share the same concepts. `local-search` is the shortest end-to-end check, while `ingest`, `search`, and `retrieve_context(...)` are the persistent building blocks you will usually keep in an application.
+Deeper contract: [docs/expectations.md](docs/expectations.md).
 
-For application tools, expose retrieval as something like `search_user_documents`. Bind tenant scope in your app, and let the model provide only the query and bounded retrieval knobs.
-
-## Providers
-
-Default runtime shape:
-
-- vector store: Qdrant
-- dense embeddings: OpenAI
-- sparse retrieval: FastEmbed BM25, with optional SPLADE
-- reranker: off by default, optional Cohere, Voyage, or ZeroEntropy
-- PDF path: PDF Inspector when available, PyMuPDF fallback
-- contextualization: off by default, optional Anthropic chunk contextualizer
-
-v1 ships Qdrant as the first-party vector store. TurboPuffer returns in v1.1 as an optional managed adapter.
-
-Provider categories can be configured directly, registered, or injected:
-
-- Config-backed or CLI-backed: dense embeddings, rerankers, vector stores, and embedding caches.
-- Programmatic config-backed: lexical search sidecars.
-- Injection-only at `RAGCore(...)`: custom sparse embedders, OCR providers, event sinks, chunk contextualizers, and chunk context caches.
-- Registry or factory helpers are available for app assembly, but not every registry is selected from `RAGCoreConfig`.
-
-See [docs/providers/custom-providers.md](docs/providers/custom-providers.md) for extension points and [docs/providers/vector-stores.md](docs/providers/vector-stores.md) for vector-store support levels.
-
-`rag-core` does not build full app config from environment variables. Your app should read its own env and pass explicit config into `RAGCoreConfig`. Provider SDKs may still read their own API keys, such as `OPENAI_API_KEY`, `COHERE_API_KEY`, `VOYAGE_API_KEY`, or `ZEROENTROPY_API_KEY`.
-
-## Retrieval Control
-
-For common behavior, use a search profile. For exact control, pass a typed query plan. For reranking, cap the reranker separately from retrieval:
-
-```python
-from rag_core.search import RerankBudget, search_profile
-
-results = await core.search(
-    query="billing policy",
-    namespace="acme",
-    corpus_ids=["help"],
-    limit=10,
-    query_plan=search_profile("balanced", limit=10),
-    rerank=True,
-    rerank_budget=RerankBudget(
-        candidate_count=40,
-        max_output=10,
-        timeout_seconds=1.5,
-    ),
-)
-```
-
-Use `describe_runtime()["retrieval"]`, `rag-core doctor --json`, or `describe_retrieval_profiles()` from `rag_core.search` when your app needs to display profile and query-plan behavior.
-
-## Observability And Evals
-
-Use `--events-jsonl` or an event sink to inspect what happened during ingest and search. Trace summaries include search plan shape, stage timings, rerank diagnostics, lexical diagnostics, embedding cache totals, and sanitized errors.
-
-Embedded services can use `EventBuffer`, `summarize_search_trace(...)`, and `summarize_embedding_trace(...)` from `rag_core.events`. Map `SearchResult` rows for LangSmith, OpenInference, or OTel with `to_retrieval_hits(...)` from `rag_core.events.export`. See [docs/expectations.md](docs/expectations.md) for vendor field parity.
-
-`OpenTelemetrySink` is available through the `opentelemetry` extra and omits sensitive fields by default.
-
-Retrieval-quality checks use the library eval runner (`rag_core.evals`) and [examples/retrieval_eval.py](examples/retrieval_eval.py). There is no `rag-core eval` or `trace-summary` CLI in v1.
-
-## Self-Host Runtime (optional)
-
-Install the runtime extra and expose a thin HTTP API over the same `RAGCore` methods:
+## CLI cheatsheet
 
 ```bash
-uv sync --extra runtime
-uv run rag-core serve --qdrant-location :memory: --embedding-model text-embedding-3-small
+uv run rag-core demo --json
+uv run rag-core doctor --qdrant-location :memory: --embedding-provider demo --embedding-dimensions 64 --json
+uv run rag-core local-search ./docs "billing policy" --events-jsonl traces.jsonl --json
+uv run rag-core ingest ./docs --namespace acme --corpus-id help --qdrant-url http://127.0.0.1:6333
+uv run rag-core search "billing policy" --namespace acme --corpus-id help --json
+uv run rag-core retrieve-context "billing policy" --namespace acme --corpus-id help --json
 ```
 
-Endpoints: `GET /health`, `GET /v1/runtime`, `POST /v1/ingest`, `GET /v1/ingest/{job_id}`, `POST /v1/search`, `POST /v1/retrieve-context`. Eval HTTP is intentionally excluded in v1.
+`local-search` is the fastest end-to-end check. `ingest` + `search` + `retrieve-context` are what you keep in production. Every command has `--help` with copy-paste Examples.
 
-## Integrations
+## Install
 
-Optional adapters sit above `search(...)` and `retrieve_context(...)`:
+```bash
+uv add "rag-core @ git+https://github.com/kaanarici/rag-core.git"
+```
 
-- OpenAI Agents SDK: `from rag_core.integrations import build_retrieve_context_tool`
-- LangChain and LangGraph: `from rag_core.integrations import create_langchain_context_tool`
-- Vercel AI SDK tool contract: [docs/integrations/vercel-ai-sdk-tools.md](docs/integrations/vercel-ai-sdk-tools.md)
+Optional extras (declare on install): `semantic`, `html`, `rerank`, `voyage`, `zeroentropy`, `turbopuffer`, `opentelemetry`, `anthropic`, `langchain`, `openai-agents`, `runtime`. Example: `uv sync --extra runtime --extra rerank`.
 
-`rag_core.contracts` remains the stable JSON shape underneath all of the above.
+## Examples (checkout only)
 
-More runnable examples:
+The `examples/` modules below are checkout examples. They are not installed into the wheel. Use `python -m rag_core.quickstart` for a wheel-only demo.
 
-- [examples/minimal_app.py](examples/minimal_app.py)
-- [examples/chatbot_context.py](examples/chatbot_context.py)
-- [examples/search_endpoint.py](examples/search_endpoint.py)
-- [examples/source_ingest.py](examples/source_ingest.py)
-- [examples/corpus_lifecycle.py](examples/corpus_lifecycle.py)
-- [examples/pdf_ocr_path.py](examples/pdf_ocr_path.py)
-- [examples/retrieval_eval.py](examples/retrieval_eval.py) — library eval runner (no `rag-core eval` CLI)
+```bash
+uv run python -m examples.minimal_app
+uv run python -m examples.search_endpoint
+uv run python -m examples.source_ingest
+uv run python -m examples.retrieval_eval
+```
 
-## Troubleshooting
+| Example | Shows |
+|---------|--------|
+| [examples/minimal_app.py](examples/minimal_app.py) | Context + citations |
+| [examples/embedded_service.py](examples/embedded_service.py) | Worker lifespan |
+| [examples/source_ingest.py](examples/source_ingest.py) | File, ZIP, URL ingest |
+| [examples/retrieval_eval.py](examples/retrieval_eval.py) | Library eval gate |
 
-- Run `uv run rag-core demo --json` first, then use `doctor` when you need provider or vector-store diagnostics.
-- If Qdrant checks fail, use exactly one of `--qdrant-url` or `--qdrant-location`.
-- If PDF Inspector is installed outside `PATH`, set `PDF_INSPECTOR_BINARY_PATH` to the directory that contains `detect-pdf` and `pdf2md`.
-- If a provider fails at runtime, install the matching extra, set the provider API key, then inspect `doctor` output.
-- If `.doc`, `.ppt`, or `.xls` files are skipped, convert them to `.docx`, `.pptx`, or `.xlsx`.
-- Run examples as modules from a local checkout, such as `uv run python -m examples.corpus_lifecycle`.
+## CLI output shapes
 
-## Validation
+Commands with `--json` write one JSON document to stdout. Batch ingest commands such as `ingest`, `ingest-archive`, and `ingest-urls` stream one JSON object per record. `--events-jsonl`, manifest files, and batch ingest stdout are JSONL: one JSON object per line.
 
-The full validation loop is a source-checkout workflow:
+## Docs map
+
+| Doc | When to read |
+|-----|----------------|
+| [docs/quickstart.md](docs/quickstart.md) | First run proof |
+| [docs/embedding/production-guide.md](docs/embedding/production-guide.md) | Shipping embed |
+| [docs/self-host/quickstart.md](docs/self-host/quickstart.md) | Operating `serve` |
+| [docs/naming.md](docs/naming.md) | Contributor vocabulary |
+| [docs/plans/one-repo-retrieval-engine-strategy.md](docs/plans/one-repo-retrieval-engine-strategy.md) | Product direction |
+| [docs/research/](docs/research/) | Managed vs OSS landscape |
+
+## Validate changes
 
 ```bash
 uv run ruff check .
 uv run mypy src tests examples
 uv run pytest -q
-uv run python scripts/architecture_pressure.py --json
-uv build
-uv run python scripts/wheel_smoke.py
+./scripts/dx_smoke.sh
+uv build && uv run python scripts/wheel_smoke.py
+./scripts/brand_check.sh
 ```
+
+## Troubleshooting
+
+- Start with `uv run rag-core demo --json`, then `doctor --json` when config looks wrong.
+- Use exactly one of `--qdrant-url` or `--qdrant-location`.
+- For no-key mode: `--embedding-provider demo --embedding-dimensions 64`.
+- Examples must run as modules from a checkout: `uv run python -m examples.minimal_app`.
+
+Strategy and scope boundaries: [AGENTS.md](AGENTS.md) (if present in your tree) and the strategy doc above.

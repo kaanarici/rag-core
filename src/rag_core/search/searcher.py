@@ -26,7 +26,7 @@ from rag_core.search.search_plan_trace import emit_search_planned
 from rag_core.search.searcher_pipeline import (
     default_search_pipeline,
     pipeline_query_from_search_request,
-    use_sidecar_for_request,
+    use_lexical_search_for_request,
 )
 from rag_core.search.types import (
     EmbeddingProvider,
@@ -60,7 +60,7 @@ class SearchRequest:
     rerank: bool = False
     query_vector: list[float] | None = None
     query_sparse_vectors: dict[str, SparseVector] | None = None
-    use_sidecar: bool = True
+    use_lexical_search: bool = True
     query_plan: "QueryPlan | None" = None
     metadata_filter: Filter | None = None
     rerank_budget: RerankBudget | None = None
@@ -110,8 +110,8 @@ class SearchOrchestrator:
         """Execute unified search and return its correlation identifier."""
         search_id = uuid4().hex
         sink = _SearchCorrelationSink(self._event_sink, search_id) if self._event_sink else None
-        effective_use_sidecar = (
-            use_sidecar_for_request(req) if self._uses_default_pipeline else req.use_sidecar
+        effective_use_lexical_search = (
+            use_lexical_search_for_request(req) if self._uses_default_pipeline else req.use_lexical_search
         )
         started_ms = now_ms()
         results: list[SearchResult] = []
@@ -122,7 +122,7 @@ class SearchOrchestrator:
         try:
             pipeline_query = pipeline_query_from_search_request(
                 req,
-                use_sidecar=effective_use_sidecar,
+                use_lexical_search=effective_use_lexical_search,
             )
             emit_event(
                 sink,
@@ -144,7 +144,7 @@ class SearchOrchestrator:
                     document_ids=req.document_ids,
                     metadata_filter=req.metadata_filter,
                     rerank_budget=req.rerank_budget,
-                    use_sidecar=effective_use_sidecar,
+                    use_lexical_search=effective_use_lexical_search,
                     query_plan=query_plan,
                     pipeline=self._pipeline,
                     store=self._store,
@@ -158,7 +158,7 @@ class SearchOrchestrator:
                         namespace=req.namespace,
                         result_count=0,
                         requested_rerank=req.rerank,
-                        requested_sidecar=req.use_sidecar,
+                        requested_sidecar=req.use_lexical_search,
                         duration_ms=now_ms() - started_ms,
                     ),
                 )
@@ -202,7 +202,7 @@ class SearchOrchestrator:
                     namespace=req.namespace,
                     result_count=len(results),
                     requested_rerank=req.rerank,
-                    requested_sidecar=req.use_sidecar,
+                    requested_sidecar=req.use_lexical_search,
                     attempted_rerank=attempted_rerank,
                     attempted_sidecar=attempted_sidecar,
                     applied_rerank=applied_rerank,
@@ -220,7 +220,7 @@ class SearchOrchestrator:
                 used_rerank=applied_rerank,
                 used_sidecar=applied_sidecar,
                 requested_rerank=req.rerank,
-                requested_sidecar=req.use_sidecar,
+                requested_sidecar=req.use_lexical_search,
                 attempted_rerank=attempted_rerank,
                 attempted_sidecar=attempted_sidecar,
                 applied_rerank=applied_rerank,

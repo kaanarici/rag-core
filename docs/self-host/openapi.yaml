@@ -1,0 +1,285 @@
+openapi: 3.0.3
+info:
+  title: rag-core serve
+  description: |
+    Thin HTTP runtime over the same ``RAGCore`` library you embed in your app.
+    v1 exposes health, runtime description, async ingest jobs, search, and
+    retrieve-context only (no eval HTTP).
+
+    Hit shapes follow [expectations.md](../expectations.md).
+  version: 0.1.0
+servers:
+  - url: http://127.0.0.1:8787
+    description: Local ``rag-core serve`` default
+tags:
+  - name: health
+  - name: runtime
+  - name: ingest
+  - name: retrieval
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness
+      description: Process is up. Does not initialize ``RAGCore`` or touch dependencies.
+      operationId: getHealth
+      responses:
+        "200":
+          description: Alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LivenessResponse"
+  /health/ready:
+    get:
+      tags: [health]
+      summary: Readiness
+      description: |
+        Initializes ``RAGCore`` if needed and reports vector-store health.
+        Returns 503 when dependencies are not ready.
+      operationId: getHealthReady
+      responses:
+        "200":
+          description: Ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+        "503":
+          description: Not ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+  /v1/runtime:
+    get:
+      tags: [runtime]
+      summary: Runtime description
+      operationId: getRuntime
+      responses:
+        "200":
+          description: ``describe_runtime()`` payload
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /v1/ingest:
+    post:
+      tags: [ingest]
+      summary: Start ingest job
+      operationId: createIngestJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestRequest"
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestJobCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /v1/ingest/{job_id}:
+    get:
+      tags: [ingest]
+      summary: Ingest job status
+      operationId: getIngestJob
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestJobStatus"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/search:
+    post:
+      tags: [retrieval]
+      summary: Search (Ragie-shaped hits)
+      operationId: search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchRequest"
+      responses:
+        "200":
+          description: Hit list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SearchHit"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /v1/retrieve-context:
+    post:
+      tags: [retrieval]
+      summary: Model-ready context pack
+      operationId: retrieveContext
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchRequest"
+      responses:
+        "200":
+          description: Context pack plus ``context_text``
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContextPackResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+components:
+  schemas:
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - invalid_json
+                - invalid_request
+                - not_found
+                - http_error
+                - internal_error
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+    LivenessResponse:
+      type: object
+      required: [ok, status, live]
+      properties:
+        ok:
+          type: boolean
+        status:
+          type: string
+          enum: [ok]
+        live:
+          type: boolean
+    ReadinessResponse:
+      type: object
+      required: [ok, status, ready, live, checks]
+      properties:
+        ok:
+          type: boolean
+        status:
+          type: string
+          enum: [ok, degraded]
+        ready:
+          type: boolean
+        live:
+          type: boolean
+        checks:
+          type: object
+          additionalProperties: true
+    IngestRequest:
+      type: object
+      required: [path, namespace, corpus_id]
+      properties:
+        path:
+          type: string
+          description: Absolute path on the server host
+        namespace:
+          type: string
+        corpus_id:
+          type: string
+        corpusId:
+          type: string
+          description: CamelCase alias for ``corpus_id``
+    IngestJobCreated:
+      type: object
+      required: [job_id, status]
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+    IngestJobStatus:
+      type: object
+      required: [job_id, status, path, namespace, corpus_id]
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+        path:
+          type: string
+        namespace:
+          type: string
+        corpus_id:
+          type: string
+        result:
+          type: object
+          additionalProperties: true
+        error:
+          type: string
+          description: Present when ``status`` is ``failed`` (exception type name)
+    SearchRequest:
+      type: object
+      required: [query, namespace, corpus_ids]
+      properties:
+        query:
+          type: string
+        namespace:
+          type: string
+        corpus_ids:
+          type: array
+          items:
+            type: string
+        corpusIds:
+          type: array
+          items:
+            type: string
+        limit:
+          type: integer
+          default: 10
+        rerank:
+          type: boolean
+          default: false
+    SearchHit:
+      type: object
+      additionalProperties: true
+    ContextPackResponse:
+      type: object
+      required: [context_text]
+      properties:
+        context_text:
+          type: string
+      additionalProperties: true
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"

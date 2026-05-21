@@ -5,7 +5,7 @@ from typing import cast
 
 import pytest
 
-from rag_core.local_corpus import ManifestPreviewRequest, preview_manifest
+from rag_core.local_ingest import ManifestPreviewRequest, preview_manifest
 from rag_core.sources import document_key as local_document_key
 
 

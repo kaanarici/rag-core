@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from rag_core.search.context_pack import build_context_pack
-from rag_core.search.indexer import IndexRequest, QdrantIndexer
+from rag_core.search.indexer import DocumentIndexer, IndexRequest
 from rag_core.search.indexer_embeddings import prepare_index_data
 from rag_core.search.indexer_points import make_point_id
 from rag_core.search.stored_payload import payload_to_result
@@ -62,9 +62,9 @@ def _make_indexer(
     *,
     embedding: FakeEmbeddingProvider | None = None,
     sparse: SparseEmbedder | None = None,
-) -> tuple[QdrantIndexer, RecordingVectorStore]:
+) -> tuple[DocumentIndexer, RecordingVectorStore]:
     store = store if store is not None else RecordingVectorStore()
-    indexer = QdrantIndexer(
+    indexer = DocumentIndexer(
         embedding_provider=embedding or FakeEmbeddingProvider(),
         sparse_embedder=sparse or FakeSparseEmbedder(include_extra_channel=False),
         vector_store=store,

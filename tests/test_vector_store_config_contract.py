@@ -23,4 +23,6 @@ def test_vector_store_config_rejects_unknown_provider() -> None:
     with pytest.raises(ValueError) as exc_info:
         VectorStoreConfig(provider="unknown")
 
-    assert str(exc_info.value) == "VectorStoreConfig.provider must be one of: qdrant"
+    assert str(exc_info.value) == (
+        "VectorStoreConfig.provider must be one of: qdrant, turbopuffer"
+    )

@@ -36,7 +36,7 @@ class SidecarPrefetchTransform:
     async def transform(
         self, query: PipelineQuery, ctx: PipelineContext
     ) -> PipelineQuery:
-        if ctx.sidecar is None or not query.use_sidecar:
+        if ctx.sidecar is None or not query.use_lexical_search:
             await cancel_prefetched_sidecar(query)
             return query
         await start_prefetched_sidecar(query, ctx.sidecar)
@@ -55,7 +55,7 @@ class SidecarPostprocess:
         query: PipelineQuery,
         ctx: PipelineContext,
     ) -> list[SearchResult]:
-        if ctx.sidecar is None or not query.use_sidecar:
+        if ctx.sidecar is None or not query.use_lexical_search:
             await cancel_prefetched_sidecar(query)
             return results
         ctx.execution.attempted_sidecar = True

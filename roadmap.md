@@ -1,10 +1,10 @@
-# rag-core v1 roadmap
+# rag-core v0 roadmap
 
-One-page checklist for the v1 product shape.
+One-page checklist for the **v0 pre-release** product shape (public `0.1.x` until we call it stable).
 
 ## Phase A — Debloat
 
-- [x] Qdrant-only vector store in v1 wheel
+- [x] Qdrant-only vector store in the default wheel
 - [x] Remove `rag-core eval` and `trace-summary` CLI
 - [x] Slim `rag_core.evals` library + `examples/retrieval_eval.py`
 - [x] MISSION, README, ADRs, tests, CI aligned
@@ -26,14 +26,74 @@ One-page checklist for the v1 product shape.
 - [x] `rag-core serve` (health, runtime, ingest jobs, search, retrieve-context)
 - [x] No eval HTTP in v1
 
-## Phase E — v1 gate
+## Phase E — v0 release gate
 
 - [x] Local gates: ruff, mypy, pytest, build, wheel smoke
 - [x] `test_v1_product_gate.py` (CLI surface, Ragie-shaped hits)
-- [x] `roadmap.md` beta → stable checklist (Tier 0 freeze documented in plan)
+- [x] Tier 0 contract freeze documented in strategy plan
 
-## Post-v1.1
+## Phase F — One repo / DX (active)
 
-- TurboPuffer first-party adapter
-- Heavy eval reporting module if needed
-- Runtime eval endpoint only if demanded
+Strategy: `docs/plans/one-repo-retrieval-engine-strategy.md`
+
+### Journey C — self-host
+
+- [x] Golden path: `compose.yaml` + `docs/self-host/quickstart.md` + `.env.example`
+- [x] HTTP journey tests + `scripts/self_host_smoke.sh`; `serve` reuses one `RAGCore` per process
+- [x] Shape C3: OpenAPI + stable HTTP errors + rich health (`/health/ready`, `docs/self-host/auth.md`)
+- [x] Shape C2: `compose.yaml` Qdrant + `serve` image (`Dockerfile`), `docs/self-host/config.md`
+- [x] Ingest job errors include exception message (truncated)
+- [ ] Auth middleware shipped in core (recipe only — app-owned by design)
+
+### Journey A — first 10 minutes
+
+- [x] Shape A2: `docs/quickstart.md` guided path (hits, context, trace, eval)
+- [x] Shape A1: `scripts/dx_smoke.sh` non-interactive smoke
+- [x] Wheel-installed quickstart: `python -m rag_core.quickstart` (+ wheel smoke)
+- [x] CI DX smoke job (Python 3.12 in `ci.yml`)
+
+### Journey B — embed
+
+- [x] Shape B2: `docs/embedding/production-guide.md`
+- [x] Shape B1: `examples/embedded_service.py` lifecycle pattern
+- [x] Connector pattern: `docs/embedding/connector-pattern.md`
+
+### Research + quality
+
+- [x] `docs/research/managed-rag-landscape.md`
+- [x] `docs/research/oss-rag-landscape.md`
+- [x] `docs/research/retrieval-benchmark-corpus.md` (Q2 corpus selection TBD)
+- [ ] CI tiers: nightly `eval` workflow
+- [ ] Subagent programs: keep strategy docs current
+
+## Phase G — Shape refresh (active)
+
+Strategy: Phase G in `docs/plans/one-repo-retrieval-engine-strategy.md`
+
+### Default next slices
+
+- [ ] **Q2a** — named public benchmark corpus + nightly `eval` workflow
+- [ ] **B2.5** — production embed proof (lifecycle + tenancy + trace in example)
+- [ ] **C3b** — OpenAPI/route contract drift test
+
+### Journey V — TurboPuffer (v0 optional)
+
+Research: [docs/research/turbopuffer-landscape.md](docs/research/turbopuffer-landscape.md)
+
+- [x] **TP1** — base adapter (ANN, filters, upsert, delete, health, doctor, `--extra turbopuffer`)
+- [x] **TP2** — hybrid `QueryPlan` (BM25 + dense multi-query RRF; `lexical_query` on `SearchQuery`)
+- [x] **TP3** — SparseKNN + sparse upsert schema (honest capability matrix in doctor)
+
+**Maintainer order when something breaks:** `./scripts/dx_smoke.sh` → `doctor --json` → provider docs.
+
+## Later (only when we have external users or claims)
+
+- Q2a public benchmark corpus + nightly eval
+- B2.5 production embed proof slice
+- C3b OpenAPI drift gate
+
+## Phase F cleanup (done)
+
+- [x] Naming P1: `use_lexical_search`, `DocumentIndexer`, `cli_search`, `local_ingest`
+- [x] Local display rebrand tooling (`dev/project_identity.toml`, `scripts/local_rebrand.sh`)
+- [x] Human README + `docs/README.md` index

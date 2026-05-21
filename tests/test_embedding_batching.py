@@ -9,7 +9,7 @@ from rag_core.cli import _build_parser
 from rag_core.cli_doctor import _planned_runtime_payload
 from rag_core.config import EmbeddingConfig, QdrantConfig
 from rag_core.core_models import RAGCoreConfig
-from rag_core.search.indexer import IndexRequest, QdrantIndexer
+from rag_core.search.indexer import DocumentIndexer, IndexRequest
 from rag_core.search.indexer_embeddings import prepare_index_data
 
 from tests.support import (
@@ -133,7 +133,7 @@ def test_prepare_index_data_batches_dense_embeddings() -> None:
 def test_indexer_uses_configured_embedding_batch_size() -> None:
     async def _run() -> None:
         embedding = FakeEmbeddingProvider()
-        indexer = QdrantIndexer(
+        indexer = DocumentIndexer(
             embedding_provider=embedding,
             sparse_embedder=FakeSparseEmbedder(include_extra_channel=False),
             vector_store=RecordingVectorStore(),
@@ -151,7 +151,7 @@ def test_indexer_uses_configured_embedding_batch_size() -> None:
 def test_indexer_rejects_invalid_embedding_batch_size() -> None:
     for value in (0, 1.5):
         with pytest.raises(ValueError, match="embedding_batch_size"):
-            QdrantIndexer(
+            DocumentIndexer(
                 embedding_provider=FakeEmbeddingProvider(),
                 sparse_embedder=FakeSparseEmbedder(include_extra_channel=False),
                 vector_store=RecordingVectorStore(),
