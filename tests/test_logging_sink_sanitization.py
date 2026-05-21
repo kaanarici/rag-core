@@ -21,8 +21,10 @@ from rag_core.events.types import (
     StageError,
 )
 
+from tests.support import TEST_API_SECRET
+
 LOGGER_NAME = "rag_core.events"
-SECRET = "sk-test-secret"
+SECRET = TEST_API_SECRET
 TOKEN_SHAPED_SECRET = "ghp_abcdefghijklmnopqrstuvwxyz123456"
 AWS_ACCESS_KEY_LABEL = "AKIA1234567890ABCDEF"
 PREFIXED_OPENAI_SECRET = "openai:sk-proj-abcdefghijklmnopqrstuvwxyz123456"

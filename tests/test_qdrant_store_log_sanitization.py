@@ -10,9 +10,11 @@ import pytest
 
 from rag_core.search.providers.qdrant_lifecycle import create_qdrant_collection
 from rag_core.search.providers.qdrant_store import QdrantVectorStore
+from tests.support import TEST_API_SECRET
 
 LOGGER_NAME = "rag_core.search.providers.qdrant_store"
-SECRET = "sk-test-secret"
+
+SECRET = TEST_API_SECRET
 PRIVATE_COLLECTION = f"docs-{SECRET}"
 OTHER_PRIVATE_COLLECTION = f"archive-{SECRET}"
 

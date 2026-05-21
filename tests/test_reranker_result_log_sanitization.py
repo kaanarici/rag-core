@@ -5,9 +5,11 @@ import logging
 import pytest
 
 from rag_core.search.providers.rerank_results import safe_indexed_rerank_results
+from tests.support import TEST_API_SECRET
 
 LOGGER_NAME = "rag_core.search.providers.rerank_results"
-SECRET = "sk-test-secret"
+
+SECRET = TEST_API_SECRET
 
 
 class _DangerousValue:

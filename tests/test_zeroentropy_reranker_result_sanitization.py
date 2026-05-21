@@ -8,9 +8,11 @@ import pytest
 
 from rag_core.search.providers.zeroentropy import ZeroEntropyReranker
 from rag_core.search.providers.rerank_results import rerank_provider_result_count
+from tests.support import TEST_API_SECRET
 
 LOGGER_NAME = "rag_core.search.providers.rerank_results"
-SECRET = "sk-test-secret"
+
+SECRET = TEST_API_SECRET
 
 
 DangerousTypeName = type(

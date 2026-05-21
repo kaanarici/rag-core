@@ -64,5 +64,5 @@ uv run pytest -q -m live --maxfail=3
 
 ## Known gaps
 
-- Log-sanitization tests are per-module files; `assert_log_sanitized()` exists for future consolidation.
+- Log-sanitization tests share `tests.support.log_sanitization` helpers; migrate remaining files incrementally.
 - Live provider tests are optional and credential-gated (local only).

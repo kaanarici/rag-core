@@ -15,9 +15,10 @@ from rag_core.search.providers.qdrant_write_retry import (
     log_upsert_error,
     upsert_with_fallback,
 )
+from tests.support import TEST_API_SECRET
 
 LOGGER_NAME = "rag_core.search.providers.qdrant_write_retry"
-SECRET = "sk-test-secret"
+SECRET = TEST_API_SECRET
 
 
 class _SuccessfulUpsertClient:

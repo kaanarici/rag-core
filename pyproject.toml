@@ -15,7 +15,6 @@ classifiers = [
   'Programming Language :: Python :: 3.12',
   'Topic :: Scientific/Engineering :: Artificial Intelligence',
 ]
-urls = {Homepage = 'https://github.com/kaanarici/rag-core', Repository = 'https://github.com/kaanarici/rag-core', Issues = 'https://github.com/kaanarici/rag-core/issues'}
 dependencies = [
   'beautifulsoup4>=4.12.0',
   'defusedxml>=0.7.1',
@@ -105,7 +104,7 @@ where = ['src']
 [tool.pytest.ini_options]
 pythonpath = ['src']
 markers = [
-  "eval: retrieval-quality regression checks (also run by `uv run pytest -m eval -q`)",
+  "eval: PR retrieval regression on fixture embeddings (`tests/evals/test_retrieval_eval_pr.py`)",
   "eval_harness: metric/rerank plumbing tests that may use fake stores",
   "integration: local integration tests that exercise process, HTTP, or real in-memory backends",
   "meta: docs, packaging, exports, or repository-shape tests; not runtime proof",

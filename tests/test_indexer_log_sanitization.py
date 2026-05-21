@@ -6,7 +6,14 @@ import logging
 import pytest
 
 from rag_core.search.indexer import DocumentIndexer, IndexRequest
-from tests.support import FakeEmbeddingProvider, FakeSparseEmbedder, RecordingVectorStore
+from tests.support import (
+    FakeEmbeddingProvider,
+    FakeSparseEmbedder,
+    RecordingVectorStore,
+    TEST_API_SECRET,
+    assert_log_sanitized,
+    assert_no_log_exceptions,
+)
 
 
 def test_index_document_info_log_omits_document_identity(
@@ -43,12 +50,16 @@ def test_index_document_info_log_omits_document_identity(
     asyncio.run(run())
 
     assert "Indexed 1 chunks" in caplog.text
-    assert "doc-private" not in caplog.text
-    assert "corpus-private" not in caplog.text
-    assert "namespace-private" not in caplog.text
-    assert "private-roadmap" not in caplog.text
-    assert "/Users/person" not in caplog.text
-    assert "fox query" not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_log_sanitized(
+        caplog,
+        forbidden_substrings=(
+            "doc-private",
+            "corpus-private",
+            "namespace-private",
+            "private-roadmap",
+            "/Users/person",
+            "fox query",
+            TEST_API_SECRET,
+        ),
+    )
+    assert_no_log_exceptions(caplog)

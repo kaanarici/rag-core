@@ -6,8 +6,9 @@ import pytest
 
 from rag_core.search.providers import reranker as reranker_module
 from rag_core.search.providers.reranker import create_reranker
+from tests.support import TEST_API_SECRET
 
-SECRET = "sk-test-secret"
+SECRET = TEST_API_SECRET
 
 
 class ProviderSecretError(RuntimeError):
