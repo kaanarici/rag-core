@@ -4,6 +4,7 @@
 .claude/
 .env
 .env.local
+/.rag-core/
 /dev/project_identity.local.toml
 
 # Agent & planning docs (local only — see docs/templates/ + scripts/setup_agent_docs.sh)

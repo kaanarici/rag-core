@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 
 from rag_core.search.query_plan import (
     DenseChannel,
@@ -30,7 +30,7 @@ def resolve_turbopuffer_search_execution(
     plan = query.query_plan
     if plan is None:
         return TurboPufferSearchExecution(final_limit=query.limit, mode="dense")
-    return _execution_from_plan(plan, query=query)
+    return _execution_from_plan(plan)
 
 
 def _supported_query_plan_limit(plan: QueryPlan | None, *, fallback: int) -> int:
@@ -39,7 +39,7 @@ def _supported_query_plan_limit(plan: QueryPlan | None, *, fallback: int) -> int
     return _execution_from_plan(plan).final_limit
 
 
-def _execution_from_plan(plan: QueryPlan, *, query: SearchQuery) -> TurboPufferSearchExecution:
+def _execution_from_plan(plan: QueryPlan) -> TurboPufferSearchExecution:
     if plan.rerank is not None:
         raise UnsupportedQueryStage("turbopuffer adapter cannot honor MMR query plans")
     if plan.boost is not None:
@@ -91,8 +91,8 @@ def _execution_from_plan(plan: QueryPlan, *, query: SearchQuery) -> TurboPufferS
             raise UnsupportedQueryStage(
                 "turbopuffer adapter requires fusion for hybrid query plans"
             )
-        _validate_dense_channel(dense_prefetches[0].channel)
-        _validate_sparse_channel(sparse_prefetches[0].channel)
+        _validate_dense_channel(cast(DenseChannel, dense_prefetches[0].channel))
+        _validate_sparse_channel(cast(SparseChannel, sparse_prefetches[0].channel))
         return TurboPufferSearchExecution(
             final_limit=plan.final_limit,
             mode="hybrid_rrf",
@@ -106,7 +106,7 @@ def _execution_from_plan(plan: QueryPlan, *, query: SearchQuery) -> TurboPufferS
             raise UnsupportedQueryStage(
                 "turbopuffer adapter supports only single dense-channel query plans"
             )
-        _validate_dense_channel(dense_prefetches[0].channel)
+        _validate_dense_channel(cast(DenseChannel, dense_prefetches[0].channel))
         return TurboPufferSearchExecution(
             final_limit=plan.final_limit,
             mode="dense",
@@ -117,7 +117,7 @@ def _execution_from_plan(plan: QueryPlan, *, query: SearchQuery) -> TurboPufferS
         raise UnsupportedQueryStage(
             "turbopuffer adapter supports only single sparse-channel query plans"
         )
-    _validate_sparse_channel(sparse_prefetches[0].channel)
+    _validate_sparse_channel(cast(SparseChannel, sparse_prefetches[0].channel))
     return TurboPufferSearchExecution(
         final_limit=plan.final_limit,
         mode="sparse_knn",

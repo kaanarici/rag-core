@@ -37,12 +37,25 @@ class CliRuntimeError(RuntimeError):
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    return asyncio.run(async_main(argv))
+    parser = _build_parser()
+    args = parser.parse_args(list(argv) if argv is not None else None)
+    if args.command == "serve":
+        return run_serve_command(args)
+    return asyncio.run(_run_command(args, parser))
 
 
 async def async_main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
+    if args.command == "serve":
+        return run_serve_command(args)
+    return await _run_command(args, parser)
+
+
+async def _run_command(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+) -> int:
     try:
         if args.command == "doctor":
             return await run_doctor_command(args, core_factory=RAGCore)
@@ -107,8 +120,6 @@ async def async_main(argv: Sequence[str] | None = None) -> int:
                     event_sink=event_sink,
                 ),
             )
-        if args.command == "serve":
-            return run_serve_command(args)
     except (FetchError, FileNotFoundError, ValueError) as exc:
         parser.exit(
             2,

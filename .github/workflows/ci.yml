@@ -31,6 +31,10 @@ jobs:
         if: matrix.python-version == '3.12'
         run: ./scripts/dx_smoke.sh
 
+      - name: Self-host HTTP smoke (Journey C)
+        if: matrix.python-version == '3.12'
+        run: ./scripts/ci_self_host_smoke.sh
+
       - name: Lint
         run: uv run ruff check .
 

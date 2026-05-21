@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 import time
 from pathlib import Path
+from typing import Any, cast
+from urllib.error import URLError
+from urllib.request import urlopen
 
 import pytest
 
@@ -15,6 +20,23 @@ from rag_core.demo import DemoEmbeddingProvider, DemoSparseEmbedder
 from rag_core.runtime.app import create_app
 from rag_core.search.providers.embedding import create_embedding_provider
 from rag_core.search.providers.memory_store import InMemoryVectorStore
+
+pytestmark = [pytest.mark.integration]
+
+
+def _openapi_methods_by_path() -> dict[str, set[str]]:
+    openapi = Path("docs/self-host/openapi.yaml").read_text(encoding="utf-8")
+    paths: dict[str, set[str]] = {}
+    current_path: str | None = None
+    for line in openapi.splitlines():
+        if line.startswith("  /") and line.rstrip().endswith(":"):
+            current_path = line.strip()[:-1]
+            paths[current_path] = set()
+        elif current_path is not None and line.startswith("    "):
+            method = line.strip().rstrip(":").upper()
+            if method in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
+                paths[current_path].add(method)
+    return paths
 
 
 @pytest.fixture
@@ -50,6 +72,22 @@ def test_demo_embedding_provider_is_registered_for_serve() -> None:
     provider = create_embedding_provider(provider="demo", dimensions=8)
     assert provider.model_name == "demo-dense-v1"
     assert provider.dimensions == 8
+
+
+def test_openapi_paths_match_runtime_routes(runtime_client: TestClient) -> None:
+    route_methods: dict[str, set[str]] = {}
+    app = cast(Any, runtime_client.app)
+    for route in app.routes:
+        path = getattr(route, "path", None)
+        methods = getattr(route, "methods", None)
+        if isinstance(path, str) and methods:
+            route_methods[path] = {
+                method
+                for method in methods
+                if method in {"GET", "POST", "PUT", "PATCH", "DELETE"}
+            }
+
+    assert route_methods == _openapi_methods_by_path()
 
 
 def test_runtime_health_and_runtime_endpoints(runtime_client: TestClient) -> None:
@@ -180,3 +218,49 @@ def test_runtime_search_returns_hit_list(runtime_client: TestClient) -> None:
     )
     assert response.status_code == 200
     assert isinstance(response.json(), list)
+
+
+def test_serve_cli_starts_without_nested_event_loop() -> None:
+    pytest.importorskip("uvicorn")
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "rag_core",
+            "serve",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8797",
+            "--qdrant-location",
+            ":memory:",
+            "--embedding-provider",
+            "demo",
+            "--embedding-dimensions",
+            "64",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            try:
+                urlopen("http://127.0.0.1:8797/health", timeout=0.5).close()
+                break
+            except URLError:
+                pass
+            if proc.poll() is not None:
+                stderr = proc.stderr.read() if proc.stderr else ""
+                raise AssertionError(
+                    f"serve exited early ({proc.returncode}): {stderr}"
+                )
+            time.sleep(0.2)
+        else:
+            stderr = proc.stderr.read() if proc.stderr else ""
+            raise AssertionError(f"serve never became healthy: {stderr}")
+    finally:
+        proc.terminate()
+        proc.wait(timeout=5)

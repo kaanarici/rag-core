@@ -7,8 +7,12 @@ elsewhere.
 
 import asyncio
 
+import pytest
+
 from rag_core import RAGCore
 from tests.support import FakeEmbeddingProvider, FakeSparseEmbedder, make_test_config
+
+pytestmark = [pytest.mark.integration]
 
 
 def test_local_ingest_and_search_smoke() -> None:

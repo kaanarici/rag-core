@@ -574,6 +574,7 @@ def test_turbopuffer_delete_by_filter_rejects_non_positive_continuation_limit() 
     asyncio.run(_run())
 
 
+@pytest.mark.live
 def test_turbopuffer_live_smoke_when_configured() -> None:
     if not os.environ.get("TURBOPUFFER_API_KEY"):
         pytest.skip("set TURBOPUFFER_API_KEY to run the live smoke")

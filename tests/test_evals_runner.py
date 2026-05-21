@@ -228,7 +228,7 @@ def test_run_eval_records_search_failure_without_raw_exception_detail() -> None:
     assert "raw provider" not in repr(result)
 
 
-@pytest.mark.eval
+@pytest.mark.eval_harness
 def test_run_eval_can_measure_rerank_improvement() -> None:
     async def go() -> tuple[list[EvalResult], list[EvalResult], FakeReranker]:
         store = RecordingVectorStore(

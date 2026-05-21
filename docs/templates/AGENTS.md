@@ -8,7 +8,8 @@
 2. [plans/ROUTING.md](plans/ROUTING.md)  
 3. [README.md](README.md) — product doc catalog  
 4. [../scripts/README.md](../scripts/README.md)  
-5. [../../README.md](../../README.md) (product) · local `roadmap.md` if present  
+5. [../../tests/README.md](../../tests/README.md) before claiming validation strength  
+6. [../../README.md](../../README.md) (product) · local `roadmap.md` if present  
 
 Use `.codex/skills/` for substantial work: `decide`, `repo-intake`, `blueprint`, `grind`, `review`, `finish-line`.
 
@@ -24,6 +25,8 @@ uv sync --group dev
 uv run ruff check .
 uv run mypy src tests examples
 uv run pytest -q
+./scripts/dx_smoke.sh
+./scripts/ci_self_host_smoke.sh
 ```
 
 ## Work slicing

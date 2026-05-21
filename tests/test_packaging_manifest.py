@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+pytestmark = [pytest.mark.meta]
+
 
 def test_sdist_manifest_includes_readme_link_targets() -> None:
     manifest = Path("MANIFEST.in").read_text(encoding="utf-8")

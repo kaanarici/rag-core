@@ -1,6 +1,6 @@
 # rag-core context
 
-**Read order for agents:** this file → [plans/ROUTING.md](plans/ROUTING.md) → [../../README.md](../../README.md) → local `roadmap.md` if present.
+**Read order for agents:** this file → [plans/ROUTING.md](plans/ROUTING.md) → [../tests/README.md](../tests/README.md) → [../../README.md](../../README.md) → local `roadmap.md` if present.
 
 **Local only** — generated from [templates/CONTEXT.md](templates/CONTEXT.md). Do not commit.
 
@@ -18,7 +18,7 @@
 |---------|--------|-------|
 | Library | `RAGCore`, `examples/` | `./scripts/dx_smoke.sh` |
 | CLI | `rag-core` (`doctor`, `ingest`, `search`, `local-search`, …) | `dx_smoke.sh` |
-| HTTP (optional) | `uv sync --extra runtime` → `rag-core serve` | `./scripts/self_host_smoke.sh` |
+| HTTP (optional) | `uv sync --extra runtime` → `rag-core serve` | `./scripts/ci_self_host_smoke.sh` |
 
 ## Maintainer loop
 
@@ -36,9 +36,9 @@ CI parity: [../scripts/README.md](../scripts/README.md).
 |---------|--------|-----|
 | A — First 10 minutes | **Done** | [quickstart.md](quickstart.md) |
 | B — Embed | Docs done | [README embed section](../../README.md#embed-in-your-app) |
-| C — Self-host | **Done** (C3+C2) | [self-host/quickstart.md](self-host/quickstart.md) |
-| V — TurboPuffer | **Done** (optional extra) | [providers/vector-stores.md](providers/vector-stores.md) |
-| Q — Quality proof | **Open** (Q2a on roadmap) | [roadmap.md](../roadmap.md) |
+| C — Self-host | **Done** (C3+C2) | [self-host.md](self-host.md) |
+| V — TurboPuffer | **Done** (optional extra; adapter-tested unless live creds are present) | [providers.md](providers.md) |
+| Q — Quality proof | **Open** | [tests/README.md](../tests/README.md) |
 
 Optional local research notes: `docs/research/` (gitignored).
 

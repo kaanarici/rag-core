@@ -104,6 +104,10 @@ where = ['src']
 pythonpath = ['src']
 markers = [
   "eval: retrieval-quality regression checks (also run by `uv run pytest -m eval -q`)",
+  "eval_harness: metric/rerank plumbing tests that may use fake stores",
+  "integration: local integration tests that exercise process, HTTP, or real in-memory backends",
+  "meta: docs, packaging, exports, or repository-shape tests; not runtime proof",
+  "live: tests that require external provider credentials or services",
 ]
 
 [tool.ruff]
@@ -142,5 +146,6 @@ module = [
   'qdrant_client.*',
   'sentence_transformers',
   'tree_sitter_language_pack',
+  'turbopuffer',
 ]
 ignore_missing_imports = true

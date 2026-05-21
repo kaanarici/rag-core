@@ -142,7 +142,10 @@ uv run ruff check .
 uv run mypy src tests examples
 uv run pytest -q
 ./scripts/dx_smoke.sh
-uv build && uv run python scripts/wheel_smoke.py
+./scripts/ci_self_host_smoke.sh
+uv build
+uv run python scripts/check_dist_artifacts.py
+uv run python scripts/wheel_smoke.py
 ```
 
 ## Troubleshooting

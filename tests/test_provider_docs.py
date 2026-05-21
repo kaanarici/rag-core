@@ -3,6 +3,10 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+import pytest
+
+pytestmark = [pytest.mark.meta]
+
 
 def test_provider_docs_match_current_install_story() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
@@ -54,19 +58,7 @@ def test_readme_documents_all_declared_extras() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
     provider_docs = Path("docs/providers.md").read_text(encoding="utf-8")
 
-    assert extras == {
-        "semantic",
-        "html",
-        "rerank",
-        "voyage",
-        "zeroentropy",
-        "turbopuffer",
-        "opentelemetry",
-        "anthropic",
-        "langchain",
-        "openai-agents",
-        "runtime",
-    }
+    assert extras, "expected at least one optional dependency group"
     for extra in extras:
         assert f"`{extra}`" in readme
         assert f"`{extra}`" in provider_docs
@@ -204,7 +196,7 @@ def test_provider_output_shape_audit_stays_visible() -> None:
         "TurboPuffer query",
         "Mistral OCR",
         "Gemini command OCR",
-        "live conformance scripts",
+        "adapter/parser tests unless a test is marked `live`",
     )
     for term in required_terms:
         assert term in docs

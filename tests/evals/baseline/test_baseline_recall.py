@@ -20,7 +20,6 @@ import pytest
 
 from rag_core import RAGCore
 from rag_core.evals import EvalResult, load_cases, run_eval
-from rag_core.search.providers.memory_store import InMemoryVectorStore
 from tests.support import (
     BASELINE_VOCABULARY,
     KeywordEmbeddingProvider,
@@ -59,7 +58,6 @@ async def _run_baseline_eval() -> None:
         config,
         embedding_provider=KeywordEmbeddingProvider(BASELINE_VOCABULARY),
         sparse_embedder=KeywordSparseEmbedder(BASELINE_VOCABULARY),
-        vector_store=InMemoryVectorStore(),
     )
     try:
         await core.ensure_ready()

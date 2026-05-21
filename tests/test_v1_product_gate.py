@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from rag_core.cli import main
@@ -26,12 +28,16 @@ def test_search_hit_payload_matches_ragie_scored_chunk_fields() -> None:
         score=0.88,
     )
     payload = search_hit_payload(hit)
-    for field in ("id", "text", "score", "document_id", "document_key"):
-        assert field in payload
+    assert payload["id"] == hit.id
+    assert payload["text"] == hit.text
+    assert payload["score"] == 0.88
+    assert payload["document_id"] == "doc-1"
+    assert payload["document_key"] == "docs/guide.md"
+    assert isinstance(payload["metadata"], dict)
 
 
 def test_beta_stable_tag_policy_documented() -> None:
-    pyproject = open("pyproject.toml", encoding="utf-8").read()
-    readme = open("README.md", encoding="utf-8").read()
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
     assert "Development Status :: 4 - Beta" in pyproject
-    assert "rag-core" in readme
+    assert "Product identifiers (`rag_core`, `rag-core`, `RAGCore`) are stable" in readme

@@ -11,7 +11,7 @@ Vector stores, custom extension points, and provider wire-shape notes.
 | Level | Meaning |
 | --- | --- |
 | first-party default | Default CLI/runtime path, contract tests, diagnostics |
-| first-party optional | Managed adapter behind `--extra` |
+| first-party optional | Managed adapter behind `--extra`; adapter tests by default, optional live smoke when credentials are present |
 | utility adapter | Tests/smoke only (e.g. in-memory) |
 
 | Provider | Maturity | Entrypoint |
@@ -99,4 +99,5 @@ Checked against provider docs on 2026-05-20. Contract audit for first-party adap
 | Mistral OCR | `pages[]` with `markdown` |
 | Gemini command OCR | `generateContent` multimodal path; page selection unsupported |
 
-Follow-up: live conformance scripts when API keys are present (shape only). Extend TurboPuffer only with explicit query-plan contract tests.
+Provider output-shape rows are adapter/parser tests unless a test is marked `live`.
+Extend TurboPuffer only with explicit query-plan contract tests.
