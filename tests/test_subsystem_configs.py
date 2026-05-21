@@ -14,7 +14,6 @@ from rag_core.config import (
     IngestConfig,
     QdrantConfig,
     RerankerConfig,
-    TurboPufferVectorStoreConfig,
     VectorStoreConfig,
 )
 from rag_core.core_models import DEFAULT_PROCESSING_VERSION
@@ -102,41 +101,15 @@ def test_ingest_config_defaults() -> None:
 def test_vector_store_config_defaults_to_qdrant() -> None:
     config = VectorStoreConfig()
     assert config.provider == "qdrant"
-    assert config.turbopuffer.namespace is None
 
 
 def test_vector_store_config_normalizes_provider() -> None:
-    assert VectorStoreConfig(provider=" TurboPuffer ").provider == "turbopuffer"
+    assert VectorStoreConfig(provider=" Qdrant ").provider == "qdrant"
 
 
 def test_vector_store_config_rejects_unknown_provider() -> None:
-    with pytest.raises(ValueError, match="qdrant, turbopuffer"):
+    with pytest.raises(ValueError, match="qdrant"):
         VectorStoreConfig(provider="unknown")
-
-
-def test_turbopuffer_vector_store_config_normalizes_values() -> None:
-    config = TurboPufferVectorStoreConfig(
-        namespace=" docs ",
-        api_key=" key ",
-        region=" aws-us-west-2 ",
-        base_url=" https://example.invalid ",
-        distance_metric=" cosine_distance ",
-    )
-    assert config.namespace == "docs"
-    assert config.api_key == "key"
-    assert config.region == "aws-us-west-2"
-    assert config.base_url == "https://example.invalid"
-    assert config.distance_metric == "cosine_distance"
-
-
-def test_turbopuffer_vector_store_config_rejects_blank_metric() -> None:
-    with pytest.raises(ValueError, match="distance_metric"):
-        TurboPufferVectorStoreConfig(distance_metric=" ")
-
-
-def test_turbopuffer_vector_store_config_rejects_unknown_metric() -> None:
-    with pytest.raises(ValueError, match="cosine_distance, euclidean_squared"):
-        TurboPufferVectorStoreConfig(distance_metric="dot_product")
 
 
 def test_rag_core_config_composes_subsystem_configs() -> None:

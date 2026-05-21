@@ -4,6 +4,7 @@ import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from rag_core.cli_inputs import cli_safe_error_message
 from rag_core.core_models import RAGCoreConfig
 from rag_core.search.providers.embedding_models import resolve_embedding_dimensions
 from rag_core.search.types import SparseVector
@@ -95,6 +96,14 @@ async def exercise_doctor_store(
                         "`rag-core ingest --force-reindex` against a fresh collection "
                         "or recreate the collection manually."
                     ),
+                },
+            )
+        except Exception as exc:
+            return DoctorStoreOutcome(
+                health={"healthy": False, "error": cli_safe_error_message(exc, action="doctor")},
+                fix_summary={
+                    "status": "store_unavailable",
+                    "message": "Vector store is not reachable with the current configuration.",
                 },
             )
         health = await core.check_health()

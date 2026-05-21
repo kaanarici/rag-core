@@ -168,22 +168,6 @@ def test_build_core_components_rejects_store_without_record_lookup() -> None:
     assert "_MinimalVectorStore" in str(exc_info.value)
 
 
-def test_rag_core_turbopuffer_config_uses_namespace_as_collection() -> None:
-    core = RAGCore(
-        make_test_config(
-            vector_store_provider="turbopuffer",
-            turbopuffer_namespace="prod-docs",
-            embedding_dimensions=4,
-        ),
-        embedding_provider=FakeEmbeddingProvider(),
-        sparse_embedder=FakeSparseEmbedder(),
-    )
-    try:
-        assert core.describe_runtime()["collection_name"] == "prod-docs"
-    finally:
-        asyncio.run(core.close())
-
-
 def test_rag_core_round_trip_against_memory_vector_store() -> None:
     """End-to-end ingest+retrieve against the in-memory store.
 
@@ -350,7 +334,7 @@ def test_vector_stores_registry_creates_memory_store_by_name() -> None:
 
 def test_vector_stores_registry_lists_known_factories() -> None:
     names = VECTOR_STORES.names()
-    assert {"memory", "qdrant", "turbopuffer"}.issubset(set(names))
+    assert {"memory", "qdrant"}.issubset(set(names))
 
 
 def test_vector_stores_registry_rejects_unknown_name() -> None:

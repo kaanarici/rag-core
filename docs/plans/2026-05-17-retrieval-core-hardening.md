@@ -23,7 +23,7 @@ Current repo direction:
 - Repo policy keeps the library core-sized, typed, and embeddable.
 - The optional runtime boundary is documented in ADR-0004; the core library remains the source of truth.
 - Qdrant is the accessible default vector store.
-- TurboPuffer is the intended first-party managed vector-store option.
+- v1 ships Qdrant only in the wheel; TurboPuffer returns as a first-party optional adapter in v1.1 (ADR-0001 addendum).
 
 Current strong surfaces:
 
@@ -58,8 +58,8 @@ rag-core as an OSS retrieval engine
 ├── first 10 minutes
 │   ├── local-search on a real folder with no key
 │   ├── doctor for runtime and provider shape
-│   ├── trace-summary for inspectable behavior
-│   └── eval gates for retrieval-quality proof
+│   ├── events JSONL + summarize_search_trace for inspectable behavior
+│   └── library evals + examples/retrieval_eval for retrieval-quality proof
 ├── embedded app path
 │   ├── RAGCore as the stable facade
 │   ├── application-owned async lifecycle and shutdown
@@ -88,7 +88,7 @@ rag-core as an OSS retrieval engine
 │   └── citation-preserving context packs
 ├── first-party provider policy
 │   ├── Qdrant as the default self-hosted path
-│   ├── TurboPuffer as the managed first-party path
+│   ├── TurboPuffer deferred to v1.1 (managed first-party path)
 │   ├── declared capability limits fail closed
 │   └── first-party support requires docs, diagnostics, and tests
 └── codebase trust
@@ -109,7 +109,7 @@ Keep the first successful path short, accurate, and inspectable.
 Priority:
 
 - README and examples should continue to reflect the actual first-run loop.
-- Doctor, local-search, search, retrieve-context, trace-summary, and eval should remain the canonical inspect loop.
+- Doctor, local-search, search, retrieve-context, events JSONL, and library evals should remain the canonical inspect loop.
 - Packaging and release metadata should stay aligned with the public engine shape.
 
 Do not reopen:

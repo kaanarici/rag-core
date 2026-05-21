@@ -15,6 +15,9 @@ class _FakePack:
     def as_text(self) -> str:
         return self._text
 
+    def as_model_text(self) -> str:
+        return self._text
+
     def to_payload(self) -> dict[str, object]:
         return self._payload
 
@@ -189,6 +192,47 @@ def test_retrieve_context_tool_binds_scope_and_default_arguments(
     assert call["max_chars"] == 400
     assert call["max_tokens"] is None
     assert call["document_ids"] is None
+
+
+def test_retrieve_context_tool_prefers_model_text_over_as_text_when_payload_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_agents(monkeypatch)
+
+    class _SplitPack(_FakePack):
+        def __init__(self) -> None:
+            super().__init__(text="", payload=_context_payload())
+
+        def as_text(self) -> str:
+            return "LEAK private/billing.md"
+
+        def as_model_text(self) -> str:
+            return "safe billing context"
+
+    core = _FakeCore(_SplitPack())
+    tool_fn = build_retrieve_context_tool(
+        core,
+        namespace="acme",
+        corpus_ids=["help"],
+        return_payload=False,
+    )
+
+    assert asyncio.run(tool_fn(query="billing")) == "safe billing context"
+
+
+def test_retrieve_context_tool_falls_back_to_as_text_without_model_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_agents(monkeypatch)
+    core = _FakeCore(_FakePack(text="legacy context", payload=_context_payload()))
+    tool_fn = build_retrieve_context_tool(
+        core,
+        namespace="acme",
+        corpus_ids=["help"],
+        return_payload=False,
+    )
+
+    assert asyncio.run(tool_fn(query="billing")) == "legacy context"
 
 
 def test_retrieve_context_tool_allows_per_call_overrides_and_returns_payload(

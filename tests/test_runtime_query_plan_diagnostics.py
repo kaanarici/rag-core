@@ -6,12 +6,7 @@ from collections.abc import Callable
 
 from rag_core import RAGCore
 from rag_core.cli_doctor import _planned_runtime_payload
-from rag_core.config import (
-    EmbeddingConfig,
-    QdrantConfig,
-    TurboPufferVectorStoreConfig,
-    VectorStoreConfig,
-)
+from rag_core.config import EmbeddingConfig, QdrantConfig
 from rag_core.core_models import RAGCoreConfig
 from rag_core.core_runtime import describe_query_plan_capabilities
 from rag_core.documents.contextualizer import NoOpContextualizer
@@ -21,7 +16,6 @@ from rag_core.search.lexical_sidecar import PortableLexicalSidecar
 from rag_core.search.providers.embedding_cache import InMemoryChunkContextCache
 from rag_core.search.providers.memory_store import InMemoryVectorStore
 from rag_core.search.providers.qdrant_store import QdrantVectorStore
-from rag_core.search.providers.turbopuffer_store import TurboPufferVectorStore
 
 from tests.support import (
     FakeEmbeddingProvider,
@@ -217,31 +211,3 @@ def test_doctor_qdrant_query_plan_diagnostics_match_adapter_capabilities() -> No
     assert isinstance(qdrant, dict)
     assert qdrant["query_plan_scope"] == "adapter_maximum"
     assert qdrant["query_plan"] == expected
-
-
-def test_doctor_turbopuffer_query_plan_diagnostics_match_adapter_capabilities() -> None:
-    store = TurboPufferVectorStore(
-        namespace="docs",
-        dense_dimensions=4,
-        namespace_client=object(),
-    )
-    expected = describe_query_plan_capabilities(store.capabilities.query_plan)
-
-    payload = _planned_runtime_payload(
-        RAGCoreConfig(
-            vector_store=VectorStoreConfig(
-                provider="turbopuffer",
-                turbopuffer=TurboPufferVectorStoreConfig(namespace="docs"),
-            ),
-            embedding=EmbeddingConfig(model="text-embedding-3-small", dimensions=4),
-        )
-    )
-
-    vector_store = payload["vector_store"]
-    assert isinstance(vector_store, dict)
-    providers = vector_store["providers"]
-    assert isinstance(providers, dict)
-    turbopuffer = providers["turbopuffer"]
-    assert isinstance(turbopuffer, dict)
-    assert turbopuffer["query_plan_scope"] == "adapter_maximum"
-    assert turbopuffer["query_plan"] == expected

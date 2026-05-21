@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 
+from rag_core.cli_help_examples import apply_command_examples
+
 
 def add_manifest_commands(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
@@ -30,6 +32,7 @@ def add_manifest_commands(
         help="Repeatable metadata field.",
     )
     manifest.add_argument("--json", action="store_true", help="Emit JSON output.")
+    apply_command_examples(manifest, "manifest")
 
     manifest_compact = subparsers.add_parser(
         "manifest-compact",

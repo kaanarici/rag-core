@@ -4,7 +4,7 @@ from pathlib import Path
 
 from rag_core.documents.converters.format_support import unsupported_local_file_message
 from rag_core.local_ingest_models import LocalIngestPlan, LocalIngestRequest
-from rag_core.local_sources import reject_local_symlink_path
+from rag_core.local_sources import reject_local_hardlink_path, reject_local_symlink_path
 from rag_core.manifest_persistence import (
     ManifestReconciliation,
     read_entries,
@@ -54,6 +54,7 @@ def validate_supported_local_file(path: Path, *, label: str = "path") -> None:
     if not path.is_file():
         raise ValueError(f"{label} must be a file: {str(path)!r}")
     reject_local_symlink_path(path)
+    reject_local_hardlink_path(path)
     if not is_supported_local_candidate(path):
         raise ValueError(unsupported_local_file_message(path, label=label))
 

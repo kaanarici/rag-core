@@ -12,20 +12,19 @@ from typing import TYPE_CHECKING, Sequence
 from rag_core.cli_archive import run_ingest_archive_command
 from rag_core.cli_demo import run_demo_command
 from rag_core.cli_doctor import run_doctor_command
-from rag_core.cli_eval import run_eval_command
 from rag_core.cli_ingest import run_ingest_command
 from rag_core.cli_inputs import cli_safe_error_message
 from rag_core.cli_local_search import run_local_search_command
 from rag_core.cli_manifest import run_manifest_command, run_manifest_compact_command
 from rag_core.cli_parser import _build_parser
 from rag_core.cli_query import run_query_command
+from rag_core.cli_serve import run_serve_command
 from rag_core.cli_remote import (
     run_discover_remote_command,
     run_ingest_url_command,
     run_ingest_urls_command,
 )
 from rag_core.cli_remote_fetch import remote_discovery_reader as _remote_discovery_reader
-from rag_core.cli_trace import run_trace_summary
 from rag_core.core import RAGCore
 from rag_core.fetching import FetchError
 
@@ -108,19 +107,8 @@ async def async_main(argv: Sequence[str] | None = None) -> int:
                     event_sink=event_sink,
                 ),
             )
-        if args.command == "trace-summary":
-            return run_trace_summary(args)
-        if args.command == "eval":
-            return await _run_with_event_sink(
-                args,
-                lambda event_sink: run_eval_command(
-                    args,
-                    core_factory=lambda config: RAGCore(
-                        config,
-                        event_sink=event_sink,
-                    ),
-                ),
-            )
+        if args.command == "serve":
+            return run_serve_command(args)
     except (FetchError, FileNotFoundError, ValueError) as exc:
         parser.exit(
             2,

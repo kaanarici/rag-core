@@ -7,7 +7,6 @@ import pytest
 from rag_core.search.pipeline import HybridRetrieve, PipelineContext, PipelineQuery
 from rag_core.search.providers.memory_store import InMemoryVectorStore
 from rag_core.search.providers.qdrant_store import QdrantVectorStore
-from rag_core.search.providers.turbopuffer_store import TurboPufferVectorStore
 from rag_core.search.query_plan import (
     DenseChannel,
     Prefetch,
@@ -43,25 +42,6 @@ def test_qdrant_specific_shape_preflight_runs_before_embedding() -> None:
         _assert_rejects_before_embedding(store, plan, match="Fuse or MMR rerank")
     finally:
         asyncio.run(store.close())
-
-
-def test_turbopuffer_specific_shape_preflight_runs_before_embedding() -> None:
-    store = TurboPufferVectorStore(
-        namespace="docs",
-        dense_dimensions=4,
-        namespace_client=object(),
-    )
-    plan = QueryPlan(
-        prefetches=(
-            Prefetch(
-                channel=DenseChannel(vector_field="alternate"),
-                limit=20,
-            ),
-        ),
-        final_limit=5,
-    )
-
-    _assert_rejects_before_embedding(store, plan, match="primary dense query vector")
 
 
 def test_memory_specific_shape_preflight_runs_before_embedding() -> None:

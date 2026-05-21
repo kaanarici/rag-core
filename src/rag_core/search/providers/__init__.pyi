@@ -22,9 +22,6 @@ from rag_core.search.providers.registry import (
     VECTOR_STORES as VECTOR_STORES,
     ProviderRegistry as ProviderRegistry,
 )
-from rag_core.search.providers.turbopuffer_store import (
-    TurboPufferVectorStore as TurboPufferVectorStore,
-)
 from rag_core.search.types import (
     EmbeddingProvider,
     QueryPlanCapabilities as QueryPlanCapabilities,

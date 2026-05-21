@@ -148,7 +148,6 @@ def test_provider_exports_are_curated() -> None:
         "SEARCH_SIDECARS",
         "SPARSE_EMBEDDERS",
         "StoreCapabilities",
-        "TurboPufferVectorStore",
         "VECTOR_STORES",
         "VectorStorePolicy",
         "create_chunk_context_cache",

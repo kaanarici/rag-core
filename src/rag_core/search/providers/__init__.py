@@ -17,7 +17,6 @@ __all__ = (
     "SEARCH_SIDECARS",
     "SPARSE_EMBEDDERS",
     "StoreCapabilities",
-    "TurboPufferVectorStore",
     "VECTOR_STORES",
     "VectorStorePolicy",
     "create_chunk_context_cache",
@@ -51,10 +50,6 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         "QdrantVectorStore",
     ),
     "StoreCapabilities": ("rag_core.search.types", "StoreCapabilities"),
-    "TurboPufferVectorStore": (
-        "rag_core.search.providers.turbopuffer_store",
-        "TurboPufferVectorStore",
-    ),
     "VECTOR_STORES": ("rag_core.search.providers.registry", "VECTOR_STORES"),
     "VectorStorePolicy": ("rag_core.search.policy", "VectorStorePolicy"),
     "create_chunk_context_cache": (

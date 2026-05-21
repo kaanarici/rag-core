@@ -65,7 +65,7 @@ def looks_like_garbled_pdf_text(text: str) -> bool:
 
     if control_char_count > 0 and control_char_count > normal_char_count:
         return True
-    if private_use_count >= 2:
+    if private_use_count >= 1:
         return True
     if arabic_count >= 2 and latin_extended_count >= 2:
         return True

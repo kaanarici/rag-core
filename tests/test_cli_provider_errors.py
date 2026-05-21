@@ -25,10 +25,6 @@ class _VoyageError(Exception):
     __module__ = "voyageai"
 
 
-class _TurboPufferError(Exception):
-    __module__ = "turbopuffer"
-
-
 class _MistralError(Exception):
     __module__ = "mistral"
 
@@ -47,7 +43,6 @@ class _AnthropicError(Exception):
         (_OpenAIError("raw api_key client option OPENAI_API_KEY"), "openai", "OPENAI_API_KEY"),
         (_CohereError("missing key"), "cohere", "COHERE_API_KEY"),
         (_VoyageError("missing key"), "voyage", "VOYAGE_API_KEY"),
-        (_TurboPufferError("missing key"), "turbopuffer", "TURBOPUFFER_API_KEY"),
         (_MistralError("missing key"), "mistral", "MISTRAL_API_KEY"),
         (_GeminiError("missing key"), "gemini", "GEMINI_API_KEY"),
         (_AnthropicError("missing key"), "anthropic", "ANTHROPIC_API_KEY"),

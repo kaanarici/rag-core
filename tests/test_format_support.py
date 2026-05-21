@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -94,6 +95,21 @@ def test_known_mapped_binary_formats_do_not_fall_back_to_text_when_converter_mis
 
     with pytest.raises(RuntimeError, match="mapped.*unavailable"):
         converters_module.get_converter(filename=filename, mime_type=mime_type)
+
+
+def test_validate_supported_local_file_rejects_hardlinked_path(tmp_path: Path) -> None:
+    if not hasattr(os, "link"):
+        pytest.skip("hardlinks are unavailable on this platform")
+    source = tmp_path / "source.md"
+    source.write_text("secret", encoding="utf-8")
+    alias = tmp_path / "alias.md"
+    try:
+        os.link(source, alias)
+    except OSError as exc:
+        pytest.skip(f"hardlink support unavailable: {exc}")
+
+    with pytest.raises(ValueError, match="does not allow multi-link"):
+        validate_supported_local_file(alias, label="ingest path")
 
 
 def test_unsupported_local_file_message_is_actionable(tmp_path: Path) -> None:

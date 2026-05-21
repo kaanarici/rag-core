@@ -10,7 +10,6 @@ _PROVIDER_ENV_VARS = {
     "mistral": ("MISTRAL_API_KEY",),
     "voyage": ("VOYAGE_API_KEY",),
     "voyageai": ("VOYAGE_API_KEY",),
-    "turbopuffer": ("TURBOPUFFER_API_KEY",),
     "zeroentropy": ("ZEROENTROPY_API_KEY",),
 }
 _PROVIDER_NAMES = tuple(_PROVIDER_ENV_VARS)
@@ -21,7 +20,6 @@ _PROVIDER_MODULES = {
     "google",
     "mistral",
     "openai",
-    "turbopuffer",
     "voyageai",
     "zeroentropy",
 }
@@ -87,7 +85,7 @@ def _provider_name(exc: Exception) -> str:
         return "voyage"
     if module == "google":
         return "gemini"
-    if module in {"anthropic", "openai", "cohere", "gemini", "mistral", "turbopuffer", "zeroentropy"}:
+    if module in {"anthropic", "openai", "cohere", "gemini", "mistral", "zeroentropy"}:
         return module
     message = str(exc).lower()
     for provider in _PROVIDER_NAMES:

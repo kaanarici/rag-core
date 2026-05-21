@@ -23,6 +23,7 @@ REQUIRED_SDIST_SUFFIXES = frozenset(
         "docs/providers/custom-providers.md",
         "docs/providers/provider-output-shapes.md",
         "docs/providers/vector-stores.md",
+        "docs/expectations.md",
         "docs/evals/retrieval-quality.md",
         "docs/integrations/vercel-ai-sdk-tools.md",
         "examples/minimal_app.py",

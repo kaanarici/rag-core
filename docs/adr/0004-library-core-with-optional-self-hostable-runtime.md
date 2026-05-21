@@ -37,7 +37,7 @@ Keeping runtime optional also protects dependency weight. Library users should n
 - Runtime dependencies must be optional extras or isolated modules.
 - `import rag_core` must stay cheap and must not import runtime dependencies.
 - If `rag-core serve` is added, it must call public core APIs instead of reimplementing pipeline behavior.
-- Runtime endpoints should be minimal at first: health, runtime description, ingest, job status, query, context pack, and eval.
+- Runtime endpoints should be minimal at first: health, runtime description, ingest, job status, search, and retrieve-context. Eval HTTP stays out of v1; apps use `rag_core.evals` or `examples/retrieval_eval.py`.
 - Auth must be externally pluggable or minimal until a separate product layer exists.
 - No team, billing, hosted account, admin UI, or connector marketplace concepts belong in the core runtime.
 - Runtime state should use explicit contracts such as job backend, corpus state store, blob store, and trace writer only when JSONL manifests and direct library calls are insufficient.

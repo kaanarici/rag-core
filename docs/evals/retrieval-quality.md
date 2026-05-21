@@ -29,61 +29,21 @@ Source-checkout smoke test that creates a small demo corpus, runs three eval cas
 uv run python -m examples.retrieval_eval
 ```
 
-## CLI
+## Library runner (v1)
 
-Run a baseline retrieval eval against an already indexed collection:
+v1 ships evals as a **library** and checkout example. There is no `rag-core eval` CLI.
 
-```bash
-uv run rag-core eval \
-  --cases cases.jsonl \
-  --qdrant-url http://localhost:6333 \
-  --search-profile balanced \
-  --min-recall-at-5 0.8 \
-  --min-mrr 0.7 \
-  --max-mean-latency-ms 250 \
-  --max-p95-latency-ms 500 \
-  --min-throughput-qps 4 \
-  --events-jsonl traces/eval.jsonl \
-  --json
-```
-
-Compare common search profiles before changing defaults:
+Run the checkout smoke that indexes `examples/demo_corpus`, evaluates three cases, applies quality gates, and prints a redacted JSON report:
 
 ```bash
-uv run rag-core eval \
-  --cases cases.jsonl \
-  --qdrant-url http://localhost:6333 \
-  --compare-search-profiles balanced fast lexical \
-  --min-mrr 0.7 \
-  --json
+uv run python -m examples.retrieval_eval
 ```
 
-Profile comparisons use a deterministic baseline profile: the lexicographically smallest profile name. Library callers can set a different baseline explicitly. Reordering `--compare-search-profiles` arguments does not change deltas.
+Build your own worker or CI script with `load_cases`, `run_eval`, `eval_report`, `add_quality_gate`, and `eval_exit_code`. Attach a `run` metadata object so reports record vector store, embedding model, search profile, and rerank settings.
 
-Compare reranking against the same cases:
+`eval_report(...)` returns per-case metrics (`recall_at_5`, `recall_at_10`, `mrr`, `ndcg_at_10`, `latency_ms`). Call `redact_eval_report(...)` before publishing artifacts to shared logs. Quality gates return exit code `1` when a configured floor or ceiling fails.
 
-```bash
-uv run rag-core eval \
-  --cases cases.jsonl \
-  --qdrant-url http://localhost:6333 \
-  --compare-rerank \
-  --reranker-provider cohere \
-  --reranker-model rerank-english-v3.0 \
-  --min-ndcg-at-10 0.8 \
-  --json
-```
-
-Quality gates return exit code `1` when a configured floor or ceiling fails. Latency gates include mean latency, p95 latency, and throughput so a fast average cannot hide a slow tail. In rerank comparison mode, gates apply to the reranked result. In search-profile comparison mode, gates apply to every compared profile.
-
-CLI JSON output includes a top-level `run` object for single evals and per-branch `run` objects inside rerank and profile comparisons. By default, `rag-core eval --json` redacts raw case/query identifiers and emits stable case ordinals, labels, counts, metrics, quality gates, and run metadata.
-
-Use `rag-core eval --json --json-raw` only when you need raw `case_id`, `query`, `namespace`, `corpus_ids`, `expected_chunk_ids`, `expected_grades`, and `retrieved_ids` for debugging. Treat raw report artifacts as sensitive when cases contain customer text, private corpus names, tenant scopes, or internal document IDs.
-
-Library helpers such as `eval_report(...)` and `eval_comparison_report(...)` return the raw report shape. Call `redact_eval_report(...)` before publishing those payloads to shared logs or CI artifacts. The `examples/retrieval_eval.py` script prints a redacted report while still using the raw report for the quality-gate exit code.
-
-Run metadata records the runtime and retrieval shape under test: `rag-core` version, Python version, vector store, physical collection or namespace, embedding model, search profile or query-plan preset, rerank toggle, reranker provider, and rerank budget. Reports do not include API keys or provider secrets.
-
-Add `--events-jsonl` when an eval failure needs the same sanitized search trace events that `search --events-jsonl` writes. The trace file can be summarized with `rag-core trace-summary traces/eval.jsonl --json`; event payloads preserve query length, plan shape, stages, embedding cache totals, applied rerank and sidecar diagnostics, and timing without writing raw query text. Rerank trace summaries include accepted and dropped provider results, aggregate rank movement, and accepted provider or search score ranges. Multi-case eval traces are reported as multiple search summaries so one slow or failed case does not get collapsed into the final case; multi-search summaries also include aggregate applied rerank and sidecar counters.
+For retrieval debugging, pair eval runs with `search --events-jsonl` and `summarize_search_trace(...)` from `rag_core.events` on the written JSONL file. There is no `trace-summary` CLI in v1.
 
 ## Library Usage
 
@@ -102,7 +62,7 @@ async def evaluate(core: RAGCore) -> dict[str, object]:
     return eval_report(results)
 ```
 
-For profile or rerank comparisons, build reports with `eval_profile_comparison_report(...)` or `eval_comparison_report(...)`, then attach thresholds with `add_quality_gate(...)`.
+Attach thresholds with `add_quality_gate(report, metrics, thresholds)` and exit with `eval_exit_code(report)` for CI gates.
 
 In a source checkout, [`examples/retrieval_eval.py`](../../examples/retrieval_eval.py) shows the same library path as a runnable script with no external service or API key.
 

@@ -13,6 +13,7 @@ from rag_core.contracts import (
     SEARCH_USER_DOCUMENTS_DEFAULT_USE_LEXICAL_SEARCH,
     SEARCH_USER_DOCUMENTS_TOOL_NAME,
     parse_search_user_documents_request,
+    validate_search_user_documents_bounds,
 )
 from rag_core.core import RAGCore
 from rag_core.integrations.langchain_retriever import (
@@ -60,6 +61,11 @@ def build_langchain_retriever(
     """Build a ``BaseRetriever`` backed by ``RAGCore.search``."""
 
     normalized_namespace = validate_langchain_namespace(namespace)
+    validate_search_user_documents_bounds(
+        limit=limit,
+        max_chars=SEARCH_USER_DOCUMENTS_DEFAULT_MAX_CHARS,
+        max_tokens=None,
+    )
     corpus_ids_tuple, document_ids_tuple = normalize_langchain_retrieval_scope(
         corpus_ids=corpus_ids,
         document_ids=document_ids,
@@ -148,6 +154,11 @@ def create_langchain_context_tool(
     """Build a LangChain tool returning ``(content, artifact)`` from context packs."""
 
     normalized_namespace = validate_langchain_namespace(namespace)
+    validate_search_user_documents_bounds(
+        limit=limit,
+        max_chars=max_chars,
+        max_tokens=max_tokens,
+    )
     tool_decorator = _require_symbol("langchain_core.tools", "tool")
 
     corpus_ids_tuple, document_ids_tuple = normalize_langchain_retrieval_scope(

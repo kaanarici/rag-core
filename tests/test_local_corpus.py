@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -652,6 +653,23 @@ def test_reconcile_local_ingest_plan_uses_content_hashes(tmp_path) -> None:
     assert [(item.document_key, item.reason) for item in reconciliation.orphaned] == [
         ("removed.md", "manifest_entry_without_source")
     ]
+
+
+def test_build_local_ingest_plan_rejects_hardlinked_file_path(tmp_path: Path) -> None:
+    if not hasattr(os, "link"):
+        pytest.skip("hardlinks are unavailable on this platform")
+    source = tmp_path / "source.md"
+    source.write_text("secret", encoding="utf-8")
+    alias = tmp_path / "alias.md"
+    try:
+        os.link(source, alias)
+    except OSError as exc:
+        pytest.skip(f"hardlink support unavailable: {exc}")
+
+    with pytest.raises(ValueError, match="does not allow multi-link"):
+        build_local_ingest_plan(
+            LocalIngestRequest(path=alias, namespace="acme", corpus_id="help")
+        )
 
 
 def test_build_local_ingest_plan_rejects_empty_supported_set_before_core_creation(

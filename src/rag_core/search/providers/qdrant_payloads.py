@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
+from enum import Enum
 from typing import Any, Mapping
 from uuid import UUID
 
@@ -13,7 +15,36 @@ from rag_core.search.stored_payload import payload_to_result
 from rag_core.search.types import SearchResult, StoredDocumentRecord, VectorPoint
 
 from .qdrant_shared import _DENSE_VECTOR_NAME, _KNOWN_SPARSE_VECTOR_NAMES
-from .turbopuffer_payloads import validate_json_payload
+
+
+def validate_json_payload(payload: Mapping[str, object]) -> dict[str, object]:
+    return {_payload_key(key): _jsonish(value) for key, value in payload.items()}
+
+
+def _payload_key(key: object) -> str:
+    if isinstance(key, Enum):
+        return _payload_key(key.value)
+    if isinstance(key, str):
+        return key
+    if isinstance(key, (int, float)):
+        return str(key)
+    raise ValueError(
+        f"vector payload contains unsupported key type: {type(key).__name__}"
+    )
+
+
+def _jsonish(value: object) -> object:
+    if isinstance(value, Enum):
+        return value.value
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Mapping):
+        return {_payload_key(key): _jsonish(nested) for key, nested in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [_jsonish(nested) for nested in value]
+    raise ValueError(
+        f"vector payload contains unsupported value type: {type(value).__name__}"
+    )
 
 _MISSING = object()
 

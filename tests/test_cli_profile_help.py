@@ -31,12 +31,10 @@ def test_query_help_describes_profiles_and_presets(
     assert "hybrid_with_mmr=hybrid reciprocal-rank fusion followed by MMR" in output
 
 
-def test_eval_help_reuses_profile_catalog(
+def test_search_help_lists_extended_profiles(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    output = _flat_help(_command_help(["eval"], capsys))
+    output = _flat_help(_command_help(["search"], capsys))
 
     assert "coverage=hybrid retrieval with score-distribution fusion" in output
     assert "diverse=hybrid retrieval with diversity reranking" in output
-    assert "sparse_only=sparse lexical retrieval only" in output
-    assert output.count("balanced=general-purpose hybrid retrieval") == 2

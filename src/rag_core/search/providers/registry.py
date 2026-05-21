@@ -114,7 +114,6 @@ VECTOR_STORES: ProviderRegistry["VectorStore"] = ProviderRegistry(
 ).with_builtins(
     "rag_core.search.providers.qdrant_store",
     "rag_core.search.providers.memory_store",
-    "rag_core.search.providers.turbopuffer_store",
 )
 SEARCH_SIDECARS: ProviderRegistry["SearchSidecar"] = ProviderRegistry(
     "search_sidecar"

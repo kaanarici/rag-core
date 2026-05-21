@@ -8,7 +8,6 @@ from rag_core.config import (
     IngestConfig,
     QdrantConfig,
     RerankerConfig,
-    TurboPufferVectorStoreConfig,
     VectorStoreConfig,
 )
 from rag_core.core_models import RAGCoreConfig
@@ -38,11 +37,6 @@ def make_test_config(
     qdrant_collection: str = "rag_core_chunks",
     qdrant_dimension_aware_collection: bool = True,
     vector_store_provider: str = "qdrant",
-    turbopuffer_namespace: str | None = None,
-    turbopuffer_api_key: str | None = None,
-    turbopuffer_region: str | None = None,
-    turbopuffer_base_url: str | None = None,
-    turbopuffer_distance_metric: str = "cosine_distance",
     embedding_provider: str = "openai",
     embedding_model: str = "text-embedding-3-large",
     embedding_dimensions: int | None = None,
@@ -70,16 +64,7 @@ def make_test_config(
             collection=qdrant_collection,
             dimension_aware_collection=qdrant_dimension_aware_collection,
         ),
-        vector_store=VectorStoreConfig(
-            provider=vector_store_provider,
-            turbopuffer=TurboPufferVectorStoreConfig(
-                namespace=turbopuffer_namespace,
-                api_key=turbopuffer_api_key,
-                region=turbopuffer_region,
-                base_url=turbopuffer_base_url,
-                distance_metric=turbopuffer_distance_metric,
-            ),
-        ),
+        vector_store=VectorStoreConfig(provider=vector_store_provider),
         embedding=EmbeddingConfig(
             provider=embedding_provider,
             model=embedding_model,

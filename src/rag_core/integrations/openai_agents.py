@@ -15,6 +15,7 @@ from rag_core.contracts import (
     search_user_documents_tool_result,
     validate_search_user_documents_bounds,
 )
+from rag_core.integrations.integration_context_text import context_pack_model_text
 from rag_core.integrations.openai_agents_runtime import (
     build_tool_request_payload,
     import_agents_function_tool,
@@ -146,7 +147,7 @@ def build_retrieve_context_tool(
 
         if return_payload:
             return search_user_documents_tool_result(pack)
-        return pack.as_text()
+        return context_pack_model_text(pack)
 
     tool_kwargs: dict[str, object] = {
         "name_override": tool_name,

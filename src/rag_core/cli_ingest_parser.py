@@ -4,6 +4,7 @@ import argparse
 
 from rag_core.cli_config_parser import add_config_flags
 from rag_core.cli_events_parser import add_events_jsonl_flag
+from rag_core.cli_help_examples import apply_command_examples
 
 
 def add_ingest_command(
@@ -74,6 +75,7 @@ def add_ingest_command(
     ingest.add_argument(
         "--json", action="store_true", help="Emit one JSON object per file."
     )
+    apply_command_examples(ingest, "ingest")
 
 
 __all__ = ["add_ingest_command"]

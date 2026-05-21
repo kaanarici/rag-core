@@ -7,18 +7,14 @@ contract stays single-sourced. Backend-specific edges live in their own files.
 from __future__ import annotations
 
 import asyncio
-import math
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from types import SimpleNamespace
-from typing import SupportsFloat, SupportsIndex
 
 import pytest
 
 from rag_core.search.providers.memory_store import InMemoryVectorStore
 from rag_core.search.providers.qdrant_store import QdrantVectorStore
-from rag_core.search.providers.turbopuffer_store import TurboPufferVectorStore
 from rag_core.search.types import (
     DeleteFilter,
     SearchQuery,
@@ -52,15 +48,6 @@ def _store_cases() -> list[_VectorStoreCase]:
                 collection_name=f"contract_{uuid.uuid4().hex}",
                 dense_dimensions=3,
                 quantization_enabled=False,
-            ),
-            dense_vector_dimensions=3,
-        ),
-        _VectorStoreCase(
-            name="turbopuffer-fake",
-            create=lambda: TurboPufferVectorStore(
-                namespace=f"contract-{uuid.uuid4().hex}",
-                dense_dimensions=3,
-                namespace_client=_FakeTurboPufferNamespace(),
             ),
             dense_vector_dimensions=3,
         ),
@@ -370,138 +357,3 @@ def _point_without_document_id(
 def _empty_sparse() -> SparseVector:
     return SparseVector(indices=[], values=[])
 
-
-class _FakeTurboPufferNamespace:
-    def __init__(self) -> None:
-        self.rows: dict[str, dict[str, object]] = {}
-
-    async def metadata(self) -> object:
-        return SimpleNamespace(
-            approx_row_count=len(self.rows),
-            approx_logical_bytes=0,
-            index=SimpleNamespace(status="up-to-date"),
-        )
-
-    async def write(self, **kwargs: object) -> object:
-        for row in _object_list(kwargs.get("upsert_rows")):
-            assert isinstance(row, dict)
-            self.rows[str(row["id"])] = dict(row)
-        for point_id in _object_list(kwargs.get("deletes")):
-            self.rows.pop(str(point_id), None)
-        delete_filter = kwargs.get("delete_by_filter")
-        if delete_filter is not None:
-            self.rows = {
-                point_id: row
-                for point_id, row in self.rows.items()
-                if not _matches_turbopuffer_filter(row, delete_filter)
-            }
-        return SimpleNamespace(rows_remaining=False)
-
-    async def query(self, **kwargs: object) -> object:
-        filters = kwargs.get("filters")
-        rows = [
-            row
-            for row in self.rows.values()
-            if filters is None or _matches_turbopuffer_filter(row, filters)
-        ]
-        rank_by = kwargs.get("rank_by")
-        if isinstance(rank_by, (list, tuple)) and tuple(rank_by[:2]) == (
-            "vector",
-            "ANN",
-        ):
-            query_vector = rank_by[2]
-            assert isinstance(query_vector, list)
-            rows = sorted(
-                rows,
-                key=lambda row: _cosine_distance(
-                    query_vector,
-                    row.get("vector") if isinstance(row.get("vector"), list) else [],
-                ),
-            )
-            rows = [
-                {
-                    **row,
-                    "$dist": _cosine_distance(
-                        query_vector,
-                        row.get("vector")
-                        if isinstance(row.get("vector"), list)
-                        else [],
-                    ),
-                }
-                for row in rows
-            ]
-        elif isinstance(rank_by, (list, tuple)) and tuple(rank_by) == (
-            "chunk_index",
-            "asc",
-        ):
-            rows = sorted(rows, key=lambda row: _int_value(row.get("chunk_index"), 0))
-        limit = _int_value(kwargs.get("top_k") or kwargs.get("limit"), len(rows))
-        aggregations = None
-        if kwargs.get("aggregate_by") is not None:
-            aggregations = {"chunk_count": len(rows)}
-        return SimpleNamespace(rows=rows[:limit], aggregations=aggregations)
-
-
-def _matches_turbopuffer_filter(row: dict[str, object], filter_value: object) -> bool:
-    assert isinstance(filter_value, (list, tuple))
-    op = filter_value[0]
-    if op == "And":
-        children = filter_value[1]
-        assert isinstance(children, (list, tuple))
-        return all(_matches_turbopuffer_filter(row, child) for child in children)
-    if op == "Or":
-        children = filter_value[1]
-        assert isinstance(children, (list, tuple))
-        return any(_matches_turbopuffer_filter(row, child) for child in children)
-    if op == "Not":
-        return not _matches_turbopuffer_filter(row, filter_value[1])
-
-    assert len(filter_value) == 3
-    field, operator, expected = filter_value
-    actual = row.get(str(field))
-    if operator == "Eq":
-        return bool(actual == expected)
-    if operator == "In":
-        assert isinstance(expected, (list, tuple, set))
-        return actual in expected
-    if operator == "Gte":
-        return _float_value(actual) >= _float_value(expected)
-    if operator == "Gt":
-        return _float_value(actual) > _float_value(expected)
-    if operator == "Lte":
-        return _float_value(actual) <= _float_value(expected)
-    if operator == "Lt":
-        return _float_value(actual) < _float_value(expected)
-    raise AssertionError(f"unsupported fake filter operator: {operator}")
-
-
-def _cosine_distance(query: list[float], vector: object) -> float:
-    if not isinstance(vector, list):
-        return 1.0
-    numeric_vector = [float(value) for value in vector]
-    dot = sum(a * b for a, b in zip(query, numeric_vector, strict=False))
-    query_norm = math.sqrt(sum(value * value for value in query))
-    vector_norm = math.sqrt(sum(value * value for value in numeric_vector))
-    if query_norm == 0.0 or vector_norm == 0.0:
-        return 1.0
-    return 1.0 - (dot / (query_norm * vector_norm))
-
-
-def _object_list(value: object) -> list[object]:
-    if value is None:
-        return []
-    assert isinstance(value, list)
-    return value
-
-
-def _int_value(value: object, fallback: int) -> int:
-    if value is None:
-        return fallback
-    if isinstance(value, (str, bytes, bytearray, SupportsIndex)):
-        return int(value)
-    return fallback
-
-
-def _float_value(value: object) -> float:
-    assert isinstance(value, (str, bytes, bytearray, SupportsFloat, SupportsIndex))
-    return float(value)

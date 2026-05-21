@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from rag_core.cli_events_parser import add_events_jsonl_flag
+from rag_core.cli_help_examples import apply_command_examples
 from rag_core.local_search_models import DEFAULT_LOCAL_MAX_FILES
 
 
@@ -29,6 +30,7 @@ def add_local_search_command(
     )
     add_events_jsonl_flag(local_search)
     local_search.add_argument("--json", action="store_true", help="Emit JSON output.")
+    apply_command_examples(local_search, "local-search")
     return local_search
 
 

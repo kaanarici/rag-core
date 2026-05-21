@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from rag_core.contracts import search_user_documents_tool_result
+from rag_core.integrations.integration_context_text import context_pack_model_text
 from rag_core.search.context_pack import ModelContextPack
 from rag_core.search.types import SearchResult
 
@@ -20,7 +21,6 @@ def search_result_to_document_kwargs(result: SearchResult) -> dict[str, object]:
                 "rag_core_source_type": result.source_type,
                 "rag_core_document_id": result.document_id,
                 "rag_core_corpus_id": result.corpus_id,
-                "rag_core_document_key": result.document_key,
                 "rag_core_title": result.title,
                 "rag_core_section_id": result.section_id,
                 "rag_core_section_title": result.section_title,
@@ -42,7 +42,7 @@ def search_result_to_document_kwargs(result: SearchResult) -> dict[str, object]:
 def context_pack_to_tool_output(pack: ModelContextPack) -> tuple[str, dict[str, object]]:
     """Map ``ModelContextPack`` into a `(content, artifact)` tool response."""
 
-    return pack.as_text(), search_user_documents_tool_result(pack)
+    return context_pack_model_text(pack), search_user_documents_tool_result(pack)
 
 
 def _compact(data: dict[str, object | None]) -> dict[str, object]:

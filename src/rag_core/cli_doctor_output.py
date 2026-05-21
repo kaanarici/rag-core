@@ -79,7 +79,7 @@ def _emit_vector_store_provider_summary(vector_store: dict[str, object]) -> None
     if not providers:
         return
     print("Vector Store Providers:")
-    for provider_name in ("qdrant", "turbopuffer"):
+    for provider_name in ("qdrant",):
         provider = require_mapping(providers.get(provider_name))
         if not provider:
             continue

@@ -10,15 +10,11 @@ from rag_core.config import (
     IngestConfig,
     QdrantConfig,
     RerankerConfig,
-    TurboPufferVectorStoreConfig,
     VectorStoreConfig,
 )
 from rag_core.config.embedding_config import DEFAULT_EMBEDDING_BATCH_SIZE
 from rag_core.config.env_access import get_env, parse_env_bool
 from rag_core.config.ingest_config import DEFAULT_PROCESSING_VERSION
-from rag_core.config.vector_store_config import (
-    DEFAULT_TURBOPUFFER_DELETE_CONTINUATION_LIMIT,
-)
 
 if TYPE_CHECKING:
     from rag_core.core_models import RAGCoreConfig
@@ -46,27 +42,6 @@ def build_rag_core_config_from_cli_args(
         ),
         vector_store=VectorStoreConfig(
             provider=_arg(args, "vector_store", default="qdrant") or "qdrant",
-            turbopuffer=TurboPufferVectorStoreConfig(
-                namespace=_arg(args, "turbopuffer_namespace"),
-                api_key=_arg(args, "turbopuffer_api_key"),
-                region=_arg(args, "turbopuffer_region"),
-                base_url=_arg(args, "turbopuffer_base_url"),
-                distance_metric=_arg(
-                    args,
-                    "turbopuffer_distance_metric",
-                    default="cosine_distance",
-                )
-                or "cosine_distance",
-                delete_continuation_limit=_arg(
-                    args,
-                    "turbopuffer_delete_continuation_limit",
-                )
-                if _arg(args, "turbopuffer_delete_continuation_limit") is not None
-                else _env_int(
-                    "RAG_CORE_TURBOPUFFER_DELETE_CONTINUATION_LIMIT",
-                    DEFAULT_TURBOPUFFER_DELETE_CONTINUATION_LIMIT,
-                ),
-            ),
         ),
         embedding=EmbeddingConfig(
             provider=_arg(args, "embedding_provider", default="openai") or "openai",

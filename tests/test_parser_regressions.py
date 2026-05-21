@@ -1168,6 +1168,35 @@ def test_local_manifest_preview_keeps_ocr_required_metadata_without_provider(
     assert preview.manifest_entry.metadata["parser"] == "ocr_required"
 
 
+def test_single_private_use_glyph_routes_pdf_page_to_ocr() -> None:
+    import logging
+
+    from rag_core.documents.converters.pdf_converter_extraction import (
+        PdfExtraction,
+        _extract_page,
+    )
+    from rag_core.documents.converters.pdf_converter_pymupdf import pymupdf_conversion_result
+
+    pua = "\ue000"
+    raw = ("Retrieval quality baseline text for parser regression. " * 2) + pua
+
+    class _Page:
+        def get_text(self, mode: str) -> str:
+            return raw
+
+        def get_images(self) -> list[object]:
+            return []
+
+    page = _extract_page(_Page(), 0)
+    assert page.needs_ocr is True
+    assert page.has_garbled_text is True
+    result = pymupdf_conversion_result(
+        PdfExtraction(pages=[page], page_count=1),
+        logger=logging.getLogger("test"),
+    )
+    assert result.needs_ocr is True
+
+
 def assert_quality_metadata(metadata: dict[str, Any]) -> None:
     quality = metadata.get("quality")
     assert isinstance(quality, dict)

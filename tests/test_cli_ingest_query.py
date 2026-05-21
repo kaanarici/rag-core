@@ -195,10 +195,6 @@ def test_query_subparser_accepts_repeating_corpus_id() -> None:
             "--rerank",
             "--qdrant-url",
             "http://localhost:6333",
-            "--vector-store",
-            "turbopuffer",
-            "--turbopuffer-namespace",
-            "prod-docs",
             "--events-jsonl",
             "/tmp/events.jsonl",
         ]
@@ -208,32 +204,6 @@ def test_query_subparser_accepts_repeating_corpus_id() -> None:
     assert args.corpus_id == ["help", "internal"]
     assert args.limit == 20
     assert args.rerank is True
-    assert args.turbopuffer_namespace == "prod-docs"
-
-
-def test_eval_subparser_accepts_cases_and_config_flags() -> None:
-    parser = _build_parser()
-    args = parser.parse_args(
-        [
-            "eval",
-            "--cases",
-            "cases.jsonl",
-            "--qdrant-url",
-            "http://localhost:6333",
-            "--embedding-provider",
-            "openai",
-            "--vector-store",
-            "turbopuffer",
-            "--turbopuffer-namespace",
-            "eval-docs",
-            "--json",
-        ]
-    )
-    assert args.command == "eval"
-    assert args.cases == "cases.jsonl"
-    assert args.embedding_provider == "openai"
-    assert args.turbopuffer_namespace == "eval-docs"
-    assert args.json is True
 
 
 # ---------------------------------------------------------------------------

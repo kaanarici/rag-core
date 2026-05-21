@@ -25,16 +25,6 @@ def test_qdrant_api_key_flag_emits_warning(capsys) -> None:
     assert "RAG_CORE_QDRANT_API_KEY env var" in err
 
 
-def test_turbopuffer_api_key_flag_emits_warning(capsys) -> None:
-    parser = _parser()
-
-    parser.parse_args(["--turbopuffer-api-key", "secret"])
-
-    err = capsys.readouterr().err
-    assert "--turbopuffer-api-key exposes credentials" in err
-    assert "TURBOPUFFER_API_KEY env var" in err
-
-
 @pytest.mark.parametrize(
     "url",
     [
@@ -74,11 +64,6 @@ def test_qdrant_url_flag_warns_when_url_contains_credentials(
             "maybe",
             "RAG_CORE_QDRANT_DIMENSION_AWARE_COLLECTION must be a boolean",
         ),
-        (
-            "RAG_CORE_TURBOPUFFER_DELETE_CONTINUATION_LIMIT",
-            "not-an-int",
-            "RAG_CORE_TURBOPUFFER_DELETE_CONTINUATION_LIMIT must be an integer",
-        ),
     ],
 )
 def test_config_env_parsing_rejects_invalid_values(
@@ -115,13 +100,6 @@ def test_config_env_parsing_rejects_invalid_values(
             "maybe",
             ["--no-dimension-aware-collection"],
             lambda config: config.qdrant.dimension_aware_collection is False,
-        ),
-        (
-            "RAG_CORE_TURBOPUFFER_DELETE_CONTINUATION_LIMIT",
-            "not-an-int",
-            ["--turbopuffer-delete-continuation-limit", "3"],
-            lambda config: config.vector_store.turbopuffer.delete_continuation_limit
-            == 3,
         ),
     ],
 )

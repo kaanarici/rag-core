@@ -40,3 +40,7 @@ The stronger standard is first-party quality. A vector-store option is not truly
 - **Embrace Qdrant; delete the protocol.** Rejected: violates no-lock-in.
 - **Keep the protocol but never validate it.** Rejected: drifts to Qdrant-shaped behavior over time and traps users.
 - **Claim all vector stores are equally supported.** Rejected: misleading and worse for users than an honest first-party support matrix.
+
+## v1 addendum (2026-05-20)
+
+v1.0 ships **Qdrant only** in the default wheel and CLI doctor surfaces. The TurboPuffer adapter is deferred to v1.1 with contract tests and doctor diagnostics restored together. The `VectorStore` protocol and registry remain; only the first-party adapter set is narrowed for the initial release.

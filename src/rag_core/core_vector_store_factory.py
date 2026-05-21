@@ -26,19 +26,6 @@ def create_configured_vector_store(
             dense_dimensions=dense_dimensions,
             policy=config.policy,
         )
-    if config.vector_store.provider == "turbopuffer":
-        tp = config.vector_store.turbopuffer
-        return vector_stores.create(
-            "turbopuffer",
-            namespace=collection_name,
-            dense_dimensions=dense_dimensions,
-            api_key=tp.api_key,
-            region=tp.region,
-            base_url=tp.base_url,
-            distance_metric=tp.distance_metric,
-            delete_continuation_limit=tp.delete_continuation_limit,
-            policy=config.policy,
-        )
     raise ValueError(f"Unsupported vector store provider: {config.vector_store.provider}")
 
 
@@ -51,7 +38,6 @@ def require_vector_store_capabilities(store: "VectorStore") -> None:
         f"VectorStore adapter {adapter_name!r} does not declare "
         "document_record_lookup capability; ingest dedup cannot run "
         "against it. Use an adapter that supports document record "
-        "lookup (e.g. QdrantVectorStore, TurboPufferVectorStore, "
-        "InMemoryVectorStore) or "
+        "lookup (e.g. QdrantVectorStore, InMemoryVectorStore) or "
         "extend the adapter to declare the capability."
     )

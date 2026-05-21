@@ -5,7 +5,7 @@ from rag_core.core_manifest_builders import build_manifest_entry
 from rag_core.core_file_io import detect_local_mime_type, read_file_bytes
 from rag_core.core_prepare import prepare_document_bytes
 from rag_core.local_sources import document_key as local_document_key
-from rag_core.local_sources import reject_local_symlink_path
+from rag_core.local_sources import reject_local_hardlink_path, reject_local_symlink_path
 from rag_core.manifest_preview_models import (
     ManifestPreviewRequest,
     ManifestPreviewResult,
@@ -15,6 +15,7 @@ from rag_core.manifest_preview_models import (
 async def preview_manifest(request: ManifestPreviewRequest) -> ManifestPreviewResult:
     file_path = request.path
     reject_local_symlink_path(file_path)
+    reject_local_hardlink_path(file_path)
     document_key = (
         request.document_key.strip()
         if request.document_key and request.document_key.strip()

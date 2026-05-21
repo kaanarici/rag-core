@@ -4,6 +4,7 @@ import argparse
 
 from rag_core.cli_config_parser import add_config_flags
 from rag_core.cli_events_parser import add_events_jsonl_flag
+from rag_core.cli_help_examples import apply_command_examples
 from rag_core.cli_profile_help import query_plan_preset_help, search_profile_help
 from rag_core.search.planning import QUERY_PLAN_PRESETS, SEARCH_PROFILES
 
@@ -109,6 +110,10 @@ def _add_query_like_command(
         query.set_defaults(json=False)
     else:
         query.add_argument("--json", action="store_true", help="Emit JSON output.")
+    if name == "search":
+        apply_command_examples(query, "search")
+    elif name == "retrieve-context":
+        apply_command_examples(query, "retrieve-context")
     return query
 
 

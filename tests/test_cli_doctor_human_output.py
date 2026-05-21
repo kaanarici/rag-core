@@ -26,4 +26,3 @@ def test_doctor_human_output_summarizes_provider_query_plan_support(
         "query_plan=dense,sparse,hybrid_rrf,hybrid_dbsf,"
         "hybrid_weighted_rrf,mmr,nested_prefetch,boost"
     ) in output
-    assert "  - turbopuffer: support=first_party_optional query_plan=dense" in output

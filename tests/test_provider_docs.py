@@ -9,7 +9,8 @@ def test_provider_docs_match_current_install_story() -> None:
     vector_store_docs = Path("docs/providers/vector-stores.md").read_text(encoding="utf-8")
 
     assert 'uv add "rag-core @ git+https://github.com/kaanarici/rag-core.git"' in readme
-    assert "git+https://github.com/kaanarici/rag-core.git" in vector_store_docs
+    assert "QdrantConfig" in vector_store_docs
+    assert "v1 ships **Qdrant**" in vector_store_docs
 
 
 def test_readme_first_run_names_module_smokes() -> None:
@@ -65,11 +66,11 @@ def test_readme_documents_all_declared_extras() -> None:
         "rerank",
         "voyage",
         "zeroentropy",
-        "turbopuffer",
         "opentelemetry",
         "anthropic",
         "langchain",
         "openai-agents",
+        "runtime",
     }
     for extra in extras:
         assert f"`{extra}`" in readme or f"--extra {extra}" in readme
@@ -81,7 +82,7 @@ def test_readme_distinguishes_json_stdout_from_jsonl_files() -> None:
 
     assert "Batch ingest commands" in readme
     assert "one JSON object per record" in readme
-    assert "`--events-jsonl`, manifest files, eval case files, and batch ingest stdout are JSONL" in readme
+    assert "`--events-jsonl`, manifest files, and batch ingest stdout are JSONL" in readme
 
 
 def test_examples_reuse_packaged_demo_core() -> None:
@@ -119,15 +120,6 @@ def test_readme_first_run_uses_a_user_owned_folder_before_demo_corpus() -> None:
     assert "`--max-files`" in readme
     assert corpus.is_dir()
     assert sorted(path.suffix for path in corpus.iterdir()) == [".md", ".md", ".md"]
-
-
-def test_ci_smokes_turbopuffer_extra_wheel() -> None:
-    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    docs = Path("docs/providers/vector-stores.md").read_text(encoding="utf-8")
-
-    assert "[turbopuffer]" in workflow
-    assert "--vector-store turbopuffer" in workflow
-    assert "TurboPuffer extra install" in docs
 
 
 def test_ci_runs_installed_consumer_wheel_smoke() -> None:

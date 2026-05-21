@@ -30,7 +30,7 @@ def test_rag_core_facade_modules_live_under_facade_package() -> None:
 
 @pytest.mark.parametrize(
     "command",
-    ("doctor", "ingest", "ingest-url", "search", "eval"),
+    ("doctor", "ingest", "ingest-url", "search"),
 )
 def test_cli_help_uses_vector_store_language(
     command: str,

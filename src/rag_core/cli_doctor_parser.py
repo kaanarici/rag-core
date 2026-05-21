@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from rag_core.cli_config_parser import add_config_flags
+from rag_core.cli_help_examples import apply_command_examples
 
 
 def add_doctor_command(
@@ -31,6 +32,7 @@ def add_doctor_command(
         "Inspect collection/provider shape. This command reports config-level runtime "
         "details, not every programmatic RAGCoreConfig field."
     )
+    apply_command_examples(doctor, "doctor")
 
 
 __all__ = ["add_doctor_command"]

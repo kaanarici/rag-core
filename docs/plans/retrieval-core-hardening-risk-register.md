@@ -1,31 +1,42 @@
 # Retrieval Core Hardening Risk Register
 
-Status: May 21, 2026 merge-closure triage for the hardening diff against `main`.
+Status: Deep D1–D7 review at `db6c1fd` + remediation through current HEAD.
 
-## P0 Merge Blockers
+## Merge Verdict: NO BLOCK
 
-All P0 items are fixed in the current diff:
+| Item | Result |
+| --- | --- |
+| Baseline reviewed | `db6c1fd` → post-review fixes on `main` |
+| Gates | ruff OK · mypy OK · **2080 passed**, 5 skipped |
+| P0 open | **0** (after remediation) |
 
-- Model-facing retrieval tool payloads no longer fall back to private `document_key` or `document_id` values when titles are absent.
-- Empty `corpus_ids` now behaves as an empty allowlist through search requests and first-party vector stores.
-- Explicit CLI flags now override invalid env-backed numeric and boolean config values.
-- Local file ingest and URL-file ingest reject symlink and multi-link file paths before reading source content.
-- Reindexed existing documents no longer report failure after a successful final-manifest retry, and restored filenames are derived from source document keys without leaking fingerprint suffixes.
+## Remediated this pass
 
-## P1 Follow-Up Issues
+- LangChain `context_pack_to_tool_output` → `context_pack_model_text()` (CI contract tests).
+- `preview_manifest` hardlink rejection (parity with ingest).
+- CLI `run_with_ready_core` / `doctor --check-store` infrastructure errors sanitized (no traceback).
+- PDF single-PUA glyph → page `needs_ocr` (`private_use_count >= 1`).
 
-- Pipeline event ordering can still emit `SearchStarted.limit` before transform-injected plans settle.
-- Rerank failure and empty-rerank traces still need unknown score ranges instead of `0.0..0.0`.
-- Metadata filter capability checks should be enforced before adapter calls instead of relying on adapter translation failures.
-- Architecture pressure validation is narrower than the product surface now covered by public exports, CLI, traces, evals, and adapters.
-- `core_ingest.py` remains a hotspot and should be split only after the merge diff is stable.
+## P1 Follow-Up (not fixed)
 
-## Deferred Named Risks
+**D2 CLI:** Path redaction in `FileNotFoundError`; clearer Qdrant env+CLI conflict message.
 
-- Existing-document sidecar sync failures can leave lexical sidecar state degraded after vector indexing succeeds. The current behavior raises instead of pretending success, but automatic sidecar repair needs a dedicated design because vector stores do not expose chunk payload reads.
-- Single-file local ingest still constructs runtime before some source-read failures are surfaced. This is a developer-experience risk, not a data-integrity blocker.
-- Broad public surface cleanup under `rag_core.search` is deferred to avoid renaming churn inside this merge.
+**D5 telemetry:** Sidecar prefetch stale limit; `SearchStarted` vs `SearchPlanned` limit drift on custom transforms; missing `SearchPlanned` on transform failure; `SearchCompleted.requested_sidecar` semantics; rerank event `0.0` score range defaults.
 
-## Rejected
+**D6:** Memory store O(n) scan on empty allowlist; metadata capability preflight optional; cross-provider empty-allowlist contract test gap.
 
-- Stale review notes about bbox payload shape, duplicate ZIP members, and missing model payload schemas were rejected after current-tree checks; the current diff already covers those contracts.
+**D7/docs:** README/examples still use `as_text()` for demos.
+
+**D3 deferred:** Symlink TOCTOU (concurrent swap).
+
+## Discovery Log (deep pass)
+
+| Scope | Depth | P0 found | Action |
+| --- | --- | --- | --- |
+| D1 packaging | deep | 0 | — |
+| D2 CLI/config | deep | 0 | partial fix (store errors) |
+| D3 ingest/security | deep | 0 | preview hardlink fixed |
+| D4 parsers | deep | 0 | PUA OCR fixed |
+| D5 search pipeline | deep | 0 | telemetry P1 |
+| D6 providers | deep | 0 | — |
+| D7 integrations | deep | 1 (CI) | langchain fallback fixed |

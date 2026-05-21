@@ -47,12 +47,3 @@ jobs:
 
       - name: Wheel smoke test
         run: uv run python scripts/wheel_smoke.py
-
-      - name: TurboPuffer extra wheel smoke test
-        run: |
-          python -m venv .wheel-smoke-turbopuffer
-          . .wheel-smoke-turbopuffer/bin/activate
-          wheel="$(ls dist/*.whl)"
-          pip install "${wheel}[turbopuffer]"
-          python -c "import turbopuffer; from rag_core.search.providers import TurboPufferVectorStore"
-          rag-core doctor --vector-store turbopuffer --turbopuffer-namespace ci-docs --json

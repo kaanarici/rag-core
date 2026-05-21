@@ -272,60 +272,6 @@ def test_query_subparser_rejects_unknown_search_profile_name() -> None:
         )
 
 
-def test_eval_subparser_accepts_search_profile_flag() -> None:
-    parser = _build_parser()
-    args = parser.parse_args(
-        [
-            "eval",
-            "--cases",
-            "cases.jsonl",
-            "--qdrant-url",
-            "http://localhost:6333",
-            "--search-profile",
-            "coverage",
-        ]
-    )
-
-    assert args.command == "eval"
-    assert args.search_profile == "coverage"
-
-
-def test_eval_subparser_accepts_compare_search_profiles_flag() -> None:
-    parser = _build_parser()
-    args = parser.parse_args(
-        [
-            "eval",
-            "--cases",
-            "cases.jsonl",
-            "--qdrant-url",
-            "http://localhost:6333",
-            "--compare-search-profiles",
-            "balanced",
-            "fast",
-        ]
-    )
-
-    assert args.command == "eval"
-    assert args.compare_search_profiles == ["balanced", "fast"]
-
-
-def test_eval_subparser_rejects_profile_compare_with_single_profile_flag() -> None:
-    parser = _build_parser()
-    with pytest.raises(SystemExit):
-        parser.parse_args(
-            [
-                "eval",
-                "--cases",
-                "cases.jsonl",
-                "--qdrant-url",
-                "http://localhost:6333",
-                "--search-profile",
-                "balanced",
-                "--compare-search-profiles",
-                "balanced",
-                "fast",
-            ]
-        )
 
 
 def test_known_presets_match_factory_advertised_set() -> None:

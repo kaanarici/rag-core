@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Protocol, TypeVar
 
+from rag_core.cli_inputs import cli_safe_error_message
 from rag_core.cli_provider_errors import (
     is_provider_error,
     is_provider_bootstrap_error,
@@ -39,7 +40,7 @@ async def run_with_ready_core(
         except Exception as exc:
             if is_provider_bootstrap_error(exc):
                 raise ValueError(provider_bootstrap_message(exc, action=action)) from exc
-            raise
+            raise ValueError(cli_safe_error_message(exc, action=action)) from exc
         try:
             return await run(core)
         except Exception as exc:

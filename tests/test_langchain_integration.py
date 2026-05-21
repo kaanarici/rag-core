@@ -62,6 +62,40 @@ def test_search_result_to_document_kwargs_maps_payload_and_metadata() -> None:
     assert "rag_core_document_path" not in metadata
     assert metadata["rag_core_score"] == 0.87
     assert metadata["rag_core_chunk_index"] == 3
+    assert "rag_core_document_key" not in metadata
+
+
+def test_search_result_to_document_kwargs_omits_document_key_from_metadata() -> None:
+    result = make_search_result(
+        id="hit-1",
+        text="secret body",
+        document_key="private/billing.md",
+        title=None,
+    )
+
+    metadata = search_result_to_document_kwargs(result)["metadata"]
+    assert isinstance(metadata, dict)
+    assert "rag_core_document_key" not in metadata
+
+
+def test_create_langchain_context_tool_rejects_out_of_contract_limit() -> None:
+    with pytest.raises(ValueError, match="limit must be between"):
+        create_langchain_context_tool(
+            cast(RAGCore, object()),
+            namespace="acme",
+            corpus_ids=["help"],
+            limit=100,
+        )
+
+
+def test_build_langchain_retriever_rejects_out_of_contract_limit() -> None:
+    with pytest.raises(ValueError, match="limit must be between"):
+        build_langchain_retriever(
+            cast(RAGCore, object()),
+            namespace="acme",
+            corpus_ids=["help"],
+            limit=100,
+        )
 
 
 def test_context_pack_to_tool_output_returns_text_and_payload() -> None:
@@ -74,11 +108,53 @@ def test_context_pack_to_tool_output_returns_text_and_payload() -> None:
     content, artifact = context_pack_to_tool_output(pack)
     snippets = cast(list[dict[str, object]], artifact["snippets"])
 
-    assert content == pack.as_text()
+    assert content == pack.as_model_text()
     assert artifact["ok"] is True
-    assert artifact["context_text"] == pack.as_text()
+    assert artifact["context_text"] == pack.as_model_text()
     assert artifact["query"] == "what happened?"
     assert snippets[0]["citation_id"] == "space-1:corpus-1:doc-1#chunk-0"
+
+
+def test_context_pack_to_tool_output_omits_document_key_from_content() -> None:
+    from rag_core.search.context_pack_models import (
+        ContextSnippet,
+        ModelContextPack,
+        SourceLocator,
+        SourceReference,
+    )
+
+    pack = ModelContextPack(
+        query="billing",
+        snippets=(
+            ContextSnippet(
+                citation_id="c1",
+                rank=1,
+                text="monthly invoice",
+                score=0.9,
+                source=SourceReference(
+                    source_id="s1",
+                    result_id="hit-1",
+                    document_key="private/billing.md",
+                    title=None,
+                ),
+                locator=SourceLocator(chunk_index=0),
+                token_estimate=1,
+                char_count=16,
+                truncated=False,
+            ),
+        ),
+        dropped_count=0,
+        max_snippets=5,
+        max_chars=3000,
+        token_estimate=1,
+    )
+
+    content, artifact = context_pack_to_tool_output(pack)
+
+    assert "private/billing.md" not in content
+    assert "private/billing.md" not in str(artifact["context_text"])
+    assert content == pack.as_model_text()
+    assert artifact["context_text"] == pack.as_model_text()
 
 
 def test_build_langchain_retriever_raises_when_langchain_missing(

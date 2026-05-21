@@ -62,6 +62,29 @@ def test_preview_manifest_blank_document_key_uses_local_relative_hash(
     assert str(tmp_path) not in str(document["document_key"])
 
 
+def test_preview_manifest_rejects_hardlinked_file_path(tmp_path: Path) -> None:
+    if not hasattr(os, "link"):
+        pytest.skip("hardlinks are unavailable on this platform")
+    source = tmp_path / "source.txt"
+    source.write_text("secret", encoding="utf-8")
+    alias = tmp_path / "alias.txt"
+    try:
+        os.link(source, alias)
+    except OSError as exc:
+        pytest.skip(f"hardlink support unavailable: {exc}")
+
+    with pytest.raises(ValueError, match="does not allow multi-link"):
+        asyncio.run(
+            preview_manifest(
+                ManifestPreviewRequest(
+                    path=alias,
+                    namespace="acme",
+                    corpus_id="help",
+                )
+            )
+        )
+
+
 def test_preview_manifest_rejects_symlink_aliases(tmp_path: Path) -> None:
     if not hasattr(os, "symlink"):
         pytest.skip("symlink support unavailable")

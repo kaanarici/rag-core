@@ -2,7 +2,7 @@
 
 `rag-core` is a Python retrieval engine for applications, services, and workers that need embedded RAG.
 
-It covers the retrieval path between documents and model calls: parsing, PDF routing, chunking, indexing, hybrid search, reranking, citations, context assembly, traces, and evals.
+It covers the retrieval path between documents and model calls: parsing, PDF routing, chunking, indexing, hybrid search, reranking, citations, context assembly, and traces.
 
 It is not a hosted platform, chat framework, UI, queue system, or auth layer. Your app owns those pieces. `rag-core` owns the retrieval layer.
 
@@ -37,10 +37,24 @@ To capture a trace:
 ```bash
 uv run rag-core local-search examples/demo_corpus "corpus lifecycle" \
   --events-jsonl traces.jsonl
-uv run rag-core trace-summary traces.jsonl --json
 ```
 
-`trace-summary` summarizes the retrieval trace: plan shape, stages, timing, rerank and lexical diagnostics, and sanitized errors. It does not prove the context-pack or citation payload shape by itself.
+Trace events land as JSONL. Embedded callers can summarize them with
+`summarize_search_trace(...)` / `summarize_embedding_trace(...)` from
+`rag_core.events`, which surface plan shape, stage timings, rerank and lexical
+diagnostics, and sanitized errors.
+
+### Agent-friendly CLI invocations
+
+Coding agents can drive the ops surface from `--help` Examples alone:
+
+```bash
+uv run rag-core demo --json
+uv run rag-core doctor --qdrant-location :memory: --embedding-model text-embedding-3-small --json
+uv run rag-core ingest ./docs --namespace acme --corpus-id help --qdrant-location :memory:
+uv run rag-core search "billing policy" --namespace acme --corpus-id help --qdrant-location :memory: --json
+uv run rag-core local-search ./docs "billing policy" --events-jsonl traces.jsonl --json
+```
 
 The `examples/` modules below are checkout examples. They are not installed into the wheel. For installed-package code, use the library snippet in [Library Usage](#library-usage).
 
@@ -62,7 +76,7 @@ For local, archive, and URL source ingest through one `RAGCore`:
 uv run python -m examples.source_ingest
 ```
 
-For a no-key retrieval eval with quality gates:
+For retrieval-quality checks with the library eval runner:
 
 ```bash
 uv run python -m examples.retrieval_eval
@@ -88,18 +102,18 @@ Optional extras are grouped by integration and provider:
 ```bash
 uv sync --extra rerank --extra voyage --extra zeroentropy
 uv sync --extra semantic --extra html --extra anthropic
-uv sync --extra turbopuffer --extra opentelemetry
+uv sync --extra opentelemetry
 uv sync --extra langchain --extra openai-agents
+uv sync --extra runtime
 ```
 
 For installed-package consumers, request extras on the package spec:
 
 ```bash
 uv add "rag-core[langchain,openai-agents] @ git+https://github.com/kaanarici/rag-core.git"
-uv add "rag-core[turbopuffer] @ git+https://github.com/kaanarici/rag-core.git"
 ```
 
-Declared extras: `rerank` for Cohere reranking, `voyage` for Voyage embeddings and reranking, `zeroentropy` for ZeroEntropy embeddings and reranking, `semantic` for semantic/code chunking helpers, `html` for the faster Rust-backed HTML converter path, `anthropic` for chunk contextualization, `turbopuffer` for the TurboPuffer vector store, `opentelemetry` for tracing sinks, `langchain` for LangChain tools, and `openai-agents` for OpenAI Agents tools. Base installs still parse HTML through the fallback converter.
+Declared extras: `rerank` for Cohere reranking, `voyage` for Voyage embeddings and reranking, `zeroentropy` for ZeroEntropy embeddings and reranking, `semantic` for semantic/code chunking helpers, `html` for the faster Rust-backed HTML converter path, `anthropic` for chunk contextualization, `opentelemetry` for tracing sinks, `runtime` for `rag-core serve`, `langchain` for LangChain tools, and `openai-agents` for OpenAI Agents tools. Base installs still parse HTML through the fallback converter.
 
 For PDF routing with page-level OCR signals, install PDF Inspector:
 
@@ -120,7 +134,7 @@ uv run rag-core doctor --json
 - **Search profiles** are named retrieval shapes such as `balanced`, `fast`, `lexical`, `coverage`, and `diverse`.
 - **Query plans** are lower-level typed retrieval recipes when you need exact control.
 - **Context packs** turn search results into model-ready text with citations and source previews.
-- **Events, traces, and evals** make ingest and retrieval behavior inspectable.
+- **Events and traces** make ingest and retrieval behavior inspectable.
 
 The normal flow:
 
@@ -170,8 +184,6 @@ uv run rag-core ingest-urls urls.txt --namespace acme --corpus-id help --json
 uv run rag-core discover-remote https://example.com/llms.txt --kind llms-txt --json
 uv run rag-core search "billing policy" --namespace acme --corpus-id help --search-profile balanced --json
 uv run rag-core retrieve-context "billing policy" --namespace acme --corpus-id help --qdrant-url http://localhost:6333
-uv run rag-core trace-summary traces.jsonl --json
-uv run rag-core eval --cases cases.jsonl --qdrant-url http://localhost:6333 --search-profile balanced --json
 ```
 
 Useful notes:
@@ -182,8 +194,7 @@ Useful notes:
 - `discover-remote` reads a sitemap or `llms.txt` artifact and can write URLs for later ingest. Output URL files are redacted by default; any query-bearing discovered URL makes the redacted file lossy, so the command refuses it unless you pass `--output-url-file-raw-queries`.
 - `search` returns raw search hits.
 - `retrieve-context` returns the library context-pack payload with `context_text`.
-- `eval` runs retrieval-quality cases and can fail CI with recall, MRR, NDCG, or latency gates.
-- Most commands with `--json` write one JSON document to stdout. Batch ingest commands such as `ingest`, `ingest-archive`, and `ingest-urls` stream one JSON object per record. `--events-jsonl`, manifest files, eval case files, and batch ingest stdout are JSONL: one JSON object per line.
+- Most commands with `--json` write one JSON document to stdout. Batch ingest commands such as `ingest`, `ingest-archive`, and `ingest-urls` stream one JSON object per record. `--events-jsonl`, manifest files, and batch ingest stdout are JSONL: one JSON object per line.
 
 ## Library Usage
 
@@ -293,12 +304,7 @@ Default runtime shape:
 - PDF path: PDF Inspector when available, PyMuPDF fallback
 - contextualization: off by default, optional Anthropic chunk contextualizer
 
-TurboPuffer is available as an optional first-party vector-store adapter:
-
-```bash
-uv sync --extra turbopuffer
-uv run rag-core doctor --vector-store turbopuffer --turbopuffer-namespace product_docs --json
-```
+v1 ships Qdrant as the first-party vector store. TurboPuffer returns in v1.1 as an optional managed adapter.
 
 Provider categories can be configured directly, registered, or injected:
 
@@ -309,7 +315,7 @@ Provider categories can be configured directly, registered, or injected:
 
 See [docs/providers/custom-providers.md](docs/providers/custom-providers.md) for extension points and [docs/providers/vector-stores.md](docs/providers/vector-stores.md) for vector-store support levels.
 
-`rag-core` does not build full app config from environment variables. Your app should read its own env and pass explicit config into `RAGCoreConfig`. Provider SDKs may still read their own API keys, such as `OPENAI_API_KEY`, `COHERE_API_KEY`, `VOYAGE_API_KEY`, `ZEROENTROPY_API_KEY`, or `TURBOPUFFER_API_KEY`.
+`rag-core` does not build full app config from environment variables. Your app should read its own env and pass explicit config into `RAGCoreConfig`. Provider SDKs may still read their own API keys, such as `OPENAI_API_KEY`, `COHERE_API_KEY`, `VOYAGE_API_KEY`, or `ZEROENTROPY_API_KEY`.
 
 ## Retrieval Control
 
@@ -339,7 +345,22 @@ Use `describe_runtime()["retrieval"]`, `rag-core doctor --json`, or `describe_re
 
 Use `--events-jsonl` or an event sink to inspect what happened during ingest and search. Trace summaries include search plan shape, stage timings, rerank diagnostics, lexical diagnostics, embedding cache totals, and sanitized errors.
 
-Embedded services can use `EventBuffer`, `summarize_search_trace(...)`, and `summarize_embedding_trace(...)` from `rag_core.events`. `OpenTelemetrySink` is available through the `opentelemetry` extra and omits sensitive fields by default. Retrieval evals use JSONL cases with expected chunk IDs and optional quality gates. See [docs/evals/retrieval-quality.md](docs/evals/retrieval-quality.md).
+Embedded services can use `EventBuffer`, `summarize_search_trace(...)`, and `summarize_embedding_trace(...)` from `rag_core.events`. Map `SearchResult` rows for LangSmith, OpenInference, or OTel with `to_retrieval_hits(...)` from `rag_core.events.export`. See [docs/expectations.md](docs/expectations.md) for vendor field parity.
+
+`OpenTelemetrySink` is available through the `opentelemetry` extra and omits sensitive fields by default.
+
+Retrieval-quality checks use the library eval runner (`rag_core.evals`) and [examples/retrieval_eval.py](examples/retrieval_eval.py). There is no `rag-core eval` or `trace-summary` CLI in v1.
+
+## Self-Host Runtime (optional)
+
+Install the runtime extra and expose a thin HTTP API over the same `RAGCore` methods:
+
+```bash
+uv sync --extra runtime
+uv run rag-core serve --qdrant-location :memory: --embedding-model text-embedding-3-small
+```
+
+Endpoints: `GET /health`, `GET /v1/runtime`, `POST /v1/ingest`, `GET /v1/ingest/{job_id}`, `POST /v1/search`, `POST /v1/retrieve-context`. Eval HTTP is intentionally excluded in v1.
 
 ## Integrations
 
@@ -349,6 +370,8 @@ Optional adapters sit above `search(...)` and `retrieve_context(...)`:
 - LangChain and LangGraph: `from rag_core.integrations import create_langchain_context_tool`
 - Vercel AI SDK tool contract: [docs/integrations/vercel-ai-sdk-tools.md](docs/integrations/vercel-ai-sdk-tools.md)
 
+`rag_core.contracts` remains the stable JSON shape underneath all of the above.
+
 More runnable examples:
 
 - [examples/minimal_app.py](examples/minimal_app.py)
@@ -356,8 +379,8 @@ More runnable examples:
 - [examples/search_endpoint.py](examples/search_endpoint.py)
 - [examples/source_ingest.py](examples/source_ingest.py)
 - [examples/corpus_lifecycle.py](examples/corpus_lifecycle.py)
-- [examples/retrieval_eval.py](examples/retrieval_eval.py)
 - [examples/pdf_ocr_path.py](examples/pdf_ocr_path.py)
+- [examples/retrieval_eval.py](examples/retrieval_eval.py) — library eval runner (no `rag-core eval` CLI)
 
 ## Troubleshooting
 
