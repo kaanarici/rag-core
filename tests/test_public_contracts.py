@@ -7,6 +7,8 @@ from typing import Any, cast
 import rag_core
 import rag_core.documents.converters as converters_module
 import rag_core.search as search_module
+import rag_core.integrations as integrations
+import rag_core.search as search
 import rag_core.search.providers as provider_exports
 from rag_core import (
     CorpusManifestEntry,
@@ -18,6 +20,37 @@ from rag_core import (
     RAGCore,
     RAGCoreConfig,
     SearchResult,
+)
+from rag_core import sources
+from rag_core.integrations.langchain import (
+    LangChainNotInstalledError,
+    LangChainRetrieverConfig,
+    build_langchain_retriever,
+    create_langchain_context_tool,
+    create_langchain_retriever_tool,
+)
+from rag_core.integrations.openai_agents import build_retrieve_context_tool
+from rag_core.search.context_pack import (
+    ContextSnippet,
+    SourceLocator,
+    SourcePreview,
+    SourceReference,
+)
+from rag_core.sources import (
+    ArchiveLimits,
+    ArchiveSourceItem,
+    ArchiveSourcePlan,
+    LocalFileSourceReader,
+    LocalSourceItem,
+    LocalSourcePlan,
+    RemoteDiscoveredUrl,
+    RemoteDiscovery,
+    RemoteDiscoveryReader,
+    RemoteSourceDocument,
+    RemoteUrlSourceReader,
+    ZipArchiveSourceReader,
+    parse_llms_txt_urls,
+    parse_sitemap_urls,
 )
 from rag_core.search.providers.cached_embedding import (
     CachedEmbeddingDiagnostics,
@@ -78,6 +111,120 @@ def test_root_public_types_are_importable() -> None:
     assert set(rag_core.__all__).issubset(dir(rag_core))
     assert CachedEmbeddingDiagnostics.__name__ == "CachedEmbeddingDiagnostics"
     assert EmbeddingCacheObservation.__name__ == "EmbeddingCacheObservation"
+
+
+def test_context_pack_citation_primitives_are_public_imports() -> None:
+    assert rag_core.ContextSnippet is ContextSnippet
+    assert rag_core.SourceLocator is SourceLocator
+    assert rag_core.SourcePreview is SourcePreview
+    assert rag_core.SourceReference is SourceReference
+
+    assert search.ContextSnippet is ContextSnippet
+    assert search.SourceLocator is SourceLocator
+    assert search.SourcePreview is SourcePreview
+    assert search.SourceReference is SourceReference
+
+
+def test_source_preview_remains_a_small_app_facing_payload() -> None:
+    preview = SourcePreview(
+        citation_id="billing#chunk-0",
+        title="billing.md",
+        locator_label="page 2, chunk 0",
+        document_id="billing",
+        corpus_id="help",
+        source_hash="sha256:abc",
+    )
+
+    assert preview.as_text() == "[billing#chunk-0] billing.md (page 2, chunk 0)"
+    assert preview.to_payload()["source_hash"] == "sha256:abc"
+
+
+def test_source_primitives_are_sources_namespace_public_imports() -> None:
+    assert ArchiveLimits.__name__ == "ArchiveLimits"
+    assert ArchiveSourceItem.__name__ == "ArchiveSourceItem"
+    assert ArchiveSourcePlan.__name__ == "ArchiveSourcePlan"
+    assert LocalFileSourceReader.__name__ == "LocalFileSourceReader"
+    assert LocalSourceItem.__name__ == "LocalSourceItem"
+    assert LocalSourcePlan.__name__ == "LocalSourcePlan"
+    assert RemoteDiscoveredUrl.__name__ == "RemoteDiscoveredUrl"
+    assert RemoteDiscovery.__name__ == "RemoteDiscovery"
+    assert RemoteDiscoveryReader.__name__ == "RemoteDiscoveryReader"
+    assert RemoteSourceDocument.__name__ == "RemoteSourceDocument"
+    assert RemoteUrlSourceReader.__name__ == "RemoteUrlSourceReader"
+    assert ZipArchiveSourceReader.__name__ == "ZipArchiveSourceReader"
+    assert callable(parse_llms_txt_urls)
+    assert callable(parse_sitemap_urls)
+
+
+def test_remote_discovery_exposes_fetchable_and_redacted_url_sequences() -> None:
+    discovery = parse_llms_txt_urls(
+        "- [Guide](/guide?private=alpha)\n",
+        base_url="https://example.com/llms.txt",
+    )
+
+    assert discovery.urls == ("https://example.com/guide?private=alpha",)
+    assert discovery.redacted_urls == ("https://example.com/guide?redacted",)
+    assert "private=alpha" not in repr(discovery)
+
+
+def test_sources_namespace_is_curated() -> None:
+    assert sources.__all__ == [
+        "ArchiveLimits",
+        "ArchiveSourceItem",
+        "ArchiveSourcePlan",
+        "LocalFileSourceReader",
+        "LocalSourceItem",
+        "LocalSourcePlan",
+        "RemoteDiscoveredUrl",
+        "RemoteDiscovery",
+        "RemoteDiscoveryKind",
+        "RemoteDiscoveryReader",
+        "RemoteSourceDocument",
+        "RemoteUrlSourceReader",
+        "ZipArchiveSourceReader",
+        "archive_document_key",
+        "document_key",
+        "expand_supported_local_files",
+        "file_content_sha256",
+        "is_supported_archive_member_path",
+        "is_ignored_local_file",
+        "is_supported_local_candidate",
+        "is_supported_local_file",
+        "local_file_source_item",
+        "local_source_key_root",
+        "parse_llms_txt_urls",
+        "parse_sitemap_urls",
+        "read_zip_member_bytes",
+        "remote_source_document",
+        "safe_archive_member_path",
+        "source_error_message",
+        "write_discovered_url_file",
+        "write_raw_discovered_url_file",
+    ]
+
+
+def test_integration_root_exports_stable_builders() -> None:
+    assert integrations.__all__ == (
+        "LangChainNotInstalledError",
+        "LangChainRetrieverConfig",
+        "build_langchain_retriever",
+        "build_retrieve_context_tool",
+        "create_langchain_context_tool",
+        "create_langchain_retriever_tool",
+        "langchain",
+        "openai_agents",
+    )
+    assert integrations.LangChainNotInstalledError is LangChainNotInstalledError
+    assert integrations.LangChainRetrieverConfig is LangChainRetrieverConfig
+    assert integrations.build_langchain_retriever is build_langchain_retriever
+    assert integrations.build_retrieve_context_tool is build_retrieve_context_tool
+    assert integrations.create_langchain_context_tool is create_langchain_context_tool
+    assert integrations.create_langchain_retriever_tool is create_langchain_retriever_tool
+
+
+def test_integration_root_keeps_payload_helpers_in_submodules() -> None:
+    assert not hasattr(integrations, "context_pack_to_tool_output")
+    assert not hasattr(integrations, "search_result_to_document_kwargs")
 
 
 def test_search_exports_are_curated() -> None:

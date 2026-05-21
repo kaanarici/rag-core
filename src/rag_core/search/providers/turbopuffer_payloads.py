@@ -6,9 +6,20 @@ from collections.abc import Mapping, Sequence
 from enum import Enum
 
 from rag_core.search.policy import VectorStorePolicy
-from rag_core.search.types import VectorPoint
+from rag_core.search.types import SparseVector, VectorPoint
 
 _MAX_TURBOPUFFER_ID_BYTES = 64
+
+
+def _sparse_vector_to_rank_map(sparse_vector: SparseVector) -> dict[str, float]:
+    return {
+        f"dim{index}": value
+        for index, value in zip(
+            sparse_vector.indices,
+            sparse_vector.values,
+            strict=True,
+        )
+    }
 
 
 def _point_to_row(point: VectorPoint) -> dict[str, object]:
@@ -16,8 +27,19 @@ def _point_to_row(point: VectorPoint) -> dict[str, object]:
         "id": _validate_point_id(point.id),
         "vector": point.dense_vector,
     }
+    sparse_row = _sparse_row_from_point(point)
+    if sparse_row is not None:
+        row["sparse_vector"] = sparse_row
     row.update(validate_json_payload(point.payload))
     return row
+
+
+def _sparse_row_from_point(point: VectorPoint) -> dict[str, float] | None:
+    sparse_vectors = point.all_sparse_vectors()
+    for sparse_vector in sparse_vectors.values():
+        if sparse_vector.indices:
+            return _sparse_vector_to_rank_map(sparse_vector)
+    return None
 
 
 def validate_json_payload(payload: Mapping[str, object]) -> dict[str, object]:

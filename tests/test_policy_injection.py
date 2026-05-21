@@ -18,11 +18,15 @@ from rag_core.search.policy import VectorStorePolicy
 from rag_core.search.providers.memory_store import InMemoryVectorStore
 from rag_core.search.types import SearchQuery, SparseVector
 
+import pytest
+
 from tests.support import (
     FakeEmbeddingProvider,
     FakeSparseEmbedder,
     make_test_config,
 )
+
+pytestmark = [pytest.mark.integration]
 
 
 def _custom_policy() -> VectorStorePolicy:

@@ -1,0 +1,23 @@
+{
+  "dimensions": 9,
+  "documents": {
+    "billing_payments": [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "refunds_returns": [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "shipping_customs": [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "webhook_security": [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "audit_exports": [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+    "encryption_keys": [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+    "pagination_cursors": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+    "rate_limits": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+    "authentication_saml": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+  },
+  "queries": {
+    "how can invoices be paid by ach card": [0.92, 0.04, 0.01, 0.01, 0.01, 0.0, 0.0, 0.0, 0.01],
+    "international shipping customs carrier tracking": [0.01, 0.01, 0.92, 0.02, 0.01, 0.01, 0.01, 0.0, 0.01],
+    "verify webhook hmac signature header": [0.01, 0.0, 0.01, 0.92, 0.02, 0.01, 0.01, 0.01, 0.01],
+    "audit log retention export ndjson archive": [0.01, 0.01, 0.01, 0.02, 0.9, 0.02, 0.01, 0.01, 0.01],
+    "aes encryption key rotation enterprise tenants": [0.0, 0.0, 0.01, 0.01, 0.02, 0.9, 0.02, 0.02, 0.02],
+    "next cursor pagination page tokens list response": [0.01, 0.01, 0.01, 0.01, 0.01, 0.02, 0.88, 0.03, 0.02],
+    "rate limit retry header http 429 minute": [0.01, 0.01, 0.01, 0.01, 0.02, 0.02, 0.03, 0.86, 0.04]
+  }
+}

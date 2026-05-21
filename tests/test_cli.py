@@ -176,10 +176,20 @@ def test_doctor_json_reports_planned_runtime(capsys: pytest.CaptureFixture[str])
     qdrant = payload["vector_store"]["providers"]["qdrant"]
     assert qdrant["support_level"] == "default"
     assert qdrant["configured"] is True
+    assert qdrant["package_present"] is True
+    assert qdrant["credential_required"] is False
+    assert qdrant["credential_present"] is False
+    assert qdrant["runtime_validated"] is False
+    assert qdrant["runtime_validation"] == "not_requested"
     assert qdrant["dimension_aware_collection"] is True
     turbopuffer = payload["vector_store"]["providers"]["turbopuffer"]
     assert turbopuffer["support_level"] == "first_party_optional"
     assert turbopuffer["configured"] is False
+    assert isinstance(turbopuffer["package_present"], bool)
+    assert turbopuffer["credential_required"] is True
+    assert turbopuffer["credential_present"] is False
+    assert turbopuffer["runtime_validated"] is False
+    assert turbopuffer["runtime_validation"] == "not_requested"
     provider_categories = payload["providers"]
     assert provider_categories["sparse"]["configured"] == "fastembed"
     fastembed = provider_categories["sparse"]["providers"]["fastembed"]
@@ -225,6 +235,7 @@ def test_doctor_json_reports_turbopuffer_env_without_secret(
     payload = json.loads(output)
     turbopuffer = payload["vector_store"]["providers"]["turbopuffer"]
     assert turbopuffer["api_key_configured"] is True
+    assert turbopuffer["credential_present"] is True
     assert turbopuffer["region"] == "aws-us-west-2"
     assert turbopuffer["base_url_configured"] is True
     assert turbopuffer["configured"] is False
@@ -261,6 +272,7 @@ def test_doctor_json_reports_turbopuffer_selection_without_secret(
     assert turbopuffer["configured"] is True
     assert turbopuffer["namespace"] == "prod-docs"
     assert turbopuffer["api_key_configured"] is True
+    assert turbopuffer["credential_present"] is True
 
 
 def test_doctor_json_redacts_qdrant_url_sensitive_parts(
@@ -362,6 +374,9 @@ def test_doctor_check_store_creates_local_collection(capsys: pytest.CaptureFixtu
     payload = json.loads(capsys.readouterr().out)
     assert payload["store_health"]["healthy"] is True
     assert payload["store_health"]["collection"] == "rag_core_chunks__text_embedding_3_small_1536d"
+    qdrant = payload["vector_store"]["providers"]["qdrant"]
+    assert qdrant["runtime_validated"] is True
+    assert qdrant["runtime_validation"] == "healthy"
 
 
 def test_doctor_check_store_exits_nonzero_when_health_is_unhealthy(
@@ -394,6 +409,9 @@ def test_doctor_check_store_exits_nonzero_when_health_is_unhealthy(
     assert exit_code == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["store_health"]["healthy"] is False
+    qdrant = payload["vector_store"]["providers"]["qdrant"]
+    assert qdrant["runtime_validated"] is False
+    assert qdrant["runtime_validation"] == "failed"
 
 
 def test_doctor_default_output_is_human_readable(capsys: pytest.CaptureFixture[str]) -> None:

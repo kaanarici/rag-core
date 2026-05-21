@@ -6,9 +6,11 @@ factory level so any addition or rename is visible in one place.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
-from rag_core.cli import _build_parser
+from rag_core.cli import _build_parser, main
 from rag_core.search import (
     QUERY_PLAN_PRESETS,
     SEARCH_PROFILES,
@@ -294,3 +296,35 @@ def test_known_search_profiles_match_factory_advertised_set() -> None:
         "diverse",
     }
     assert set(SEARCH_PROFILES) == expected
+
+
+def _flat_help(output: str) -> str:
+    unhyphenated = re.sub(r"-\n\s*", "-", output)
+    return re.sub(r"\s+", " ", unhyphenated)
+
+
+def test_query_help_describes_profiles_and_presets(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output = _flat_help(_search_help(capsys))
+
+    assert "balanced=general-purpose hybrid retrieval" in output
+    assert "fast=low-latency semantic retrieval" in output
+    assert "hybrid_rrf=dense plus sparse retrieval fused with reciprocal" in output
+    assert "hybrid_with_mmr=hybrid reciprocal-rank fusion followed by MMR" in output
+
+
+def test_search_help_lists_extended_profiles(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output = _flat_help(_search_help(capsys))
+
+    assert "coverage=hybrid retrieval with score-distribution fusion" in output
+    assert "diverse=hybrid retrieval with diversity reranking" in output
+
+
+def _search_help(capsys: pytest.CaptureFixture[str]) -> str:
+    with pytest.raises(SystemExit) as exc_info:
+        main(["search", "--help"])
+    assert exc_info.value.code == 0
+    return capsys.readouterr().out

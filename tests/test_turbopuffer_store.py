@@ -31,6 +31,8 @@ from rag_core.search.types import (
     SparseVector,
     VectorPoint,
 )
+from rag_core.search.planning import query_plan_preset
+from tests.support.turbopuffer_fake import TurboPufferFakeNamespace
 
 
 class _RecordingNamespace:
@@ -76,7 +78,7 @@ class _RecordingNamespace:
         return response
 
 
-def _store(namespace: _RecordingNamespace, *, dense_dimensions: int = 3) -> TurboPufferVectorStore:
+def _store(namespace: object, *, dense_dimensions: int = 3) -> TurboPufferVectorStore:
     return TurboPufferVectorStore(
         namespace="docs",
         dense_dimensions=dense_dimensions,
@@ -157,6 +159,92 @@ def test_turbopuffer_store_writes_rows_schema_and_distance_metric() -> None:
         assert schema["sparse_vector"] == {"type": "sparse", "ann": True}
         assert schema["text"]["filterable"] is False
         assert schema["text"]["full_text_search"] is True
+
+    asyncio.run(_run())
+
+
+def test_turbopuffer_store_upsert_serializes_sparse_vector_column() -> None:
+    async def _run() -> None:
+        namespace = _RecordingNamespace()
+        store = _store(namespace)
+        await store.upsert(
+            [
+                VectorPoint(
+                    id="sparse-point",
+                    dense_vector=[1.0, 0.0, 0.0],
+                    sparse_vector=SparseVector(indices=[0, 2], values=[0.9, 0.1]),
+                    payload={
+                        "namespace": "team-space",
+                        "corpus_id": "corpus-a",
+                        "document_id": "doc-1",
+                        "content_type": "document",
+                        "source_type": "file",
+                        "text": "sparse payload",
+                    },
+                )
+            ]
+        )
+
+        rows = cast(list[dict[str, object]], namespace.write_calls[0]["upsert_rows"])
+        assert rows[0]["sparse_vector"] == {"dim0": 0.9, "dim2": 0.1}
+
+    asyncio.run(_run())
+
+
+def test_turbopuffer_store_sparse_knn_search_round_trip_on_fake_namespace() -> None:
+    async def _run() -> None:
+        namespace = TurboPufferFakeNamespace()
+        store = _store(namespace)
+        await store.upsert(
+            [
+                VectorPoint(
+                    id="alpha",
+                    dense_vector=[1.0, 0.0, 0.0],
+                    sparse_vector=SparseVector(indices=[1], values=[1.0]),
+                    payload={
+                        "namespace": "team-space",
+                        "corpus_id": "corpus-a",
+                        "document_id": "doc-alpha",
+                        "content_type": "document",
+                        "source_type": "file",
+                        "text": "alpha",
+                    },
+                ),
+                VectorPoint(
+                    id="beta",
+                    dense_vector=[0.0, 1.0, 0.0],
+                    sparse_vector=SparseVector(indices=[2], values=[1.0]),
+                    payload={
+                        "namespace": "team-space",
+                        "corpus_id": "corpus-a",
+                        "document_id": "doc-beta",
+                        "content_type": "document",
+                        "source_type": "file",
+                        "text": "beta",
+                    },
+                ),
+            ]
+        )
+
+        results = await store.search(
+            SearchQuery(
+                dense_vector=[0.0, 1.0, 0.0],
+                sparse_vector=SparseVector(indices=[1], values=[1.0]),
+                namespace="team-space",
+                corpus_ids=["corpus-a"],
+                limit=1,
+                query_plan=query_plan_preset("sparse_only", limit=1),
+            )
+        )
+
+        assert results
+        assert results[0].id == "alpha"
+        rank_by = namespace.query_calls[-1]["rank_by"]
+        assert rank_by == (
+            "sparse_vector",
+            "SparseKNN",
+            {"dim1": 1.0},
+        )
 
     asyncio.run(_run())
 

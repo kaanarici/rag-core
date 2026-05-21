@@ -20,7 +20,6 @@ from typing import Any, cast
 
 import pytest
 
-import rag_core
 import rag_core.documents.local_parse as local_parse_module
 from rag_core import (
     IngestedDocument,
@@ -946,24 +945,6 @@ def test_stage_error_event_emitted_on_failure() -> None:
     assert [error.error_type for error in errors] == ["RuntimeError", "RuntimeError"]
     assert all(error.message == "" for error in errors)
     assert "disk full" not in str(errors)
-
-
-def test_event_types_live_under_events_namespace() -> None:
-    expected = {
-        "EventSink",
-        "EventBuffer",
-        "JsonlSink",
-        "IngestStarted",
-        "IngestBatchStarted",
-        "IngestBatchProgress",
-        "IngestBatchCompleted",
-        "IngestBatchFailed",
-        "SearchCompleted",
-        "SearchPlanned",
-        "SearchStageCompleted",
-        "StageError",
-    }
-    assert expected.isdisjoint(set(rag_core.__all__))
 
 
 def test_event_sink_protocol_is_runtime_checkable() -> None:

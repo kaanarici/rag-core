@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 import pytest
 import rag_core.documents.converters.pdf_converter as pdf_converter_module
+from rag_core import RAGCore
 from rag_core.documents.converters import convert_file
 from rag_core.documents.converters.pdf_converter_extraction import (
     PageExtraction,
@@ -19,9 +20,15 @@ from rag_core.documents.converters.xlsx_converter import XlsxConverter
 from rag_core.documents.local_parse import LocalParseError, parse_file_bytes
 from rag_core.core_prepare import prepare_document_bytes, prepare_text_chunks
 from rag_core.core_prepare_figure_locators import with_figure_locators
-from rag_core.core_models import PreparedChunk
+from rag_core.core_models import IngestedDocument, PreparedChunk, PreparedDocument
 from rag_core.local_ingest import ManifestPreviewRequest, preview_manifest
 from rag_core.manifest_entries import sanitize_manifest_metadata
+from tests.support import (
+    FakeEmbeddingProvider,
+    FakeSparseEmbedder,
+    RecordingVectorStore,
+    make_test_config,
+)
 
 
 BytesFactory = Callable[[], bytes]
@@ -77,6 +84,42 @@ def _jsonl_bytes() -> bytes:
 
 def _xml_bytes() -> bytes:
     return b"<root><team>retrieval</team><score>98</score></root>"
+
+
+def _minimal_pdf_bytes(text: str) -> bytes:
+    stream = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode("ascii")
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        (
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
+        ),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream",
+    ]
+    pdf = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for index, body in enumerate(objects, start=1):
+        offsets.append(len(pdf))
+        pdf.extend(f"{index} 0 obj\n".encode("ascii"))
+        pdf.extend(body)
+        pdf.extend(b"\nendobj\n")
+    xref_offset = len(pdf)
+    pdf.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+    pdf.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        pdf.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    pdf.extend(
+        (
+            "trailer\n"
+            f"<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+            "startxref\n"
+            f"{xref_offset}\n"
+            "%%EOF\n"
+        ).encode("ascii")
+    )
+    return bytes(pdf)
 
 
 def _docx_bytes() -> bytes:
@@ -1016,6 +1059,64 @@ def test_pdf_parse_records_page_quality(
     assert metadata["extraction_ratio"] == 1.0
     assert metadata["needs_ocr"] is False
     assert_quality_metadata(metadata)
+
+
+@pytest.mark.integration
+def test_real_pdf_parse_metadata_survives_prepare_and_ingest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    text = (
+        "Retrieval PDF quality parser fixture proves page metadata survives "
+        "prepare and ingest with enough text for quality scoring."
+    )
+    file_bytes = _minimal_pdf_bytes(text)
+    monkeypatch.setattr(pdf_converter_module, "pdf_inspector_enabled", lambda: False)
+
+    async def go() -> tuple[PreparedDocument, IngestedDocument, RecordingVectorStore]:
+        prepared = await prepare_document_bytes(
+            file_bytes=file_bytes,
+            filename="quality-proof.pdf",
+            mime_type="application/pdf",
+            path="/fixtures/quality-proof.pdf",
+            ocr_provider=None,
+        )
+        store = RecordingVectorStore()
+        core = RAGCore(
+            make_test_config(embedding_dimensions=4),
+            embedding_provider=FakeEmbeddingProvider(),
+            sparse_embedder=FakeSparseEmbedder(),
+            vector_store=store,
+        )
+        try:
+            ingested = await core.ingest_bytes(
+                file_bytes=file_bytes,
+                filename="quality-proof.pdf",
+                mime_type="application/pdf",
+                namespace="parsers",
+                corpus_id="fixtures",
+                document_id="real-pdf",
+                document_key="quality-proof.pdf",
+            )
+        finally:
+            await core.close()
+        return prepared, ingested, store
+
+    prepared, ingested, store = asyncio.run(go())
+
+    assert prepared.metadata["parser"] == "local:pymupdf"
+    assert prepared.metadata["needs_ocr"] is False
+    assert prepared.metadata["page_count"] == 1
+    assert_quality_metadata(prepared.metadata)
+
+    assert ingested.metadata["parser"] == prepared.metadata["parser"]
+    assert ingested.metadata["needs_ocr"] is False
+    assert ingested.metadata["page_count"] == prepared.metadata["page_count"]
+    assert ingested.metadata["quality"] == prepared.metadata["quality"]
+    assert ingested.chunk_count >= 1
+
+    indexed_payloads = [point.payload for call in store.upsert_calls for point in call]
+    assert indexed_payloads
+    assert any(payload.get("page_index") == 0 for payload in indexed_payloads)
 
 
 def test_local_manifest_preview_uses_same_converter_metadata_as_direct_bytes(

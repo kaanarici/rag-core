@@ -138,7 +138,10 @@ def _build_demo_provider(
     from rag_core.demo import DemoEmbeddingProvider, _DEMO_EMBEDDING_DIMENSIONS
 
     if model != "demo-dense-v1":
-        pass  # v1 demo provider uses a fixed model name
+        raise ValueError(
+            "demo embedding provider only supports model 'demo-dense-v1'; "
+            f"got {model!r}"
+        )
     resolved = dimensions if dimensions is not None else _DEMO_EMBEDDING_DIMENSIONS
     return DemoEmbeddingProvider(dimensions=resolved)
 

@@ -44,6 +44,11 @@ async def run_doctor_command(
             capture_dimension_mismatch=args.fix,
         )
         payload["store_health"] = store_outcome.health
+        _mark_vector_store_runtime_validation(
+            payload,
+            provider=config.vector_store.provider,
+            healthy=bool(store_outcome.health.get("healthy", False)),
+        )
         if not bool(store_outcome.health.get("healthy", False)):
             exit_code = 1
         if args.fix:
@@ -52,6 +57,25 @@ async def run_doctor_command(
                 exit_code = 1
     emit_doctor(payload, as_json=args.json, fix=args.fix)
     return exit_code
+
+
+def _mark_vector_store_runtime_validation(
+    payload: dict[str, object],
+    *,
+    provider: str,
+    healthy: bool,
+) -> None:
+    vector_store = payload.get("vector_store")
+    if not isinstance(vector_store, dict):
+        return
+    providers = vector_store.get("providers")
+    if not isinstance(providers, dict):
+        return
+    provider_payload = providers.get(provider)
+    if not isinstance(provider_payload, dict):
+        return
+    provider_payload["runtime_validated"] = healthy
+    provider_payload["runtime_validation"] = "healthy" if healthy else "failed"
 
 
 def _planned_runtime_payload(config: RAGCoreConfig) -> dict[str, object]:

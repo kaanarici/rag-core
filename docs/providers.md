@@ -32,7 +32,11 @@ uv run rag-core ingest ./docs --namespace acme --corpus-id help \
 
 ### TurboPuffer (optional)
 
-Not in the default wheel. Requires `TURBOPUFFER_API_KEY`. Supports dense ANN, hybrid RRF (BM25 + dense when `lexical_query` is set), SparseKNN. Unsupported stages (DBSF, MMR, boost, …) fail closed.
+Not in the default wheel. Requires `TURBOPUFFER_API_KEY`. Upserts serialize `sparse_vector`
+when points carry sparse channels. Supports dense ANN, hybrid RRF (BM25 + dense when
+`lexical_query` is set), and SparseKNN on the sparse column. Proof: `provider_contract`
+(JSON fixtures) + `turbopuffer-fake` in `test_vector_store_contract.py`; live smoke is
+`@pytest.mark.live`. Unsupported stages (DBSF, MMR, boost, …) fail closed.
 
 Do not use TurboPuffer for no-key smoke or default `docker compose` (demo embeddings).
 

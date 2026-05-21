@@ -24,6 +24,8 @@ from tests.support import (
     make_test_config,
 )
 
+pytestmark = [pytest.mark.plumbing]
+
 
 def test_rag_core_ingest_archive_indexes_supported_zip_members(tmp_path: Path) -> None:
     archive_path = tmp_path / "docs.zip"

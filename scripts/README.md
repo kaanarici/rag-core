@@ -16,19 +16,31 @@ uv sync --group dev
 ./scripts/dx_smoke.sh
 ```
 
-## CI (GitHub Actions mirrors this)
+## Automated checks (optional CI mirror)
 
 | Script | CI step | Purpose |
 |--------|---------|---------|
 | `dx_smoke.sh` | Journey A (Python 3.12 only) | End-user path regression |
 | `ci_self_host_smoke.sh` | Journey C (Python 3.12 only) | Starts `rag-core serve`, then runs HTTP ingest/search/context smoke |
 | `architecture_pressure.py` | Architecture pressure | Large files, boundary warnings, mypy ignore inventory (`--json`) |
-| `pytest` | Test | Not under `scripts/` |
+| `validate_provider_fixtures.sh` | Local only | Run `provider_contract` tests against checked-in JSON fixtures |
+| `pytest` (tiered) | Test | See CI table below |
 | `check_dist_artifacts.py` | Check built artifacts | Wheel/sdist required paths after `uv build` |
 | `wheel_smoke.py` | Wheel smoke test | Install wheel in fresh venv, run consumer + `rag_core.quickstart` |
 
+| Gate | Command |
+| --- | --- |
+| Fast | `uv run pytest -q -m "not live and not eval and not eval_harness and not provider_contract and not integration"` |
+| Provider replay | `uv run pytest -q -m provider_contract` |
+| Integration | `uv run pytest -q -m integration` |
+| PR retrieval eval | `uv run pytest -q tests/evals/test_retrieval_eval_pr.py` |
+
 ```bash
-uv run ruff check . && uv run mypy src tests examples && uv run pytest -q
+uv run ruff check . && uv run mypy src tests examples
+uv run pytest -q -m "not live and not eval and not eval_harness and not provider_contract and not integration"
+uv run pytest -q -m provider_contract
+uv run pytest -q -m integration
+uv run pytest -q tests/evals/test_retrieval_eval_pr.py
 ./scripts/dx_smoke.sh
 ./scripts/ci_self_host_smoke.sh
 uv build

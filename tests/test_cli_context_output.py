@@ -94,36 +94,6 @@ def test_retrieve_context_emits_canonical_context_payload(
     assert not RecordingCore.search_called
 
 
-def test_retrieve_context_command_emits_canonical_context_payload(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    RecordingCore.calls = []
-    RecordingCore.search_called = False
-    monkeypatch.setattr(cli, "RAGCore", RecordingCore)
-
-    exit_code = cli.main(
-        [
-            "retrieve-context",
-            "billing policy",
-            "--namespace",
-            "acme",
-            "--corpus-id",
-            "help",
-            "--limit",
-            "3",
-            "--max-context-chars",
-            "1000",
-        ]
-    )
-
-    assert exit_code == 0
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["context_text"] == "[C1] Billing guide\nInvoices can be paid by card."
-    assert len(RecordingCore.calls) == 1
-    assert not RecordingCore.search_called
-
-
 def test_retrieve_context_rejects_raw_json_mode_before_runtime_setup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

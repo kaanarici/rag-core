@@ -11,11 +11,15 @@ from rag_core.documents.contextualizer import (
     NoOpContextualizer,
 )
 from rag_core.search.providers.embedding_cache import InMemoryChunkContextCache
+import pytest
+
 from tests.support import (
     FakeEmbeddingProvider,
     FakeSparseEmbedder,
     RecordingVectorStore,
 )
+
+pytestmark = [pytest.mark.plumbing]
 
 
 class _StubContextualizer:

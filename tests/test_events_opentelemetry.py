@@ -8,7 +8,6 @@ from typing import Any, Literal, cast
 
 import pytest
 
-import rag_core
 from rag_core.events import OpenTelemetrySink
 from rag_core.events.types import (
     EmbedCompleted,
@@ -44,11 +43,6 @@ def _install_fake_opentelemetry(
     package.trace = trace_module  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "opentelemetry", package)
     monkeypatch.setitem(sys.modules, "opentelemetry.trace", trace_module)
-
-
-def test_open_telemetry_sink_lives_under_events_namespace() -> None:
-    assert "OpenTelemetrySink" not in rag_core.__all__
-    assert rag_core.events.OpenTelemetrySink is OpenTelemetrySink
 
 
 def test_open_telemetry_sink_emits_prefixed_safe_attributes(

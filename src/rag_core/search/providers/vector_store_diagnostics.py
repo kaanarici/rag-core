@@ -43,6 +43,11 @@ def _qdrant_diagnostics(
     return {
         "support_level": "default",
         "configured": config.vector_store.provider == "qdrant",
+        "package_present": True,
+        "credential_present": bool(config.qdrant.api_key),
+        "credential_required": False,
+        "runtime_validated": False,
+        "runtime_validation": "not_requested",
         "check_store_supported": True,
         "collection_name": (
             collection_name if config.vector_store.provider == "qdrant" else None
@@ -58,15 +63,21 @@ def _qdrant_diagnostics(
 
 def _turbopuffer_diagnostics(config: RAGCoreConfig) -> dict[str, object]:
     tp = config.vector_store.turbopuffer
+    package_present = importlib.util.find_spec("turbopuffer") is not None
     api_key_configured = bool(tp.api_key or get_env_stripped("TURBOPUFFER_API_KEY"))
     region = tp.region or get_env_stripped("TURBOPUFFER_REGION") or None
     base_url_configured = bool(tp.base_url or get_env_stripped("TURBOPUFFER_BASE_URL"))
     return {
         "support_level": "first_party_optional",
         "configured": config.vector_store.provider == "turbopuffer",
+        "package_present": package_present,
+        "credential_present": api_key_configured,
+        "credential_required": True,
+        "runtime_validated": False,
+        "runtime_validation": "not_requested",
         "check_store_supported": True,
         "extra": "turbopuffer",
-        "package_available": importlib.util.find_spec("turbopuffer") is not None,
+        "package_available": package_present,
         "api_key_configured": api_key_configured,
         "namespace": tp.namespace,
         "region": region,

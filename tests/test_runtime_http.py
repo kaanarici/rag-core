@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import re
 import subprocess
 import sys
 import time
@@ -20,12 +22,16 @@ from rag_core.demo import DemoEmbeddingProvider, DemoSparseEmbedder
 from rag_core.runtime.app import create_app
 from rag_core.search.providers.embedding import create_embedding_provider
 from rag_core.search.providers.memory_store import InMemoryVectorStore
+from rag_core.search.types import RerankResult
 
 pytestmark = [pytest.mark.integration]
 
 
+_OPENAPI_PATH = Path("docs/self-host/openapi.yaml")
+
+
 def _openapi_methods_by_path() -> dict[str, set[str]]:
-    openapi = Path("docs/self-host/openapi.yaml").read_text(encoding="utf-8")
+    openapi = _OPENAPI_PATH.read_text(encoding="utf-8")
     paths: dict[str, set[str]] = {}
     current_path: str | None = None
     for line in openapi.splitlines():
@@ -39,8 +45,7 @@ def _openapi_methods_by_path() -> dict[str, set[str]]:
     return paths
 
 
-@pytest.fixture
-def runtime_client(tmp_path: Path) -> TestClient:
+def _make_runtime_client(job_db_path: Path) -> TestClient:
     config = RAGCoreConfig(
         qdrant=QdrantConfig(location=":memory:"),
         embedding=EmbeddingConfig(
@@ -63,9 +68,31 @@ def runtime_client(tmp_path: Path) -> TestClient:
     app = create_app(
         config=config,
         core_factory=core_factory,
-        job_db_path=tmp_path / "jobs.sqlite3",
+        job_db_path=job_db_path,
     )
     return TestClient(app)
+
+
+@pytest.fixture
+def runtime_client(tmp_path: Path) -> TestClient:
+    return _make_runtime_client(tmp_path / "jobs.sqlite3")
+
+
+def _openapi_schema_block(schema_name: str) -> str:
+    openapi = _OPENAPI_PATH.read_text(encoding="utf-8")
+    match = re.search(
+        rf"^    {re.escape(schema_name)}:\n(?P<body>(?:      .*\n|        .*\n|          .*\n|            .*\n|              .*\n|                .*\n)*)",
+        openapi,
+        flags=re.MULTILINE,
+    )
+    assert match is not None, f"schema {schema_name!r} missing from OpenAPI"
+    return match.group("body")
+
+
+def _assert_schema_mentions(schema_name: str, snippets: tuple[str, ...]) -> None:
+    block = _openapi_schema_block(schema_name)
+    for snippet in snippets:
+        assert snippet in block, f"{schema_name} missing {snippet!r}"
 
 
 def test_demo_embedding_provider_is_registered_for_serve() -> None:
@@ -88,6 +115,50 @@ def test_openapi_paths_match_runtime_routes(runtime_client: TestClient) -> None:
             }
 
     assert route_methods == _openapi_methods_by_path()
+
+
+def test_openapi_declares_runtime_request_and_response_shapes() -> None:
+    _assert_schema_mentions(
+        "IngestRequest",
+        (
+            "required: [path, namespace, corpus_id]",
+            "path:",
+            "namespace:",
+            "corpus_id:",
+            "corpusId:",
+        ),
+    )
+    _assert_schema_mentions(
+        "IngestJobCreated",
+        ("required: [job_id, status]", "job_id:", "status:"),
+    )
+    _assert_schema_mentions(
+        "IngestJobStatus",
+        (
+            "required: [job_id, status, path, namespace, corpus_id]",
+            "result:",
+            "error:",
+        ),
+    )
+    _assert_schema_mentions(
+        "SearchRequest",
+        (
+            "required: [query, namespace, corpus_ids]",
+            "query:",
+            "corpus_ids:",
+            "corpusIds:",
+            "limit:",
+            "rerank:",
+        ),
+    )
+    _assert_schema_mentions(
+        "SearchHit",
+        (
+            "required: [id, text, score, content_type, source_type]",
+            "metadata:",
+            "chunk_index:",
+        ),
+    )
 
 
 def test_runtime_health_and_runtime_endpoints(runtime_client: TestClient) -> None:
@@ -169,8 +240,14 @@ def test_runtime_ingest_search_and_retrieve_context_journey(
         },
     )
     assert created.status_code == 202
-    job_id = created.json()["job_id"]
+    created_payload = created.json()
+    assert set(created_payload) == {"job_id", "status"}
+    assert created_payload["status"] == "pending"
+    job_id = created_payload["job_id"]
     finished = _wait_for_job(runtime_client, job_id)
+    assert {"job_id", "status", "path", "namespace", "corpus_id", "result"}.issubset(
+        finished
+    )
     result = finished.get("result")
     assert isinstance(result, dict)
     assert result.get("chunk_count", 0) > 0
@@ -190,6 +267,7 @@ def test_runtime_ingest_search_and_retrieve_context_journey(
     assert hits
     assert "text" in hits[0]
     assert "document_id" in hits[0]
+    assert {"id", "text", "score", "content_type", "source_type"}.issubset(hits[0])
 
     context = runtime_client.post(
         "/v1/retrieve-context",
@@ -204,6 +282,103 @@ def test_runtime_ingest_search_and_retrieve_context_journey(
     pack = context.json()
     assert isinstance(pack.get("context_text"), str)
     assert pack["context_text"]
+
+
+def test_runtime_ingest_job_persists_across_app_restart(tmp_path: Path) -> None:
+    job_db_path = tmp_path / "jobs.sqlite3"
+    doc = tmp_path / "restart.md"
+    doc.write_text("Restart persistence keeps ingest job status available.\n", encoding="utf-8")
+
+    first_client = _make_runtime_client(job_db_path)
+    created = first_client.post(
+        "/v1/ingest",
+        json={
+            "path": str(doc),
+            "namespace": "acme",
+            "corpus_id": "help",
+        },
+    )
+    assert created.status_code == 202
+    job_id = created.json()["job_id"]
+    finished = _wait_for_job(first_client, job_id)
+    first_client.close()
+
+    restarted_client = _make_runtime_client(job_db_path)
+    reloaded = restarted_client.get(f"/v1/ingest/{job_id}")
+    restarted_client.close()
+
+    assert reloaded.status_code == 200
+    assert reloaded.json() == finished
+
+
+class _RecordingReranker:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, list[str], int]] = []
+
+    async def rerank(
+        self,
+        query: str,
+        documents: list[str],
+        top_k: int = 10,
+    ) -> list[RerankResult]:
+        self.calls.append((query, list(documents), top_k))
+        return [
+            RerankResult(index=index, score=1.0 - (index * 0.1), text=document)
+            for index, document in enumerate(documents[:top_k])
+        ]
+
+
+def test_runtime_search_rerank_true_reaches_injected_reranker(tmp_path: Path) -> None:
+    reranker = _RecordingReranker()
+    config = RAGCoreConfig(
+        qdrant=QdrantConfig(location=":memory:"),
+        embedding=EmbeddingConfig(
+            provider="demo",
+            model="demo-dense-v1",
+            dimensions=4,
+        ),
+    )
+    core = RAGCore(
+        config,
+        embedding_provider=DemoEmbeddingProvider(dimensions=4),
+        sparse_embedder=DemoSparseEmbedder(),
+        vector_store=InMemoryVectorStore(),
+        reranker=reranker,
+    )
+
+    async def seed() -> None:
+        await core.ingest_bytes(
+            file_bytes=b"Billing invoices support ACH and card payments.",
+            filename="billing.txt",
+            mime_type="text/plain",
+            namespace="rerank-http",
+            corpus_id="docs",
+            document_id="billing",
+            document_key="billing.txt",
+        )
+
+    asyncio.run(seed())
+
+    client = TestClient(
+        create_app(
+            config=config,
+            core_factory=lambda cfg: core,
+            job_db_path=tmp_path / "jobs.sqlite3",
+        )
+    )
+    response = client.post(
+        "/v1/search",
+        json={
+            "query": "invoice payment methods",
+            "namespace": "rerank-http",
+            "corpus_ids": ["docs"],
+            "limit": 5,
+            "rerank": True,
+        },
+    )
+    assert response.status_code == 200
+    assert reranker.calls
+    assert reranker.calls[0][0] == "invoice payment methods"
 
 
 def test_runtime_search_returns_hit_list(runtime_client: TestClient) -> None:

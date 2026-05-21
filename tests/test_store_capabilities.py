@@ -20,8 +20,12 @@ from rag_core.core_ingest import CoreIngestor
 from rag_core.core_models import PreparedDocument, ProcessingFingerprint
 from rag_core.search.indexer import DocumentIndexer, IndexRequest
 from rag_core.search.providers.memory_store import InMemoryVectorStore
+from rag_core.search.providers.query_plan_capabilities import (
+    TURBOPUFFER_QUERY_PLAN_CAPABILITIES,
+)
 from rag_core.search.providers.qdrant_store import QdrantVectorStore
 from rag_core.search.providers.registry import VECTOR_STORES
+from rag_core.search.providers.turbopuffer_store import TurboPufferVectorStore
 from rag_core.search.types import (
     DeleteFilter,
     MetadataFilterCapabilities,
@@ -144,6 +148,29 @@ def test_memory_store_declares_full_capability_surface() -> None:
             numeric_range=True,
             string_range=True,
             geo=True,
+            boolean=True,
+        ),
+    )
+
+
+def test_turbopuffer_store_declares_adapter_tested_capability_surface() -> None:
+    store = TurboPufferVectorStore(
+        namespace="docs",
+        dense_dimensions=4,
+        namespace_client=object(),
+    )
+    assert isinstance(store, VectorStore)
+    assert store.capabilities == StoreCapabilities(
+        per_point_delete=True,
+        document_record_lookup=True,
+        dense_vector_dimensions=4,
+        query_plan=TURBOPUFFER_QUERY_PLAN_CAPABILITIES,
+        metadata_filter=MetadataFilterCapabilities(
+            term=True,
+            in_=True,
+            numeric_range=True,
+            string_range=True,
+            geo=False,
             boolean=True,
         ),
     )
@@ -334,7 +361,7 @@ def test_vector_stores_registry_creates_memory_store_by_name() -> None:
 
 def test_vector_stores_registry_lists_known_factories() -> None:
     names = VECTOR_STORES.names()
-    assert {"memory", "qdrant"}.issubset(set(names))
+    assert {"memory", "qdrant", "turbopuffer"}.issubset(set(names))
 
 
 def test_vector_stores_registry_rejects_unknown_name() -> None:

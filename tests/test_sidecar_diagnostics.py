@@ -6,8 +6,6 @@ import logging
 from pathlib import Path
 from typing import Any, Sequence, cast
 
-import rag_core
-import rag_core.events
 from rag_core.events.sinks import EventBuffer
 from rag_core.events.sinks import JsonlSink
 from rag_core.events.types import SidecarApplied
@@ -16,11 +14,6 @@ from rag_core.search.pipeline.stages.sidecar_postprocess import SidecarPostproce
 from rag_core.search.pipeline.stages.sidecar_postprocess import SidecarPrefetchTransform
 from rag_core.search.pipeline.types import PipelineContext, PipelineQuery
 from rag_core.search.types import SearchResult, SearchSidecarQuery, Term
-
-
-def test_sidecar_applied_lives_under_events_namespace() -> None:
-    assert "SidecarApplied" not in rag_core.__all__
-    assert rag_core.events.SidecarApplied is SidecarApplied
 
 
 def test_sidecar_applied_preserves_positional_constructor_shape() -> None:

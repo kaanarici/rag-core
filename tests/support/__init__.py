@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Sequence
 
 from rag_core.config import (
@@ -501,6 +502,55 @@ document or it inflates dimensionality without signal.
 """
 
 
+class FixtureEmbeddingProvider:
+    """Dense vectors from a fixture file keyed by document_id."""
+
+    def __init__(
+        self,
+        *,
+        fixture_path: Path,
+        pending_document_ids: list[str] | None = None,
+    ) -> None:
+        import json
+
+        payload = json.loads(fixture_path.read_text(encoding="utf-8"))
+        self._dimensions = int(payload["dimensions"])
+        self._documents: dict[str, list[float]] = {
+            str(key): [float(value) for value in values]
+            for key, values in payload["documents"].items()
+        }
+        self._queries: dict[str, list[float]] = {
+            str(key): [float(value) for value in values]
+            for key, values in payload["queries"].items()
+        }
+        self._pending_document_ids = list(pending_document_ids or [])
+
+    @property
+    def dimensions(self) -> int:
+        return self._dimensions
+
+    @property
+    def model_name(self) -> str:
+        return "fixture-embedding"
+
+    async def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        if not self._pending_document_ids:
+            raise ValueError(
+                "FixtureEmbeddingProvider requires pending_document_ids for ingest"
+            )
+        document_id = self._pending_document_ids.pop(0)
+        if document_id not in self._documents:
+            raise KeyError(f"unknown document_id in fixture: {document_id}")
+        vector = list(self._documents[document_id])
+        return [vector for _ in texts]
+
+    async def embed_query(self, query: str) -> list[float]:
+        normalized = query.strip().lower()
+        if normalized in self._queries:
+            return list(self._queries[normalized])
+        raise KeyError(f"unknown query in fixture: {query}")
+
+
 class KeywordEmbeddingProvider:
     """Vocabulary-counting embedder; one float per vocabulary term."""
 
@@ -551,6 +601,24 @@ class KeywordSparseEmbedder:
                 indices.append(index)
                 values.append(float(count))
         return SparseVector(indices=indices, values=values)
+
+
+def assert_log_sanitized(
+    caplog: object,
+    *,
+    forbidden_substrings: Sequence[str],
+    logger_name: str | None = None,
+) -> None:
+    """Assert no secret-like substrings appear in captured log text."""
+    records = getattr(caplog, "records", [])
+    messages = [
+        record.getMessage()
+        for record in records
+        if logger_name is None or record.name == logger_name
+    ]
+    joined = "\n".join(messages)
+    for substring in forbidden_substrings:
+        assert substring not in joined
 
 
 def _count_document_chunks(points: Sequence[VectorPoint]) -> dict[tuple[str, str, str], int]:

@@ -41,7 +41,7 @@ _CORPUS_PATH = _FIXTURE_DIR / "corpus.jsonl"
 _CASES_PATH = _FIXTURE_DIR / "cases.jsonl"
 
 
-@pytest.mark.eval
+@pytest.mark.eval_harness
 def test_baseline_recall_at_5_holds() -> None:
     """End-to-end ingest + search over the baseline corpus must hold floors."""
 

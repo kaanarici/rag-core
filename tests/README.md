@@ -1,43 +1,68 @@
 # Test trust model
 
-This repo has a large test suite. Do not treat every passing test as equal
-evidence that retrieval works in production.
+Large suite (~2000 tests). Passing everything does **not** mean production retrieval works.
 
 ## Validation ladder
 
-| Tier | Examples | What it proves |
+| Tier | Marker | What it proves |
 | --- | --- | --- |
-| Meta | `test_provider_docs.py`, `test_doc_templates.py`, `test_packaging_manifest.py` | Docs, packaging, exports, and repo hygiene stay aligned. Not runtime proof. |
-| Unit / fake-boundary | `RecordingVectorStore`, fake embedders, fake rerankers | Orchestration, errors, sanitization, and call shape. Not ranking quality. |
-| Adapter contract | `test_vector_store_contract.py`, Qdrant helper tests | Store API behavior and wire translation for covered backends. |
-| Local integration | `test_local_smoke.py`, `test_runtime_http.py`, `test_retrieval_golden_path.py` | Real `RAGCore` paths over local in-memory services or subprocesses. |
-| Eval | `tests/evals/baseline/` | Regression on a synthetic labelled corpus. Not a product benchmark. |
-| Smoke scripts | `scripts/dx_smoke.sh`, `scripts/ci_self_host_smoke.sh`, `scripts/wheel_smoke.py` | User-facing CLI, HTTP, and installed-wheel journeys. |
-| Live | `@pytest.mark.live` tests | External providers or services; skipped without credentials. |
+| Provider replay | `provider_contract` | Recorded SDK shapes (no network) |
+| Integration | `integration` | Real Qdrant `:memory:` + parse/chunk/pipeline on `integration_corpus` |
+| Plumbing | `plumbing` | Fake embedders / scripted stores — wiring only |
+| PR retrieval regression | `eval` | `tests/evals/pr_corpus/` — fixed vectors + Qdrant; pipeline/metric regression only |
+| Eval harness | `eval_harness` | Keyword metric plumbing (`baseline/`) — not retrieval regression |
+| Meta | `meta` | Docs, packaging, exports |
+| Live | `live` | Paid APIs; **not** in default CI — run locally when you have credentials |
 
-## Rules for agents
+Semantic retrieval quality on your data belongs in **your app** via `rag_core.evals` (`examples/retrieval_eval.py`), not in this repo's CI.
 
-- Check which fixture a test uses before citing it as proof. `RecordingVectorStore`
-  returns scripted hits and is never a vector-store conformance substitute.
-- `@pytest.mark.eval_harness` tests prove metric or rerank plumbing. They are not
-  retrieval-quality gates.
-- `@pytest.mark.eval` is reserved for real eval paths with a corpus and cases.
-- Use `@pytest.mark.meta` for string, docs, export, packaging, and repo-shape tests.
-- Use `@pytest.mark.integration` when a test starts a subprocess, uses Starlette
-  `TestClient`, or exercises real local Qdrant through `RAGCore`.
-- Do not claim TurboPuffer parity from Qdrant contract tests. TurboPuffer has
-  adapter and optional live tests unless explicitly added to shared contracts.
-- CI architecture pressure is a report unless a test or script asserts bounds.
+## CI (pull request / push)
 
-## Known validation gaps
+`.github/workflows/ci.yml` only:
 
-Address these before claiming the project is production-proven:
+1. Fast pytest tier (unit, contracts, plumbing)
+2. `provider_contract`
+3. `integration`
+4. `tests/evals/test_retrieval_eval_pr.py` — retrieval regression
 
-- Add TurboPuffer to a shared vector-store contract path, or document it as
-  adapter-tested only.
-- Add provider live conformance scripts or remove wording that implies they
-  exist.
-- Strengthen evals with a less synthetic corpus, hard negatives, and realistic
-  floors. The baseline eval uses local Qdrant, but the labelled corpus is still
-  deliberately small and keyword-friendly.
-- Keep OpenAPI route drift and self-host smoke in CI when runtime routes change.
+No scheduled workflows. No API-key eval in CI.
+
+## Local gates (run before you ship)
+
+```bash
+uv sync --group dev
+./scripts/dx_smoke.sh
+
+uv run ruff check . && uv run mypy src tests examples
+uv run pytest -q -m "not live and not eval and not eval_harness and not provider_contract and not integration"
+uv run pytest -q -m provider_contract
+uv run pytest -q -m integration
+uv run pytest -q tests/evals/test_retrieval_eval_pr.py
+```
+
+Optional (credentials required):
+
+```bash
+uv run pytest -q -m live --maxfail=3
+```
+
+## Fixture layout
+
+| Path | Role |
+| --- | --- |
+| `tests/evals/pr_corpus/` | PR retrieval regression corpus + precomputed embeddings |
+| `tests/evals/baseline/` | Keyword fake embedder metric harness |
+| `tests/fixtures/integration_corpus/` | 10-doc integration search corpus |
+| `tests/fixtures/providers/` | Provider contract JSON replay |
+
+## Rules
+
+- `RecordingVectorStore` and `KeywordEmbeddingProvider` are not product proof.
+- TurboPuffer contract uses `tests/support/turbopuffer_fake.py`.
+- Do not lower eval floors without noting why in commit or research doc.
+- Validate provider fixtures: `./scripts/validate_provider_fixtures.sh`
+
+## Known gaps
+
+- Log-sanitization tests are per-module files; `assert_log_sanitized()` exists for future consolidation.
+- Live provider tests are optional and credential-gated (local only).

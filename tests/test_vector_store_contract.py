@@ -15,6 +15,8 @@ import pytest
 
 from rag_core.search.providers.memory_store import InMemoryVectorStore
 from rag_core.search.providers.qdrant_store import QdrantVectorStore
+from rag_core.search.providers.turbopuffer_store import TurboPufferVectorStore
+from tests.support.turbopuffer_fake import TurboPufferFakeNamespace
 from rag_core.search.types import (
     DeleteFilter,
     SearchQuery,
@@ -48,6 +50,15 @@ def _store_cases() -> list[_VectorStoreCase]:
                 collection_name=f"contract_{uuid.uuid4().hex}",
                 dense_dimensions=3,
                 quantization_enabled=False,
+            ),
+            dense_vector_dimensions=3,
+        ),
+        _VectorStoreCase(
+            name="turbopuffer-fake",
+            create=lambda: TurboPufferVectorStore(
+                namespace=f"contract_{uuid.uuid4().hex}",
+                dense_dimensions=3,
+                namespace_client=TurboPufferFakeNamespace(),
             ),
             dense_vector_dimensions=3,
         ),

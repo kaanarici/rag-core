@@ -75,9 +75,11 @@ dev = [
   'mypy>=1.11.0',
   'pre-commit>=3.8.0',
   'pytest>=8.3.0',
+  'pytest-recording>=0.13.0',
   'ruff>=0.6.0',
   'starlette>=0.37.0',
   'uvicorn>=0.30.0',
+  'vcrpy>=6.0.0',
 ]
 
 [build-system]
@@ -108,6 +110,8 @@ markers = [
   "integration: local integration tests that exercise process, HTTP, or real in-memory backends",
   "meta: docs, packaging, exports, or repository-shape tests; not runtime proof",
   "live: tests that require external provider credentials or services",
+  "provider_contract: recorded provider SDK replay; no network in CI",
+  "plumbing: demo/fake embedders or wiring-only orchestration checks",
 ]
 
 [tool.ruff]
