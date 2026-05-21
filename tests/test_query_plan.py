@@ -13,12 +13,12 @@ from rag_core.search import (
     Prefetch,
     PrefetchFusion,
     QueryPlan,
-    SearchRequest,
     SparseChannel,
     SparseVector,
     default_query_plan,
     query_plan_preset,
 )
+from rag_core.search.searcher import SearchRequest
 from rag_core.search.types import SearchQuery, SearchSidecarQuery
 
 

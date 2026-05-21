@@ -250,7 +250,6 @@ def test_search_exports_are_curated() -> None:
         "RerankBudget",
         "SEARCH_PROFILES",
         "SearchQuery",
-        "SearchRequest",
         "SearchResult",
         "SparseChannel",
         "SparseVector",
@@ -272,6 +271,7 @@ def test_search_exports_are_curated() -> None:
     assert not hasattr(search_exports, "PipelineContext")
     assert not hasattr(search_exports, "ProviderRerankStage")
     assert not hasattr(search_exports, "QdrantIndexer")
+    assert not hasattr(search_exports, "SearchRequest")
     assert not hasattr(search_exports, "SearchOrchestrator")
     assert not hasattr(search_exports, "SidecarPrefetchTransform")
     assert not hasattr(search_exports, "build_context_pack")

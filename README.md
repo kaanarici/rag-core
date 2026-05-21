@@ -26,11 +26,9 @@ the same `RAGCore` over HTTP.
 
 Prove the engine runs with deterministic demo embeddings — not semantic search.
 
-Python 3.11+ and [uv](https://docs.astral.sh/uv/):
+Python 3.11+ and [uv](https://docs.astral.sh/uv/), from the repo root:
 
 ```bash
-git clone https://github.com/kaanarici/rag-core.git
-cd rag-core
 uv sync
 ./scripts/dx_smoke.sh
 ```
@@ -39,7 +37,7 @@ uv sync
 | --- | --- |
 | `./scripts/dx_smoke.sh` | End-to-end smoke (CI uses this) |
 | `uv run rag-core demo --json` | Shortest hit JSON |
-| `python -m rag_core.quickstart` | Same after `pip install rag-core` |
+| `python -m rag_core.quickstart` | Same after installing the package |
 
 Step-by-step: [docs/quickstart.md](docs/quickstart.md).
 
@@ -77,7 +75,7 @@ Thin runtime over `RAGCore` — no auth or connector sync in core. [docs/self-ho
 ## Install
 
 ```bash
-uv add "rag-core @ git+https://github.com/kaanarici/rag-core.git"
+uv pip install -e .
 ```
 
 Extras: `semantic`, `html`, `rerank`, `voyage`, `zeroentropy`, `turbopuffer`,

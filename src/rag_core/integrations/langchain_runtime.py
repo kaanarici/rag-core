@@ -40,8 +40,7 @@ def require_langchain_symbol(module_name: str, symbol: str) -> Any:
     except ImportError as exc:  # pragma: no cover - environment dependent
         raise LangChainNotInstalledError(
             "LangChain integration requires langchain-core. "
-            "Install with `pip install rag-core[langchain]` "
-            "or `uv add 'rag-core[langchain]'`."
+            "Install rag-core with the `langchain` extra enabled."
         ) from exc
     try:
         return getattr(module, symbol)

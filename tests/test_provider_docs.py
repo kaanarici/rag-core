@@ -12,7 +12,7 @@ def test_provider_docs_match_current_install_story() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
     provider_docs = Path("docs/providers.md").read_text(encoding="utf-8")
 
-    assert 'uv add "rag-core @ git+https://github.com/kaanarici/rag-core.git"' in readme
+    assert "uv pip install -e ." in readme
     assert "QdrantConfig" in provider_docs
     assert "default wheel** ships **Qdrant**" in provider_docs
 

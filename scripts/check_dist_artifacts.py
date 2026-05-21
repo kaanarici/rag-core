@@ -35,6 +35,18 @@ REQUIRED_SDIST_SUFFIXES = frozenset(
     }
 )
 
+FORBIDDEN_SDIST_SUFFIXES = frozenset(
+    {
+        "AGENTS.md",
+        "CLAUDE.md",
+        "CONTEXT.md",
+        "MISSION.md",
+        "docs/AGENTS.md",
+        "docs/CONTEXT.md",
+        "docs/plans/ROUTING.md",
+    }
+)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -74,6 +86,9 @@ def _check_sdist(path: Path) -> None:
     missing = sorted(REQUIRED_SDIST_SUFFIXES - suffixes)
     if missing:
         raise SystemExit(f"sdist is missing required public artifacts: {missing}")
+    forbidden = sorted(FORBIDDEN_SDIST_SUFFIXES & suffixes)
+    if forbidden:
+        raise SystemExit(f"sdist includes local-only agent artifacts: {forbidden}")
 
 
 if __name__ == "__main__":

@@ -136,7 +136,4 @@ class DocumentIndexer:
         )
 
 
-# Backwards-compatible alias; prefer DocumentIndexer (store-agnostic name).
-QdrantIndexer = DocumentIndexer
-
-__all__ = ["DocumentIndexer", "IndexRequest", "IndexResult", "QdrantIndexer"]
+__all__ = ["DocumentIndexer", "IndexRequest", "IndexResult"]

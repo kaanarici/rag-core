@@ -20,7 +20,6 @@ from .query_plan import PrefetchFusion as PrefetchFusion
 from .query_plan import QueryPlan as QueryPlan
 from .query_plan import SparseChannel as SparseChannel
 from .query_plan import UnsupportedQueryStage as UnsupportedQueryStage
-from .searcher import SearchRequest as SearchRequest
 from .types import And as And
 from .types import Filter as Filter
 from .types import Geo as Geo

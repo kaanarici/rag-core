@@ -10,8 +10,6 @@ Qdrant + embedding provider). Smoke proves the pipeline; configured proves your 
 - Repo root
 
 ```bash
-git clone https://github.com/kaanarici/rag-core.git
-cd rag-core
 uv sync
 ```
 
@@ -23,10 +21,10 @@ uv sync
 ./scripts/dx_smoke.sh
 ```
 
-### After `pip install` (no git checkout)
+### After editable install
 
 ```bash
-pip install rag-core
+uv pip install -e .
 python -m rag_core.quickstart
 ```
 

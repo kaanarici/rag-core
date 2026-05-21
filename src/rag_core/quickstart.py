@@ -1,6 +1,6 @@
-"""Wheel-installable first-run demo (no checkout required).
+"""Installed-package first-run demo.
 
-Run after ``pip install rag-core``:
+Run after installing a local wheel or editable checkout:
 
     python -m rag_core.quickstart
 """
