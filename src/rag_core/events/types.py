@@ -1,0 +1,97 @@
+"""Public engine lifecycle event record entrypoint."""
+
+from __future__ import annotations
+
+from typing import Union
+
+from rag_core.events.document_events import (
+    ChunkProduced as ChunkProduced,
+    ContextualizeCompleted as ContextualizeCompleted,
+    ContextualizeStarted as ContextualizeStarted,
+    EmbedCompleted as EmbedCompleted,
+    EmbedRequested as EmbedRequested,
+    IndexDeleted as IndexDeleted,
+    IndexUpserted as IndexUpserted,
+    OcrApplied as OcrApplied,
+    ParseCompleted as ParseCompleted,
+)
+from rag_core.events.ingest_events import (
+    FetchCompleted as FetchCompleted,
+    FetchFailed as FetchFailed,
+    FetchStarted as FetchStarted,
+    IngestBatchCompleted as IngestBatchCompleted,
+    IngestBatchFailed as IngestBatchFailed,
+    IngestBatchProgress as IngestBatchProgress,
+    IngestBatchStarted as IngestBatchStarted,
+    IngestCompleted as IngestCompleted,
+    IngestSkipped as IngestSkipped,
+    IngestStarted as IngestStarted,
+)
+from rag_core.events.search_events import (
+    RerankApplied as RerankApplied,
+    SearchCompleted as SearchCompleted,
+    SearchPlanned as SearchPlanned,
+    SearchStageCompleted as SearchStageCompleted,
+    SearchStarted as SearchStarted,
+    SidecarApplied as SidecarApplied,
+    StageError as StageError,
+)
+
+Event = Union[
+    IngestStarted,
+    IngestSkipped,
+    IngestBatchStarted,
+    IngestBatchProgress,
+    IngestBatchCompleted,
+    IngestBatchFailed,
+    IngestCompleted,
+    FetchStarted,
+    FetchCompleted,
+    FetchFailed,
+    ParseCompleted,
+    OcrApplied,
+    ChunkProduced,
+    ContextualizeStarted,
+    ContextualizeCompleted,
+    EmbedRequested,
+    EmbedCompleted,
+    IndexUpserted,
+    IndexDeleted,
+    SearchStarted,
+    SearchPlanned,
+    SearchStageCompleted,
+    SearchCompleted,
+    RerankApplied,
+    SidecarApplied,
+    StageError,
+]
+
+__all__ = (
+    "ChunkProduced",
+    "ContextualizeCompleted",
+    "ContextualizeStarted",
+    "EmbedCompleted",
+    "EmbedRequested",
+    "Event",
+    "FetchCompleted",
+    "FetchFailed",
+    "FetchStarted",
+    "IndexDeleted",
+    "IndexUpserted",
+    "IngestBatchCompleted",
+    "IngestBatchFailed",
+    "IngestBatchProgress",
+    "IngestBatchStarted",
+    "IngestCompleted",
+    "IngestSkipped",
+    "IngestStarted",
+    "OcrApplied",
+    "ParseCompleted",
+    "RerankApplied",
+    "SearchCompleted",
+    "SearchPlanned",
+    "SearchStageCompleted",
+    "SearchStarted",
+    "SidecarApplied",
+    "StageError",
+)

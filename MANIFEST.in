@@ -1,0 +1,9 @@
+include LICENSE
+include README.md
+include pyproject.toml
+
+recursive-include docs *.md
+prune docs/plans
+recursive-include examples *.jsonl *.md *.py *.ts
+recursive-include scripts *.py
+prune tests
