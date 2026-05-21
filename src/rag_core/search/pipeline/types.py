@@ -1,6 +1,6 @@
 """Stage protocols and the mutable query bundle for the retrieval pipeline.
 
-The pipeline is the linear list of stages described in `docs/adr/0002-linear-pipeline-no-dsl.md`:
+The pipeline is the linear list of stages described in `dev/DESIGN.md`:
 QueryTransform[] -> Retrieve -> Fuse -> Rerank -> Postprocess[]. Stages return data;
 the runner composes them. No branching, no DSL.
 """

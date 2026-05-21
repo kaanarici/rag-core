@@ -18,10 +18,8 @@ def test_sdist_manifest_includes_readme_link_targets() -> None:
 def test_public_docs_and_examples_are_present_for_packaging() -> None:
     public_targets = (
         "docs/parsing/formats.md",
-        "docs/providers/custom-providers.md",
-        "docs/providers/provider-output-shapes.md",
-        "docs/providers/vector-stores.md",
-        "docs/integrations/vercel-ai-sdk-tools.md",
+        "docs/providers.md",
+        "docs/self-host.md",
         "examples/minimal_app.py",
         "examples/search_endpoint.py",
         "examples/source_ingest.py",

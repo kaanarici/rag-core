@@ -15,6 +15,7 @@
 /docs/CONTEXT.md
 /docs/plans/
 /docs/research/
+/roadmap.md
 
 .mypy_cache/
 .pytest_cache/

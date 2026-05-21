@@ -1,6 +1,6 @@
 # rag-core context
 
-**Read order for agents:** this file → [plans/ROUTING.md](plans/ROUTING.md) → [README.md](README.md) (catalog) → [../roadmap.md](../roadmap.md) (checklist).
+**Read order for agents:** this file → [plans/ROUTING.md](plans/ROUTING.md) → [../../README.md](../../README.md) → local `roadmap.md` if present.
 
 **Local only** — generated from [templates/CONTEXT.md](templates/CONTEXT.md). Do not commit.
 
@@ -35,7 +35,7 @@ CI parity: [../scripts/README.md](../scripts/README.md).
 | Journey | Status | Doc |
 |---------|--------|-----|
 | A — First 10 minutes | **Done** | [quickstart.md](quickstart.md) |
-| B — Embed | Docs done | [embedding/production-guide.md](embedding/production-guide.md) |
+| B — Embed | Docs done | [README embed section](../../README.md#embed-in-your-app) |
 | C — Self-host | **Done** (C3+C2) | [self-host/quickstart.md](self-host/quickstart.md) |
 | V — TurboPuffer | **Done** (optional extra) | [providers/vector-stores.md](providers/vector-stores.md) |
 | Q — Quality proof | **Open** (Q2a on roadmap) | [roadmap.md](../roadmap.md) |

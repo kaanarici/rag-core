@@ -1,7 +1,7 @@
 # Self-host: Qdrant + rag-core serve (Journey C2).
 #   docker compose up -d --build
 #   curl -s http://127.0.0.1:8787/health/ready
-# See docs/self-host/quickstart.md and docs/self-host/config.md.
+# See docs/self-host.md.
 services:
   qdrant:
     image: qdrant/qdrant:v1.13.4

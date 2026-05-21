@@ -8,7 +8,7 @@
 2. [plans/ROUTING.md](plans/ROUTING.md)  
 3. [README.md](README.md) — product doc catalog  
 4. [../scripts/README.md](../scripts/README.md)  
-5. [../roadmap.md](../roadmap.md)  
+5. [../../README.md](../../README.md) (product) · local `roadmap.md` if present  
 
 Use `.codex/skills/` for substantial work: `decide`, `repo-intake`, `blueprint`, `grind`, `review`, `finish-line`.
 

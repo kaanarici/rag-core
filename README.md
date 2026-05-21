@@ -17,22 +17,9 @@ Your app keeps auth, chat, connectors, and billing. rag-core keeps everything be
 - Drop-in hosted ingest + Drive/Notion connectors + SaaS auth (by design).
 - “One curl and never think about namespaces again” (you bind tenancy in your app).
 
-## Maintainers (us)
+## Try it (no API keys)
 
-- **Product docs:** [docs/README.md](docs/README.md)
-- **Agent docs (local, gitignored):** `./scripts/setup_agent_docs.sh` once per machine — [docs/templates/README.md](docs/templates/README.md)
-- **Scripts:** [scripts/README.md](scripts/README.md)
-
-```bash
-uv sync --group dev
-./scripts/dx_smoke.sh
-```
-
-Full CI parity: [scripts/README.md](scripts/README.md#ci-github-actions-mirrors-this). Config truth: `uv run rag-core doctor --json`.
-
-## Try it in ten minutes (no API keys)
-
-You need Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+Python 3.11+ and [uv](https://docs.astral.sh/uv/):
 
 ```bash
 git clone https://github.com/kaanarici/rag-core.git
@@ -41,16 +28,9 @@ uv sync
 ./scripts/dx_smoke.sh
 ```
 
-That single script runs demo search, folder ingest, trace summary, doctor, context + citations, and a small library eval. Step-by-step output expectations: [docs/quickstart.md](docs/quickstart.md).
+Step-by-step: [docs/quickstart.md](docs/quickstart.md). After `pip install`: `python -m rag_core.quickstart`.
 
-**After `pip install`** (no git checkout):
-
-```bash
-pip install rag-core
-python -m rag_core.quickstart
-```
-
-**Your own folder** (still no keys): `local-search` indexes a folder into embedded Qdrant (use `--max-files` to cap batch size).
+**Your own folder:**
 
 ```bash
 mkdir -p /tmp/rag-core-quickstart
@@ -58,25 +38,17 @@ printf "Invoices can be paid by ACH.\n" > /tmp/rag-core-quickstart/guide.md
 uv run rag-core local-search /tmp/rag-core-quickstart "How can invoices be paid?" --json
 ```
 
-Trace on the bundled demo corpus (see [docs/quickstart.md](docs/quickstart.md)):
+## Self-host (optional)
 
 ```bash
-uv run rag-core local-search examples/demo_corpus "corpus lifecycle" \
-  --events-jsonl traces.jsonl --json
+docker compose up -d --build && curl -s http://127.0.0.1:8787/health/ready
 ```
 
-## Self-host the HTTP API (optional)
-
-```bash
-docker compose up -d --build
-curl -s http://127.0.0.1:8787/health/ready
-```
-
-Full path: [docs/self-host/quickstart.md](docs/self-host/quickstart.md). Contract: [docs/self-host/openapi.yaml](docs/self-host/openapi.yaml). Auth stays in your gateway: [docs/self-host/auth.md](docs/self-host/auth.md).
+[docs/self-host.md](docs/self-host.md) · [openapi.yaml](docs/self-host/openapi.yaml)
 
 ## Embed in your app
 
-One `RAGCore` per worker. Bind `namespace` / `corpus_id` from **your** auth — not from model text.
+One `RAGCore` per worker. Bind `namespace` / `corpus_id` from **your** auth.
 
 ```python
 import asyncio
@@ -102,35 +74,39 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-For a persistent local directory without API keys:
+Persistent local Qdrant: `build_demo_core(..., qdrant_location="./rag-core-qdrant")`. `build_demo_core` works from an installed wheel without API keys. Worker lifespan: [examples/embedded_service.py](examples/embedded_service.py). Contracts: [docs/expectations.md](docs/expectations.md).
 
-```python
-async with build_demo_core(
-    collection="quickstart",
-    qdrant_location="./rag-core-qdrant",
-) as core:
-    ...
+## Examples (checkout only)
+
+Not installed into the wheel — import from `rag_core` when using `pip install rag-core`.
+
+```bash
+uv run python -m examples.minimal_app
+uv run python -m examples.search_endpoint
+uv run python -m examples.source_ingest
+uv run python -m examples.retrieval_eval
 ```
 
-`build_demo_core` works from an installed wheel without API keys.
+| Example | Shows |
+|---------|--------|
+| [minimal_app.py](examples/minimal_app.py) | Context + citations |
+| [embedded_service.py](examples/embedded_service.py) | Worker lifespan |
+| [source_ingest.py](examples/source_ingest.py) | File, ZIP, URL ingest |
+| [search_endpoint.py](examples/search_endpoint.py) | App-owned scope + tool contract |
+| [vercel_ai_sdk_search_tool.ts](examples/vercel_ai_sdk_search_tool.ts) | Vercel AI SDK → your endpoint |
+| [retrieval_eval.py](examples/retrieval_eval.py) | `rag_core.evals` quality gate |
 
-Production lifecycle, shutdown, and connector replacement: [docs/embedding/production-guide.md](docs/embedding/production-guide.md) and [docs/embedding/connector-pattern.md](docs/embedding/connector-pattern.md). Example worker pattern: [examples/embedded_service.py](examples/embedded_service.py).
+**Evals:** keep cases in your app repo (`cases = load_cases(Path("cases.jsonl"))`). See `examples/retrieval_eval.py` and `examples/eval_cases.jsonl`.
 
-## How the pieces fit together
+**Vercel AI SDK:** `from rag_core.contracts import parse_search_user_documents_request` — model calls your endpoint; your app calls `RAGCore.retrieve_context(...)`.
 
-```text
-sources → parse → chunk → index → search → context pack → your LLM call
+## Install
+
+```bash
+uv add "rag-core @ git+https://github.com/kaanarici/rag-core.git"
 ```
 
-| Term | Meaning |
-|------|---------|
-| **namespace** | Tenant or app partition you control |
-| **corpus_id** | Logical collection inside a namespace |
-| **search** | Raw ranked hits (Ragie-shaped JSON) |
-| **retrieve_context** | Model-ready text + citations |
-| **events / traces** | JSONL you can summarize without a vendor UI |
-
-Deeper contract: [docs/expectations.md](docs/expectations.md).
+Extras: `semantic`, `html`, `rerank`, `voyage`, `zeroentropy`, `turbopuffer`, `opentelemetry`, `anthropic`, `langchain`, `openai-agents`, `runtime`. See [docs/providers.md](docs/providers.md).
 
 ## CLI cheatsheet
 
@@ -143,58 +119,35 @@ uv run rag-core search "billing policy" --namespace acme --corpus-id help --json
 uv run rag-core retrieve-context "billing policy" --namespace acme --corpus-id help --json
 ```
 
-`local-search` is the fastest end-to-end check. `ingest` + `search` + `retrieve-context` are what you keep in production. Every command has `--help` with copy-paste Examples.
+Batch ingest commands stream one JSON object per record. `--events-jsonl`, manifest files, and batch ingest stdout are JSONL.
 
-## Install
+## Docs
 
-```bash
-uv add "rag-core @ git+https://github.com/kaanarici/rag-core.git"
-```
+| Doc | Topic |
+|-----|--------|
+| [quickstart.md](docs/quickstart.md) | First-run proof |
+| [expectations.md](docs/expectations.md) | Hits, context, traces |
+| [providers.md](docs/providers.md) | Vector stores + custom providers |
+| [self-host.md](docs/self-host.md) | HTTP API |
+| [parsing/formats.md](docs/parsing/formats.md) | Supported formats |
+| [DESIGN.md](dev/DESIGN.md) | Architecture principles |
 
-Optional extras (declare on install): `semantic`, `html`, `rerank`, `voyage`, `zeroentropy`, `turbopuffer`, `opentelemetry`, `anthropic`, `langchain`, `openai-agents`, `runtime`. Example: `uv sync --extra runtime --extra rerank`.
-
-## Examples (checkout only)
-
-The `examples/` modules below are checkout examples. They are not installed into the wheel. Use `python -m rag_core.quickstart` for a wheel-only demo.
-
-```bash
-uv run python -m examples.minimal_app
-uv run python -m examples.search_endpoint
-uv run python -m examples.source_ingest
-uv run python -m examples.retrieval_eval
-```
-
-| Example | Shows |
-|---------|--------|
-| [examples/minimal_app.py](examples/minimal_app.py) | Context + citations |
-| [examples/embedded_service.py](examples/embedded_service.py) | Worker lifespan |
-| [examples/source_ingest.py](examples/source_ingest.py) | File, ZIP, URL ingest |
-| [examples/retrieval_eval.py](examples/retrieval_eval.py) | Library eval gate |
-
-## CLI output shapes
-
-Commands with `--json` write one JSON document to stdout. Batch ingest commands such as `ingest`, `ingest-archive`, and `ingest-urls` stream one JSON object per record. `--events-jsonl`, manifest files, and batch ingest stdout are JSONL: one JSON object per line.
-
-## Docs map
-
-See [docs/README.md](docs/README.md). Maintainer agent layers: `./scripts/setup_agent_docs.sh` (gitignored; not on remote).
+Maintainers: `./scripts/setup_agent_docs.sh` (local agent docs) · [scripts/README.md](scripts/README.md)
 
 ## Validate changes
 
 ```bash
+uv sync --group dev
 uv run ruff check .
 uv run mypy src tests examples
 uv run pytest -q
 ./scripts/dx_smoke.sh
 uv build && uv run python scripts/wheel_smoke.py
-./scripts/brand_check.sh
 ```
 
 ## Troubleshooting
 
-- Start with `uv run rag-core demo --json`, then `doctor --json` when config looks wrong.
+- `uv run rag-core demo --json`, then `doctor --json` when config looks wrong.
 - Use exactly one of `--qdrant-url` or `--qdrant-location`.
-- For no-key mode: `--embedding-provider demo --embedding-dimensions 64`.
-- Examples must run as modules from a checkout: `uv run python -m examples.minimal_app`.
-
-Strategy and scope boundaries: [AGENTS.md](AGENTS.md) (if present in your tree) and the strategy doc above.
+- No-key mode: `--embedding-provider demo --embedding-dimensions 64`.
+- Examples: `uv run python -m examples.minimal_app` from a checkout.

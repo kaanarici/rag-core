@@ -43,7 +43,7 @@ replace_in() {
   fi
 }
 
-for file in README.md docs/quickstart.md docs/self-host/quickstart.md compose.yaml; do
+for file in README.md docs/quickstart.md docs/self-host.md compose.yaml; do
   replace_in "$file"
 done
 

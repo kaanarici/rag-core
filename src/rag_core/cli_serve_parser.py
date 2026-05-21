@@ -23,5 +23,5 @@ Examples:
   rag-core serve --qdrant-location :memory: --embedding-provider demo --embedding-dimensions 64
   rag-core serve --qdrant-url http://127.0.0.1:6333 --embedding-provider openai --embedding-model text-embedding-3-small
   curl -s http://127.0.0.1:8787/health
-  See docs/self-host/quickstart.md for compose + ingest/search curls.
+  See docs/self-host.md for compose + ingest/search curls.
 """

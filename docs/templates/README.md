@@ -25,6 +25,6 @@ Edit the local copies freely. Refresh from templates after a deliberate template
 
 ## Remote repo policy
 
-**On `origin`:** product docs only (`quickstart`, `expectations`, `providers`, `self-host`, ADRs, `roadmap.md`).
+**On `origin`:** product docs only (`quickstart`, `expectations`, `providers.md`, `self-host.md`, `openapi.yaml`, `parsing/formats.md`). Maintainer checklist: local `roadmap.md` (gitignored).
 
 **Never push:** `docs/plans/`, `docs/research/`, root `AGENTS.md` / `MISSION.md` / `CONTEXT.md`, or local agent layers (see root `.gitignore`).

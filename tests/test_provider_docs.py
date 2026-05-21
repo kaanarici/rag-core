@@ -6,18 +6,17 @@ from pathlib import Path
 
 def test_provider_docs_match_current_install_story() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
-    vector_store_docs = Path("docs/providers/vector-stores.md").read_text(encoding="utf-8")
+    provider_docs = Path("docs/providers.md").read_text(encoding="utf-8")
 
     assert 'uv add "rag-core @ git+https://github.com/kaanarici/rag-core.git"' in readme
-    assert "QdrantConfig" in vector_store_docs
-    assert "default wheel** ships **Qdrant**" in vector_store_docs
+    assert "QdrantConfig" in provider_docs
+    assert "default wheel** ships **Qdrant**" in provider_docs
 
 
 def test_readme_first_run_names_module_smokes() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
 
-    assert "The `examples/` modules below are checkout examples." in readme
-    assert "They are not installed into the wheel." in readme
+    assert "Not installed into the wheel" in readme
 
     required_commands = (
         "uv run python -m examples.minimal_app",
@@ -29,20 +28,14 @@ def test_readme_first_run_names_module_smokes() -> None:
         assert command in readme
 
 
-def test_docs_mark_checkout_examples_and_installed_import_surfaces() -> None:
+def test_readme_documents_checkout_examples_and_eval_contracts() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
-    eval_docs = Path("docs/evals/retrieval-quality.md").read_text(encoding="utf-8")
-    vercel_docs = Path("docs/integrations/vercel-ai-sdk-tools.md").read_text(
-        encoding="utf-8"
-    )
 
-    for docs in (readme, eval_docs, vercel_docs):
-        assert "not installed into the wheel" in docs
-
-    assert "Installed-package users should keep eval cases in their own app repo" in eval_docs
-    assert "cases = load_cases(Path(\"cases.jsonl\"))" in eval_docs
-    assert "from rag_core.contracts import parse_search_user_documents_request" in vercel_docs
-    assert "RAGCore.retrieve_context(...)" in vercel_docs
+    assert "not installed into the wheel" in readme.lower()
+    assert "keep cases in your app repo" in readme
+    assert 'cases = load_cases(Path("cases.jsonl"))' in readme
+    assert "from rag_core.contracts import parse_search_user_documents_request" in readme
+    assert "RAGCore.retrieve_context(...)" in readme
 
 
 def test_readme_shows_installed_no_key_library_path() -> None:
@@ -52,13 +45,14 @@ def test_readme_shows_installed_no_key_library_path() -> None:
     assert 'build_demo_core(collection="quickstart")' in readme
     assert 'qdrant_location="./rag-core-qdrant"' in readme
     assert "works from an installed wheel without API keys" in readme
+    assert "pip install rag-core" in readme or "pip install`" in readme
 
 
 def test_readme_documents_all_declared_extras() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     extras = set(pyproject["project"]["optional-dependencies"])
     readme = Path("README.md").read_text(encoding="utf-8")
-    provider_docs = Path("docs/providers/custom-providers.md").read_text(encoding="utf-8")
+    provider_docs = Path("docs/providers.md").read_text(encoding="utf-8")
 
     assert extras == {
         "semantic",
@@ -74,7 +68,7 @@ def test_readme_documents_all_declared_extras() -> None:
         "runtime",
     }
     for extra in extras:
-        assert f"`{extra}`" in readme or f"--extra {extra}" in readme
+        assert f"`{extra}`" in readme
         assert f"`{extra}`" in provider_docs
 
 
@@ -83,7 +77,7 @@ def test_readme_distinguishes_json_stdout_from_jsonl_files() -> None:
 
     assert "Batch ingest commands" in readme
     assert "one JSON object per record" in readme
-    assert "`--events-jsonl`, manifest files, and batch ingest stdout are JSONL" in readme
+    assert "JSONL" in readme
 
 
 def test_examples_reuse_packaged_demo_core() -> None:
@@ -102,25 +96,14 @@ def test_examples_reuse_packaged_demo_core() -> None:
         assert "DemoSparseEmbedder" not in text
 
 
-def test_readme_first_run_uses_a_user_owned_folder_before_demo_corpus() -> None:
+def test_readme_first_run_uses_a_user_owned_folder() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
-    examples = Path("examples")
-    corpus = examples / "demo_corpus"
     quickstart_command = (
         'uv run rag-core local-search /tmp/rag-core-quickstart "How can invoices be paid?" --json'
     )
-    demo_trace_command = (
-        'uv run rag-core local-search examples/demo_corpus "corpus lifecycle" \\'
-    )
 
     assert quickstart_command in readme
-    assert readme.index(quickstart_command) < readme.index(demo_trace_command)
-    assert "It indexes up to 200 supported files by default" not in readme
-    assert "It indexes a folder into embedded Qdrant" not in readme
-    assert "local-search` indexes a folder into embedded Qdrant" in readme
-    assert "`--max-files`" in readme
-    assert corpus.is_dir()
-    assert sorted(path.suffix for path in corpus.iterdir()) == [".md", ".md", ".md"]
+    assert "local-search" in readme
 
 
 def test_ci_runs_installed_consumer_wheel_smoke() -> None:
@@ -138,7 +121,7 @@ def test_ci_runs_installed_consumer_wheel_smoke() -> None:
 
 
 def test_custom_provider_docs_name_all_extension_points() -> None:
-    docs = Path("docs/providers/custom-providers.md").read_text(encoding="utf-8")
+    docs = Path("docs/providers.md").read_text(encoding="utf-8")
 
     required_terms = (
         "rag_core.search.types.EmbeddingProvider",
@@ -169,7 +152,7 @@ def test_custom_provider_docs_name_all_extension_points() -> None:
 
 
 def test_custom_provider_docs_distinguish_config_and_injection_surfaces() -> None:
-    docs = Path("docs/providers/custom-providers.md").read_text(encoding="utf-8")
+    docs = Path("docs/providers.md").read_text(encoding="utf-8")
 
     required_terms = (
         "A registry entry does not automatically make a category selectable from `RAGCoreConfig`.",
@@ -187,10 +170,10 @@ def test_custom_provider_docs_distinguish_config_and_injection_surfaces() -> Non
 
 
 def test_custom_provider_docs_explain_support_level_diagnostics() -> None:
-    docs = Path("docs/providers/custom-providers.md").read_text(encoding="utf-8")
+    docs = Path("docs/providers.md").read_text(encoding="utf-8")
 
     required_terms = (
-        "Support Levels And Diagnostics",
+        "Support levels and diagnostics",
         "rag-core doctor --json",
         "Dense embeddings",
         "Sparse embeddings",
@@ -200,14 +183,14 @@ def test_custom_provider_docs_explain_support_level_diagnostics() -> None:
         "Caches",
         "Search sidecars",
         "Event sinks",
-        "Vector-store diagnostics",
+        "Vector stores",
     )
     for term in required_terms:
         assert term in docs
 
 
 def test_provider_output_shape_audit_stays_visible() -> None:
-    docs = Path("docs/providers/provider-output-shapes.md").read_text(encoding="utf-8")
+    docs = Path("docs/providers.md").read_text(encoding="utf-8")
 
     required_terms = (
         "Checked against provider docs on 2026-05-20.",

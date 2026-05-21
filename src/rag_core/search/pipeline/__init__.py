@@ -2,7 +2,7 @@
 
 The pipeline is the canonical seam for advanced and experimental retrieval
 techniques (HyDE, multi-query, MMR, reranker cascades, parent-child expansion,
-etc.). See `docs/adr/0002-linear-pipeline-no-dsl.md`. Stages are typed
+etc.). See `dev/DESIGN.md`. Stages are typed
 protocols; the runner is a frozen dataclass with five fields.
 """
 

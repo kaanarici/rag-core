@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir '.[runtime]'
 
 EXPOSE 8787
 
-# Override via compose ``command`` / environment (see docs/self-host/config.md).
+# Override via compose command / environment (see docs/self-host.md).
 CMD [
   "rag-core",
   "serve",

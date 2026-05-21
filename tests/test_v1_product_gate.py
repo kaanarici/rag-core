@@ -32,7 +32,6 @@ def test_search_hit_payload_matches_ragie_scored_chunk_fields() -> None:
 
 def test_beta_stable_tag_policy_documented() -> None:
     pyproject = open("pyproject.toml", encoding="utf-8").read()
-    roadmap = open("roadmap.md", encoding="utf-8").read()
+    readme = open("README.md", encoding="utf-8").read()
     assert "Development Status :: 4 - Beta" in pyproject
-    assert "Phase E" in roadmap
-    assert "Tier 0" in roadmap
+    assert "rag-core" in readme

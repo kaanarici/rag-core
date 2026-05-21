@@ -1,4 +1,4 @@
-# Retrieval expectations (v1)
+# Retrieval expectations
 
 `rag-core` is an embeddable retrieval engine, not a hosted RAG API. Applications keep auth, chat, and model calls; the library owns parse → chunk → index → search → context/citations/manifest/events.
 
@@ -25,7 +25,7 @@ Use `retrieve_context(...)` or `rag-core retrieve-context` when the model needs 
 
 Manifest JSONL records ingest fingerprints and skip-by-hash reconciliation. It is not a hosted document registry; apps own external doc IDs and map them to `document_id` / `document_key`.
 
-## Non-goals (v1)
+## Non-goals
 
 - Hosted chat, webhooks, billing, teams, admin UI
 - `rag-core eval` / `trace-summary` CLI (use `rag_core.evals`, `examples/retrieval_eval.py`, and `summarize_search_trace` on events JSONL)

@@ -31,7 +31,7 @@ Run `./scripts/dx_smoke.sh` before adding unrelated scope.
 | User says | Do |
 |-----------|-----|
 | `continue`, `next`, `DX`, `first run`, `cleanup` | `./scripts/dx_smoke.sh`; Journey **A** maintenance; [../quickstart.md](../quickstart.md) |
-| `embed`, `app`, `managed RAG`, `Ragie` | Journey **B** — [../embedding/production-guide.md](../embedding/production-guide.md) |
+| `embed`, `app`, `managed RAG`, `Ragie` | Journey **B** — [../../README.md#embed-in-your-app](../../README.md#embed-in-your-app), `examples/embedded_service.py` |
 | `self-host`, `serve`, `API` | Journey **C** — [../self-host/quickstart.md](../self-host/quickstart.md); `./scripts/self_host_smoke.sh` after compose changes |
 | `turbopuffer`, `managed vector` | Journey **V** — [../providers/vector-stores.md](../providers/vector-stores.md) |
 | `quality`, `benchmarks`, `evals` | Journey **Q** — Q2a on [roadmap.md](../../roadmap.md) |

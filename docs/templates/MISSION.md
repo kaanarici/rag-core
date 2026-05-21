@@ -25,4 +25,4 @@ No hosted app, billing, connector marketplace, or agent canvas. Runtime optional
 uv run ruff check . && uv run mypy src tests examples && uv run pytest -q
 ```
 
-Agent routing: `docs/plans/ROUTING.md` (local). Product docs: `docs/README.md`.
+Agent routing: `docs/plans/ROUTING.md` (local). Product docs: `README.md` + `docs/quickstart.md`.
