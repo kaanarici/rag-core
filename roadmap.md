@@ -34,7 +34,7 @@ One-page checklist for the **v0 pre-release** product shape (public `0.1.x` unti
 
 ## Phase F — One repo / DX (active)
 
-Agents: `docs/CONTEXT.md` → `docs/plans/ROUTING.md` · Catalog: `docs/README.md`
+Maintainers: `./scripts/setup_agent_docs.sh` (local) · Product docs: `docs/README.md`
 
 ### Journey C — self-host
 
@@ -60,15 +60,12 @@ Agents: `docs/CONTEXT.md` → `docs/plans/ROUTING.md` · Catalog: `docs/README.m
 
 ### Research + quality
 
-- [x] `docs/research/managed-rag-landscape.md`
-- [x] `docs/research/oss-rag-landscape.md`
-- [x] `docs/research/retrieval-benchmark-corpus.md` (Q2 corpus selection TBD)
-- [ ] CI tiers: nightly `eval` workflow
-- [ ] Subagent programs: keep strategy docs current
+- [x] Research notes (local `docs/research/`, gitignored)
+- [ ] CI tiers: nightly `eval` workflow (Q2a)
 
-## Phase G — Shape refresh (active)
+## Phase G — Shape refresh
 
-Doc map: `docs/README.md` · Strategy: Phase G in `docs/plans/one-repo-retrieval-engine-strategy.md`
+Product docs: `docs/README.md` · Agent templates: `docs/templates/`
 
 ### Default next slices
 
@@ -78,7 +75,7 @@ Doc map: `docs/README.md` · Strategy: Phase G in `docs/plans/one-repo-retrieval
 
 ### Journey V — TurboPuffer (v0 optional)
 
-Research: [docs/research/turbopuffer-landscape.md](docs/research/turbopuffer-landscape.md)
+Docs: [docs/providers/vector-stores.md](docs/providers/vector-stores.md) (TurboPuffer section)
 
 - [x] **TP1** — base adapter (ANN, filters, upsert, delete, health, doctor, `--extra turbopuffer`)
 - [x] **TP2** — hybrid `QueryPlan` (BM25 + dense multi-query RRF; `lexical_query` on `SearchQuery`)

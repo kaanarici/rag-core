@@ -2,7 +2,7 @@
 
 **Read order for agents:** this file → [plans/ROUTING.md](plans/ROUTING.md) → [README.md](README.md) (catalog) → [../roadmap.md](../roadmap.md) (checklist).
 
-Root `MISSION.md` / `AGENTS.md` may exist locally but are gitignored; **this file is the tracked mission surface.**
+**Local only** — generated from [templates/CONTEXT.md](templates/CONTEXT.md). Do not commit.
 
 ## Product (one sentence)
 
@@ -37,11 +37,10 @@ CI parity: [../scripts/README.md](../scripts/README.md).
 | A — First 10 minutes | **Done** | [quickstart.md](quickstart.md) |
 | B — Embed | Docs done | [embedding/production-guide.md](embedding/production-guide.md) |
 | C — Self-host | **Done** (C3+C2) | [self-host/quickstart.md](self-host/quickstart.md) |
-| V — TurboPuffer | **Done** (optional extra) | [research/turbopuffer-landscape.md](research/turbopuffer-landscape.md) |
-| R — Research | **Done** | [research/](research/) |
-| Q — Quality proof | **Open** (Q2a corpus) | [research/retrieval-benchmark-corpus.md](research/retrieval-benchmark-corpus.md) |
+| V — TurboPuffer | **Done** (optional extra) | [providers/vector-stores.md](providers/vector-stores.md) |
+| Q — Quality proof | **Open** (Q2a on roadmap) | [roadmap.md](../roadmap.md) |
 
-Full spec and history: [plans/one-repo-retrieval-engine-strategy.md](plans/one-repo-retrieval-engine-strategy.md). **Do not** execute [plans/archive/](plans/archive/).
+Optional local research notes: `docs/research/` (gitignored).
 
 ## Code map (where to edit)
 
@@ -60,4 +59,4 @@ No connector marketplace, hosted accounts, admin UI, billing, graph DSL, or runt
 
 ## Scope boundaries
 
-Library-first. Qdrant = default wheel. TurboPuffer = `uv sync --extra turbopuffer`. Convex / managed RAG backends = research only ([research/convex-landscape.md](research/convex-landscape.md): no first-party adapter).
+Library-first. Qdrant = default wheel. TurboPuffer = `uv sync --extra turbopuffer`. No first-party Convex adapter.

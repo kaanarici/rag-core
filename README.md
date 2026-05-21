@@ -19,8 +19,9 @@ Your app keeps auth, chat, connectors, and billing. rag-core keeps everything be
 
 ## Maintainers (us)
 
-- **Agents:** [docs/CONTEXT.md](docs/CONTEXT.md) → [docs/plans/ROUTING.md](docs/plans/ROUTING.md) → [docs/README.md](docs/README.md)
-- **Scripts:** [scripts/README.md](scripts/README.md) — what each script does (CI vs daily)
+- **Product docs:** [docs/README.md](docs/README.md)
+- **Agent docs (local, gitignored):** `./scripts/setup_agent_docs.sh` once per machine — [docs/templates/README.md](docs/templates/README.md)
+- **Scripts:** [scripts/README.md](scripts/README.md)
 
 ```bash
 uv sync --group dev
@@ -176,14 +177,7 @@ Commands with `--json` write one JSON document to stdout. Batch ingest commands 
 
 ## Docs map
 
-| Doc | When to read |
-|-----|----------------|
-| [docs/quickstart.md](docs/quickstart.md) | First run proof |
-| [docs/embedding/production-guide.md](docs/embedding/production-guide.md) | Shipping embed |
-| [docs/self-host/quickstart.md](docs/self-host/quickstart.md) | Operating `serve` |
-| [docs/naming.md](docs/naming.md) | Contributor vocabulary |
-| [docs/plans/one-repo-retrieval-engine-strategy.md](docs/plans/one-repo-retrieval-engine-strategy.md) | Product direction |
-| [docs/research/](docs/research/) | Managed vs OSS landscape |
+See [docs/README.md](docs/README.md). Maintainer agent layers: `./scripts/setup_agent_docs.sh` (gitignored; not on remote).
 
 ## Validate changes
 

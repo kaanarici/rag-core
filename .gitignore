@@ -5,10 +5,17 @@
 .env
 .env.local
 /dev/project_identity.local.toml
+
+# Agent & planning docs (local only — see docs/templates/ + scripts/setup_agent_docs.sh)
 /AGENTS.md
 /CLAUDE.md
 /CONTEXT.md
 /MISSION.md
+/docs/AGENTS.md
+/docs/CONTEXT.md
+/docs/plans/
+/docs/research/
+
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
