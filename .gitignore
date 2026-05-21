@@ -13,7 +13,6 @@
 .ruff_cache/
 .venv/
 .wheel-smoke/
-/roadmap.md
 __pycache__/
 build/
 dist/
