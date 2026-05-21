@@ -1,8 +1,8 @@
 # One repo: retrieval engine strategy
 
-**Status:** Active product strategy (2026-05-21; Phase G refresh 2026-05-20)  
+**Status:** Full product spec (reference). **Agents: read [ROUTING.md](ROUTING.md) + [../CONTEXT.md](../CONTEXT.md) before editing.**  
 **Audience:** Humans and agents planning rag-core work  
-**Historical plans:** [plans/archive/](archive/) (do not execute). Self-host/DX is Journey C in this file.
+**Historical plans:** [archive/](archive/) (do not execute).
 
 **Product shape (one sentence):** rag-core is the **retrieval plane** you embed in your app; CLI and optional HTTP are proof/ops surfaces, not a second product.
 
@@ -10,7 +10,11 @@
 
 ## Agent Non-Divergence Contract
 
-This is the **current product mission** for coding agents. If another local doc or prior chat points at generic cleanup, merge hygiene, or broad review, this file wins for product work.
+**Routing and shape gate:** [ROUTING.md](ROUTING.md) (canonical, short).  
+**Mission and code map:** [../CONTEXT.md](../CONTEXT.md).  
+**Tracked agent copy:** [../AGENTS.md](../AGENTS.md).
+
+This long file is thesis, journey packets, and history. If another doc conflicts on *what to do next*, ROUTING wins. If conflicts on *mission or scope*, CONTEXT wins.
 
 ### Current goal lock
 
@@ -23,70 +27,11 @@ That means every substantial slice must improve at least one selected journey sh
 | A — First 10 minutes | Trust without account/key/platform | A2 guide + A1 smoke + **A3** wheel quickstart | **Done** |
 | B — Embed | Replace managed RAG inside an app | B2 guide + B1 app + connector **doc** | **Docs done** — B2.5 proof **next** |
 | C — Self-host API | Operable HTTP over same core | C3 contract → C2 compose → C3b drift gate | **C3+C2 done** — C3b/C-ops optional |
-| Q — Quality proof | Evidence over anecdotes | **Q2a** named corpus + Q1 fast fixture | **Q1 only** — **default continue** |
+| Q — Quality proof | Evidence over anecdotes | **Q2a** named corpus + Q1 fast fixture | **Open** (Q2a); not default maintenance |
 | R — Research | Competitor context tracked | R0a docs + dated refresh | **Done** |
-| V — Managed vector (v0) | Production without operating Qdrant | **TP1→TP2→TP3** TurboPuffer depth | **In progress** — see research doc |
+| V — Managed vector (v0) | Production without operating Qdrant | **TP1→TP3** TurboPuffer depth | **Done** — optional extra |
 
-### Required first response for any agent
-
-Before editing code or docs, the agent must state:
-
-```markdown
-Selected journey:
-Candidate shapes compared:
-Winning shape:
-User-visible promise:
-Files I expect to touch:
-Acceptance gates:
-Out of scope:
-```
-
-If the agent cannot fill this, it must ask one clarifying question or run read-only discovery. It must not “just improve DX” or “clean tests” broadly.
-
-### Default routing
-
-If the user says:
-
-| User says | Agent should do |
-|-----------|-----------------|
-| “continue”, “next”, “keep going” | Shape Gate; default **Journey Q (Q2a)** unless user names another journey |
-| “self-host”, “serve”, “API” | Journey C — **C3b** contract drift or C-ops docs only if Q1 green |
-| “DX”, “developer experience”, “first run” | Journey A (maintenance); do not expand A unless smoke fails |
-| “turbopuffer”, “managed vector”, “managed vector store” | Journey **V** — read `docs/research/turbopuffer-landscape.md`; **TP1→TP3** unless user overrides |
-| “managed RAG”, “Ragie”, “black box” | Journey B or R; do not build connectors |
-| “quality”, “benchmarks”, “evals” | Journey Q |
-| “research”, “OSS repos”, “competitors” | Journey R |
-| “cleanup”, “debloat”, “tests” | Tie cleanup to A/B/C/Q acceptance gates; no free-floating cleanup |
-
-### Hard stops
-
-Stop and re-evaluate if you are about to:
-
-- Add auth, billing, admin UI, team features, connector marketplace, or agent workflow UI.
-- Add a graph DSL, orchestration runtime, or hosted-product assumption.
-- Add runtime behavior that bypasses `RAGCore`.
-- Add provider parity work without docs, diagnostics, tests, and explicit limits.
-- Refactor tests or modules without tying the change to a selected journey gate.
-- Spawn broad subagents before choosing one journey and one shape.
-- Optimize git history, GitHub contributor state, branch hygiene, or PR mechanics unless explicitly asked.
-
-### Slice size rule
-
-One slice = **one journey + one selected shape + one acceptance gate**.
-
-Allowed examples:
-
-- “Journey C / C3: add OpenAPI + stable error model; validate with `test_runtime_http.py`.”
-- “Journey A / A2+A1: add guided quickstart + smoke script; validate no-key commands.”
-- “Journey B / B2+B1: add production embed guide + minimal app; validate examples.”
-
-Disallowed examples:
-
-- “Improve self-hosting and docs.”
-- “Clean tests.”
-- “Make it more like RAGFlow.”
-- “Add connectors.”
-- “Run a broad subagent audit.”
+Shape gate, default routing, hard stops, and slice rules: **[ROUTING.md](ROUTING.md)**.
 
 ---
 
@@ -897,7 +842,7 @@ User wants debloat + escape managed blackbox RAG—not platform sprawl.
 Lane 1 self-host plumbing is done; insufficient alone.
 
 Phase 0: complete the Shape Gate before editing. Compare at least three candidate shapes for the chosen journey.
-Default priority: **TP1→TP3** (managed vector) unless user names another journey. Then **Q2a**, **B2.5**, **C3b**. Journey A is maintenance-only.
+Default priority (sole-maintainer): **`./scripts/dx_smoke.sh`** and Journey **A** maintenance. Then open roadmap items (**Q2a**, **B2.5**, **C3b**) only when named. See [ROUTING.md](ROUTING.md).
 Phase 1: optional read-only subagents R1–R7 (max 8 findings each) only for the selected shape.
 Pick ONE shape and ONE lane. Do not implement broad platform features.
 Implement with proportional tests. Product over git. No co-author trailers.

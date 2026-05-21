@@ -2,6 +2,8 @@
 
 Maintainer and CI entrypoints. Prefer these over inventing one-off shell in chat.
 
+**Agent context:** [docs/CONTEXT.md](../docs/CONTEXT.md) · **Work routing:** [docs/plans/ROUTING.md](../docs/plans/ROUTING.md)
+
 ## Daily (you)
 
 | Script | Purpose |

@@ -34,7 +34,7 @@ One-page checklist for the **v0 pre-release** product shape (public `0.1.x` unti
 
 ## Phase F — One repo / DX (active)
 
-Doc map: `docs/README.md` · Strategy: `docs/plans/one-repo-retrieval-engine-strategy.md`
+Agents: `docs/CONTEXT.md` → `docs/plans/ROUTING.md` · Catalog: `docs/README.md`
 
 ### Journey C — self-host
 

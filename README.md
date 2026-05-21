@@ -19,8 +19,8 @@ Your app keeps auth, chat, connectors, and billing. rag-core keeps everything be
 
 ## Maintainers (us)
 
-- **Docs map:** [docs/README.md](docs/README.md) — start here for agents and humans.
-- **Scripts:** [scripts/README.md](scripts/README.md) — what each script does (CI vs daily).
+- **Agents:** [docs/CONTEXT.md](docs/CONTEXT.md) → [docs/plans/ROUTING.md](docs/plans/ROUTING.md) → [docs/README.md](docs/README.md)
+- **Scripts:** [scripts/README.md](scripts/README.md) — what each script does (CI vs daily)
 
 ```bash
 uv sync --group dev
@@ -40,7 +40,7 @@ uv sync
 ./scripts/dx_smoke.sh
 ```
 
-That single script runs demo search, folder ingest, trace summary, doctor, context + citations, and a small library eval. Step-by-step output expectations: [docs/quickstart.md](docs/quickstart.md). Full index: [docs/README.md](docs/README.md).
+That single script runs demo search, folder ingest, trace summary, doctor, context + citations, and a small library eval. Step-by-step output expectations: [docs/quickstart.md](docs/quickstart.md).
 
 **After `pip install`** (no git checkout):
 
