@@ -104,7 +104,7 @@ def test_openai_agents_tool_uses_shared_request_defaults(
             "corpus_ids": ["help"],
             "limit": SEARCH_USER_DOCUMENTS_DEFAULT_LIMIT,
             "document_ids": ["doc-1"],
-            "rerank": True,
+            "rerank": False,
             "use_lexical_search": True,
             "max_chars": SEARCH_USER_DOCUMENTS_DEFAULT_MAX_CHARS,
             "max_tokens": None,

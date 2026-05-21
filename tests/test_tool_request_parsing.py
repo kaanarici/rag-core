@@ -18,7 +18,7 @@ def test_parse_search_user_documents_request_applies_contract_defaults() -> None
         query="billing policy",
         limit=SEARCH_USER_DOCUMENTS_DEFAULT_LIMIT,
         document_ids=None,
-        rerank=True,
+        rerank=False,
         use_lexical_search=True,
         max_chars=SEARCH_USER_DOCUMENTS_DEFAULT_MAX_CHARS,
         max_tokens=None,

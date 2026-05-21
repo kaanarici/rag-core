@@ -13,7 +13,7 @@ def to_retrieval_hits(results: Sequence[SearchResult]) -> list[dict[str, object]
     """Map ``SearchResult`` rows to a stable JSON shape for tracing SDKs.
 
     The payload aligns with common ``gen_ai.retrieval.documents`` conventions and
-    Ragie-style ``scored_chunks`` (``id``, ``text``, ``score``, document locators).
+    ``scored_chunks``-style fields (``id``, ``text``, ``score``, document locators).
     """
 
     hits: list[dict[str, object]] = []

@@ -1,6 +1,7 @@
 # First 10 minutes
 
-Prove `rag-core` is a real, inspectable retrieval engine — no managed-RAG account, no API keys.
+Two modes: **Smoke** (no API keys, deterministic embeddings) and **Configured** (your
+Qdrant + embedding provider). Smoke proves the pipeline; configured proves your stack.
 
 ## Prerequisites
 
@@ -14,7 +15,9 @@ cd rag-core
 uv sync
 ```
 
-## One command (agents and CI)
+## Smoke (no API keys)
+
+### One command (agents and CI)
 
 ```bash
 ./scripts/dx_smoke.sh
@@ -27,15 +30,16 @@ pip install rag-core
 python -m rag_core.quickstart
 ```
 
-## Step 1 — Shortest smoke (`demo`)
+### Step 1 — Shortest smoke (`demo`)
 
 ```bash
 uv run rag-core demo --json
 ```
 
-Expect `document_id`, `chunk_count`, and non-empty `hits`.
+Expect `document_id`, `chunk_count`, and non-empty `hits`. Demo embeddings are not
+semantic search.
 
-## Step 2 — Folder search (`local-search`)
+### Step 2 — Folder search (`local-search`)
 
 ```bash
 uv run rag-core local-search examples/demo_corpus \
@@ -44,9 +48,10 @@ uv run rag-core local-search examples/demo_corpus \
   --json
 ```
 
-Expect `indexed_count` ≥ 1 and payment-related hits. Raw hits only — use Step 5 for context packs.
+Expect `indexed_count` ≥ 1 and payment-related hits. Raw hits only — use Step 5 for
+context packs.
 
-## Step 3 — Trace evidence
+### Step 3 — Trace evidence
 
 ```bash
 uv run python - <<'PY'
@@ -63,7 +68,7 @@ print(json.dumps({"search_id": summary.search_id, "result_count": summary.result
 PY
 ```
 
-## Step 4 — `doctor`
+### Step 4 — `doctor`
 
 ```bash
 uv run rag-core doctor \
@@ -73,25 +78,42 @@ uv run rag-core doctor \
   --json
 ```
 
-## Step 5 — Model context
+### Step 5 — Model context
 
 ```bash
 uv run python -m examples.minimal_app
 ```
 
-## Step 6 — Library eval
+## Configured (your stack)
+
+Requires embedding API credentials (example uses OpenAI) and Qdrant:
+
+```bash
+docker compose up -d qdrant
+export OPENAI_API_KEY=sk-...
+uv run rag-core ingest examples/demo_corpus --namespace acme --corpus-id help \
+  --qdrant-url http://127.0.0.1:6333 \
+  --embedding-provider openai --embedding-model text-embedding-3-small --embedding-dimensions 1536
+uv run rag-core retrieve-context "How can invoices be paid?" \
+  --namespace acme --corpus-id help --json
+```
+
+Add `--rerank` when a reranker extra is installed and configured. See [embed.md](embed.md).
+
+## Library eval (your cases)
 
 ```bash
 uv run python -m examples.retrieval_eval
 ```
 
-Uses `rag_core.evals` — there is no `rag-core eval` CLI. Exit code `0` means bundled thresholds passed.
+Uses `rag_core.evals` in the repo — not the CI fixture corpus. Exit code `0` means
+bundled example thresholds passed.
 
 ## Next steps
 
 | Goal | Where |
 |------|--------|
-| Embed in your app | [README](../README.md#embed-in-your-app), `examples/embedded_service.py` |
+| Embed in your app | [embed.md](embed.md), `examples/embedded_service.py` |
 | Self-host HTTP | [self-host.md](self-host.md) |
 | Contracts | [expectations.md](expectations.md) |
 | Providers | [providers.md](providers.md) |

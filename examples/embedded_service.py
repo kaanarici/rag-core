@@ -1,4 +1,9 @@
-"""Minimal ASGI-style lifecycle: one RAGCore per process."""
+"""Minimal ASGI-style lifecycle: one RAGCore per process.
+
+Uses ``build_demo_core`` so this module always runs without API keys. For semantic
+embeddings and real ``RAGCoreConfig``, see ``examples/configured_retrieval.py`` and
+``docs/embed.md``.
+"""
 
 from __future__ import annotations
 

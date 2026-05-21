@@ -107,7 +107,7 @@ paths:
   /v1/search:
     post:
       tags: [retrieval]
-      summary: Search (Ragie-shaped hits)
+      summary: Search (scored chunk hits)
       operationId: search
       requestBody:
         required: true
@@ -262,6 +262,31 @@ components:
           default: false
     SearchHit:
       type: object
+      required: [id, text, score, content_type, source_type]
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        score:
+          type: number
+        content_type:
+          type: string
+        source_type:
+          type: string
+        document_id:
+          type: string
+        corpus_id:
+          type: string
+        document_key:
+          type: string
+        title:
+          type: string
+        chunk_index:
+          type: integer
+        metadata:
+          type: object
+          additionalProperties: true
       additionalProperties: true
     ContextPackResponse:
       type: object

@@ -65,7 +65,7 @@ uv run rag-core serve --host 0.0.0.0 --port 8787 \
 | `GET` | `/v1/runtime` | `describe_runtime()` JSON |
 | `POST` | `/v1/ingest` | Start job → `202` + `job_id` |
 | `GET` | `/v1/ingest/{job_id}` | Job status |
-| `POST` | `/v1/search` | Ragie-shaped hits |
+| `POST` | `/v1/search` | Search hits JSON (`SearchResult`) |
 | `POST` | `/v1/retrieve-context` | Context pack + `context_text` |
 
 Errors: JSON envelope with `error.code`, `error.message`, `error.details` — see OpenAPI.

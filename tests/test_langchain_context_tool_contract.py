@@ -136,7 +136,7 @@ def test_langchain_context_tool_defaults_to_public_search_tool_contract(
             "corpus_ids": ["help"],
             "limit": SEARCH_USER_DOCUMENTS_DEFAULT_LIMIT,
             "document_ids": None,
-            "rerank": True,
+            "rerank": False,
             "use_lexical_search": True,
             "query_plan": None,
             "max_chars": SEARCH_USER_DOCUMENTS_DEFAULT_MAX_CHARS,
