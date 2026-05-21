@@ -34,7 +34,7 @@ One-page checklist for the **v0 pre-release** product shape (public `0.1.x` unti
 
 ## Phase F — One repo / DX (active)
 
-Strategy: `docs/plans/one-repo-retrieval-engine-strategy.md`
+Doc map: `docs/README.md` · Strategy: `docs/plans/one-repo-retrieval-engine-strategy.md`
 
 ### Journey C — self-host
 
@@ -68,7 +68,7 @@ Strategy: `docs/plans/one-repo-retrieval-engine-strategy.md`
 
 ## Phase G — Shape refresh (active)
 
-Strategy: Phase G in `docs/plans/one-repo-retrieval-engine-strategy.md`
+Doc map: `docs/README.md` · Strategy: Phase G in `docs/plans/one-repo-retrieval-engine-strategy.md`
 
 ### Default next slices
 

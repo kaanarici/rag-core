@@ -1,5 +1,7 @@
 # DX + self-host subagent program
 
+> **Archived.** Journey C content is landed; use [one-repo-retrieval-engine-strategy.md](../one-repo-retrieval-engine-strategy.md) and [../../scripts/README.md](../../scripts/README.md).
+
 **Give this file to a new agent when the goal is product quality and developer experience—not git hygiene, PR closure, or contributor stats.**
 
 **Strategy parent:** `docs/plans/one-repo-retrieval-engine-strategy.md` — managed-RAG escape + OSS steal/refuse. Self-host/DX is **Journey C** only; do not treat compose/quickstart as the whole product.

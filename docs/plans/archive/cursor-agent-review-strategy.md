@@ -1,5 +1,7 @@
 # Handoff: rag-core merge review (fresh Cursor session)
 
+> **Archived.** PR-review playbook only; not product routing. Active plan: [one-repo-retrieval-engine-strategy.md](../one-repo-retrieval-engine-strategy.md).
+
 **Give this file to a new Cursor agent with no prior chat context.**  
 Merge-closure review of the retrieval-core hardening slice—not another open-ended mass audit.
 

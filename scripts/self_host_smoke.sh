@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smoke-test a running rag-core serve instance (Path A/B from docs/self-host/quickstart.md).
+# Journey C smoke — see scripts/README.md
 set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:8787}"

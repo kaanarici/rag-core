@@ -1,1 +1,1 @@
-"""Local maintenance scripts for the rag-core checkout."""
+"""Checkout automation — see scripts/README.md for entrypoints."""

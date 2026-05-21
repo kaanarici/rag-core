@@ -2,7 +2,7 @@
 
 **Status:** Active product strategy (2026-05-21; Phase G refresh 2026-05-20)  
 **Audience:** Humans and agents planning rag-core work  
-**Parent of:** `docs/plans/dx-self-host-subagent-program.md` (deployment/DX is one slice of this)
+**Historical plans:** [plans/archive/](archive/) (do not execute). Self-host/DX is Journey C in this file.
 
 **Product shape (one sentence):** rag-core is the **retrieval plane** you embed in your app; CLI and optional HTTP are proof/ops surfaces, not a second product.
 
@@ -565,7 +565,7 @@ Out of scope: hosted eval UI, eval HTTP
 
 ## Product-shape map
 
-From `docs/plans/2026-05-17-retrieval-core-hardening.md`, refined after shape selection:
+Refined after the archived hardening plan (`plans/archive/2026-05-17-retrieval-core-hardening.md`):
 
 ```text
 ONE REPO = one retrieval plane, three surfaces (library, CLI, optional HTTP)
@@ -606,7 +606,7 @@ ONE REPO = one retrieval plane, three surfaces (library, CLI, optional HTTP)
 
 ## Research debt in this repository
 
-Planning claims “public OSS comparisons and benchmarks” (`2026-05-17-retrieval-core-hardening.md`) but **no tracked comparison corpus exists**.
+Research docs exist under `docs/research/`; a **public benchmark CI gate (Q2a)** is still open on the roadmap.
 
 | Missing artifact | Purpose |
 |------------------|---------|

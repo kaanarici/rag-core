@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Journey A smoke: demo, local-search, trace summary, doctor, context, library eval.
+# Journey A smoke — see scripts/README.md
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"

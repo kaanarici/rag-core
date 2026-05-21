@@ -1,7 +1,9 @@
 # RAGCore Retrieval Core Hardening
 
+> **Archived.** Superseded by [one-repo-retrieval-engine-strategy.md](../one-repo-retrieval-engine-strategy.md).
+
 Date: 2026-05-17
-Status: Active current-state plan
+Status: Archived
 Last refreshed: 2026-05-18
 Project maturity: pre-prod
 

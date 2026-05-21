@@ -1,5 +1,7 @@
 # Retrieval Core Hardening Risk Register
 
+> **Archived.** Historical review ledger; use [roadmap.md](../../../roadmap.md) and [one-repo-retrieval-engine-strategy.md](../one-repo-retrieval-engine-strategy.md) for open work.
+
 Status: Deep D1–D7 review at `db6c1fd` + remediation through current HEAD.
 
 ## Merge Verdict: NO BLOCK

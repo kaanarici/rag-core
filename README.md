@@ -19,13 +19,15 @@ Your app keeps auth, chat, connectors, and billing. rag-core keeps everything be
 
 ## Maintainers (us)
 
+- **Docs map:** [docs/README.md](docs/README.md) — start here for agents and humans.
+- **Scripts:** [scripts/README.md](scripts/README.md) — what each script does (CI vs daily).
+
 ```bash
 uv sync --group dev
 ./scripts/dx_smoke.sh
-uv run ruff check . && uv run mypy src tests examples && uv run pytest -q
 ```
 
-Optional: `./scripts/self_host_smoke.sh` after `docker compose up -d --build`. Config truth: `uv run rag-core doctor --json`.
+Full CI parity: [scripts/README.md](scripts/README.md#ci-github-actions-mirrors-this). Config truth: `uv run rag-core doctor --json`.
 
 ## Try it in ten minutes (no API keys)
 
@@ -38,7 +40,7 @@ uv sync
 ./scripts/dx_smoke.sh
 ```
 
-That single script runs demo search, folder ingest, trace summary, doctor, context + citations, and a small library eval. Step-by-step output expectations: [docs/quickstart.md](docs/quickstart.md).
+That single script runs demo search, folder ingest, trace summary, doctor, context + citations, and a small library eval. Step-by-step output expectations: [docs/quickstart.md](docs/quickstart.md). Full index: [docs/README.md](docs/README.md).
 
 **After `pip install`** (no git checkout):
 
