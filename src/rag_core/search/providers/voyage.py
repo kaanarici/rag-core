@@ -4,10 +4,20 @@ import asyncio
 from typing import TYPE_CHECKING
 from typing import cast
 
+from rag_core.retrieval_defaults import DEFAULT_SEARCH_LIMIT
+from rag_core.search.providers.embedding_input_types import (
+    EMBEDDING_INPUT_DOCUMENT,
+    EMBEDDING_INPUT_QUERY,
+    EmbeddingInputType,
+)
 from rag_core.search.providers.embedding_results import safe_ordered_embedding_vectors
 from rag_core.search.providers.embedding_models import get_embedding_model_spec
 from rag_core.search.providers.rerank_results import safe_indexed_rerank_results
-from rag_core.search.types import RerankResult
+from rag_core.search.request_models import RerankResult
+
+VOYAGE_PROVIDER = "voyage"
+DEFAULT_VOYAGE_EMBEDDING_MODEL = "voyage-4"
+DEFAULT_VOYAGE_RERANKER_MODEL = "rerank-2.5-lite"
 
 if TYPE_CHECKING:
     import types
@@ -31,7 +41,7 @@ def _import_voyageai() -> "types.ModuleType":
 
 
 def _supports_output_dimension(model: str) -> bool:
-    spec = get_embedding_model_spec("voyage", model)
+    spec = get_embedding_model_spec(VOYAGE_PROVIDER, model)
     return bool(spec.supports_dimensions_override) if spec is not None else False
 
 
@@ -39,7 +49,7 @@ class VoyageEmbeddingProvider:
     def __init__(
         self,
         *,
-        model: str = "voyage-4",
+        model: str = DEFAULT_VOYAGE_EMBEDDING_MODEL,
         dimensions: int = 1024,
         api_key: str | None = None,
     ) -> None:
@@ -59,16 +69,28 @@ class VoyageEmbeddingProvider:
 
     @property
     def provider_name(self) -> str:
-        return "voyage"
+        return VOYAGE_PROVIDER
 
     async def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        return await asyncio.to_thread(self._embed_sync, texts, "document")
+        return await asyncio.to_thread(
+            self._embed_sync,
+            texts,
+            EMBEDDING_INPUT_DOCUMENT,
+        )
 
     async def embed_query(self, query: str) -> list[float]:
-        rows = await asyncio.to_thread(self._embed_sync, [query], "query")
+        rows = await asyncio.to_thread(
+            self._embed_sync,
+            [query],
+            EMBEDDING_INPUT_QUERY,
+        )
         return rows[0]
 
-    def _embed_sync(self, texts: list[str], input_type: str) -> list[list[float]]:
+    def _embed_sync(
+        self,
+        texts: list[str],
+        input_type: EmbeddingInputType,
+    ) -> list[list[float]]:
         kwargs: dict[str, object] = {
             "model": self._model,
             "input_type": input_type,
@@ -88,7 +110,7 @@ class VoyageReranker:
     def __init__(
         self,
         *,
-        model: str = "rerank-2.5-lite",
+        model: str = DEFAULT_VOYAGE_RERANKER_MODEL,
         api_key: str | None = None,
     ) -> None:
         voyageai = _import_voyageai()
@@ -97,7 +119,7 @@ class VoyageReranker:
 
     @property
     def provider_name(self) -> str:
-        return "voyage"
+        return VOYAGE_PROVIDER
 
     @property
     def model_name(self) -> str:
@@ -107,7 +129,7 @@ class VoyageReranker:
         self,
         query: str,
         documents: list[str],
-        top_k: int = 10,
+        top_k: int = DEFAULT_SEARCH_LIMIT,
     ) -> list[RerankResult]:
         if not documents or top_k <= 0:
             return []

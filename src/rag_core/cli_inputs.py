@@ -30,6 +30,13 @@ def parse_metadata_fields(values: Sequence[str]) -> dict[str, str]:
     return parsed
 
 
+def parse_non_empty_values(values: Sequence[str], *, field: str) -> list[str] | None:
+    parsed = [value.strip() for value in values]
+    if any(not value for value in parsed):
+        raise ValueError(f"{field} values must be non-empty")
+    return parsed or None
+
+
 def cli_error_message(exc: Exception) -> str:
     if isinstance(exc, FileNotFoundError):
         return f"file not found: {exc.filename or exc}"
@@ -79,4 +86,5 @@ __all__ = [
     "cli_safe_error_message",
     "cli_store_location_label",
     "parse_metadata_fields",
+    "parse_non_empty_values",
 ]

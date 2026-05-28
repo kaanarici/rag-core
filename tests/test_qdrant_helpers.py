@@ -1,4 +1,4 @@
-"""Qdrant-specific adapter behavior that lives outside the cross-backend contract.
+"""Qdrant-specific adapter behavior outside the cross-vector-store contract.
 
 Wire-shape assertions (payload filter keys, prefetch channels, batching, dense
 dimension preflight) plus the pure helpers in ``qdrant_collection`` /
@@ -505,7 +505,7 @@ def test_store_search_implicit_plan_falls_back_to_dense_for_sparse_less_collecti
     assert call["using"] == ""
 
 
-def test_store_search_rejects_empty_dense_vector_for_hybrid_plan_before_backend() -> (
+def test_store_search_rejects_empty_dense_vector_for_hybrid_plan_before_provider() -> (
     None
 ):
     client = _FakeQdrantClient(existing_names=["docs"], sparse_names=["bm25"])
@@ -715,7 +715,7 @@ def test_qdrant_store_exposes_dense_dimensions_for_pre_upsert_validation() -> No
     assert store.capabilities.dense_vector_dimensions == 3072
 
 
-def test_qdrant_store_rejects_wrong_dense_dimensions_before_backend_upsert() -> None:
+def test_qdrant_store_rejects_wrong_dense_dimensions_before_provider_upsert() -> None:
     client = _FakeQdrantClient(existing_names=["docs"])
     store = _store(client)
     point = VectorPoint(
@@ -734,7 +734,7 @@ def test_qdrant_store_rejects_wrong_dense_dimensions_before_backend_upsert() -> 
     assert client.upsert_calls == []
 
 
-def test_qdrant_store_rejects_unsupported_payload_object_before_backend_upsert() -> None:
+def test_qdrant_store_rejects_unsupported_payload_object_before_provider_upsert() -> None:
     client = _FakeQdrantClient(existing_names=["docs"], dense_dimensions=2)
     store = _store(client, dense_dimensions=2)
     point = VectorPoint(
@@ -753,7 +753,7 @@ def test_qdrant_store_rejects_unsupported_payload_object_before_backend_upsert()
     assert client.upsert_calls == []
 
 
-def test_qdrant_store_rejects_wrong_query_dimensions_before_backend_search() -> None:
+def test_qdrant_store_rejects_wrong_query_dimensions_before_provider_search() -> None:
     client = _FakeQdrantClient(existing_names=["docs"])
     store = _store(client, dense_dimensions=3)
     query = SearchQuery(
@@ -1109,12 +1109,13 @@ def test_build_unhealthy_health_omits_exception_message() -> None:
     base = _build_base_health(collection_name="docs", dimensions=3072)
     health = _build_unhealthy_health(
         base_health=base,
-        exc=RuntimeError("private backend detail"),
+        exc=RuntimeError("private adapter detail"),
     )
     assert health["healthy"] is False
-    assert health["backend"] == "qdrant"
+    assert health["adapter"] == "qdrant"
+    assert "backend" not in health
     assert health["error"] == "RuntimeError"
-    assert "private backend detail" not in str(health)
+    assert "private adapter detail" not in str(health)
 
 
 @pytest.mark.parametrize(

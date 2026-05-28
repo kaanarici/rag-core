@@ -34,6 +34,27 @@ def test_eval_case_is_frozen() -> None:
         case.query = "other"  # type: ignore[misc]
 
 
+def test_eval_case_accepts_expected_ids_alias() -> None:
+    case = EvalCase(
+        query="q",
+        namespace="ns",
+        corpus_ids=("c",),
+        expected_ids=("doc-a",),
+    )
+
+    assert case.expected_ids == ("doc-a",)
+    assert case.expected_chunk_ids == ("doc-a",)
+
+    with pytest.raises(ValueError, match="use expected_ids or expected_chunk_ids"):
+        EvalCase(
+            query="q",
+            namespace="ns",
+            corpus_ids=("c",),
+            expected_ids=("doc-a",),
+            expected_chunk_ids=("doc-a",),
+        )
+
+
 def test_eval_result_is_frozen() -> None:
     case = EvalCase(query="q", namespace="ns", corpus_ids=("c",), expected_chunk_ids=("a",))
     result = EvalResult(
@@ -172,7 +193,7 @@ def test_run_eval_drives_core_search() -> None:
         assert result.mrr == 1.0
         assert result.ndcg_at_10 == 1.0
         assert result.latency_ms >= 0.0
-        assert result.retrieved_ids[0] in result.case.expected_chunk_ids
+        assert result.retrieved_ids[0] in result.case.expected_ids
 
 
 def test_run_eval_passes_query_plan_to_core_search() -> None:
@@ -204,6 +225,31 @@ def test_run_eval_passes_query_plan_to_core_search() -> None:
 
     store = asyncio.run(go())
     assert store.search_calls[0].query_plan == query_plan_preset("dense_only", limit=10)
+
+
+def test_run_eval_matches_expected_document_key() -> None:
+    class _DocumentKeyCore:
+        async def search(self, **_: object) -> list[object]:
+            return [
+                make_search_result(
+                    id="chunk-1",
+                    document_id="internal-doc-id",
+                    document_key="billing.md",
+                )
+            ]
+
+    case = EvalCase(
+        query="billing policy",
+        namespace="rt",
+        corpus_ids=("docs",),
+        expected_ids=("billing.md",),
+    )
+
+    [result] = asyncio.run(run_eval(cast(RAGCore, _DocumentKeyCore()), [case]))
+
+    assert result.retrieved_ids == ("billing.md",)
+    assert result.recall_at_5 == 1.0
+    assert result.mrr == 1.0
 
 
 def test_run_eval_records_search_failure_without_raw_exception_detail() -> None:

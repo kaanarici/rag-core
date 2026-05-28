@@ -6,10 +6,10 @@ import logging
 from pathlib import Path
 from typing import Any, Sequence, cast
 
+from rag_core.events.sink import EventSink
 from rag_core.events.sinks import EventBuffer
 from rag_core.events.sinks import JsonlSink
 from rag_core.events.types import SidecarApplied
-from rag_core.search.pipeline.stages.sidecar_postprocess import _SIDECAR_FUTURE_KEY
 from rag_core.search.pipeline.stages.sidecar_postprocess import SidecarPostprocess
 from rag_core.search.pipeline.stages.sidecar_postprocess import SidecarPrefetchTransform
 from rag_core.search.pipeline.types import PipelineContext, PipelineQuery
@@ -287,7 +287,7 @@ def test_sidecar_prefetch_is_cancelled_when_query_opts_out_after_transform() -> 
         result = await SidecarPostprocess().postprocess(vector_results, query, ctx)
 
         assert [hit.id for hit in result] == ["vector"]
-        assert _SIDECAR_FUTURE_KEY not in query.extra
+        assert query.state.sidecar_prefetch is None
         assert task.done()
         assert task.cancelled()
         assert sidecar.cancelled.is_set()
@@ -429,7 +429,7 @@ def _run_sidecar(
     vector_results: list[SearchResult],
     *,
     sidecar: _StaticSidecar,
-    event_sink: object,
+    event_sink: EventSink,
     prefetch: bool,
     query_limit: int = 20,
 ) -> tuple[list[SearchResult], SidecarApplied]:
@@ -451,8 +451,9 @@ def _run_sidecar(
 
 
 def _prefetched_task(query: PipelineQuery) -> asyncio.Task[list[SearchResult]]:
-    prefetched = query.extra[_SIDECAR_FUTURE_KEY]
-    return cast(asyncio.Task[list[SearchResult]], getattr(prefetched, "task"))
+    prefetched = query.state.sidecar_prefetch
+    assert prefetched is not None
+    return prefetched.task
 
 
 def _query(*, limit: int = 20) -> PipelineQuery:
@@ -470,7 +471,7 @@ def _query(*, limit: int = 20) -> PipelineQuery:
 def _context(
     *,
     sidecar: _StaticSidecar,
-    event_sink: object,
+    event_sink: EventSink,
 ) -> PipelineContext:
     return PipelineContext(
         embedding_provider=cast(Any, object()),

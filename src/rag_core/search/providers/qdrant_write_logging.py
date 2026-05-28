@@ -8,6 +8,7 @@ from qdrant_client import models as rest
 from qdrant_client.http.exceptions import UnexpectedResponse
 
 from .qdrant_shared import _MAX_SPLIT_DEPTH, WriteLatencyTracker
+from .vector_store_capabilities import QDRANT_VECTOR_STORE_PROVIDER_SPEC
 
 
 def log_qdrant_upsert_error(
@@ -20,8 +21,9 @@ def log_qdrant_upsert_error(
 ) -> None:
     http_status = exc.status_code if isinstance(exc, UnexpectedResponse) else None
     logger.error(
-        "Qdrant upsert failed: backend=qdrant error_type=%s http_status=%s "
+        "Qdrant upsert failed: provider=%s error_type=%s http_status=%s "
         "batch_size=%d dense_dimensions=%d split_depth=%d max_split_depth=%d",
+        QDRANT_VECTOR_STORE_PROVIDER_SPEC.name,
         type(exc).__name__,
         http_status,
         len(points),
@@ -43,8 +45,9 @@ def log_successful_qdrant_upsert(
 ) -> None:
     if duration > slow_write_threshold_seconds:
         logger.warning(
-            "Slow Qdrant write: backend=qdrant point_count=%d duration=%.2fs "
+            "Slow Qdrant write: provider=%s point_count=%d duration=%.2fs "
             "dense_dimensions=%d split_depth=%d latency_p50=%.3fs latency_p95=%.3fs",
+            QDRANT_VECTOR_STORE_PROVIDER_SPEC.name,
             point_count,
             duration,
             dimensions,
@@ -54,8 +57,9 @@ def log_successful_qdrant_upsert(
         )
         return
     logger.debug(
-        "Qdrant write completed: backend=qdrant point_count=%d duration=%.2fs "
+        "Qdrant write completed: provider=%s point_count=%d duration=%.2fs "
         "dense_dimensions=%d split_depth=%d latency_p50=%.3fs latency_p95=%.3fs",
+        QDRANT_VECTOR_STORE_PROVIDER_SPEC.name,
         point_count,
         duration,
         dimensions,

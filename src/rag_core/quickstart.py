@@ -33,17 +33,11 @@ async def run() -> None:
             max_chars=1_200,
         )
         print(f"Indexed document: {ingested.document_id} ({ingested.chunk_count} chunks)")
-        print("Context to pass into your model call:")
-        print(context.as_text())
-        print("\nCitations:")
-        for source in context.citations:
-            title = (
-                source.title
-                or source.document_key
-                or source.document_id
-                or source.result_id
-            )
-            print(f"- {source.source_id}: {title}")
+        print("Prompt-safe context text:")
+        print(context.as_prompt_text())
+        if context.prompt_citation_summary:
+            print("\nCitations:")
+            print(context.prompt_citation_summary)
 
 
 def main() -> None:

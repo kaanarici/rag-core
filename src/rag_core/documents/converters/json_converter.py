@@ -7,6 +7,7 @@ import json
 import logging
 
 from .base import BaseConverter, ConversionResult, safe_decode, score_text_quality
+from .converter_keys import JSON_CONVERTER_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 class JsonConverter(BaseConverter):
     """Converts JSON files to pretty-printed markdown code fences."""
 
-    format_name = "json"
+    format_name = JSON_CONVERTER_KEY
 
     async def convert(
         self,

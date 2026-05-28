@@ -17,6 +17,10 @@ from rag_core.core_models import (
     PreparedDocument,
 )
 from rag_core.core_runtime import resolve_processing_version
+from rag_core.documents.ocr_provider_names import (
+    DEFAULT_MISTRAL_OCR_MODEL,
+    MISTRAL_OCR_PROVIDER,
+)
 from rag_core.search.lexical_sidecar import LexicalSidecarRecord, PortableLexicalSidecar
 from rag_core.search.types import SearchSidecar, SearchSidecarQuery, StoredDocumentRecord
 
@@ -528,8 +532,8 @@ def test_corpus_manifest_counts_ocr_usage(
             "needs_ocr": False,
             OCR_METADATA_KEY: asdict(
                 OcrMetadata(
-                    provider="mistral",
-                    model="mistral-ocr-latest",
+                    provider=MISTRAL_OCR_PROVIDER,
+                    model=DEFAULT_MISTRAL_OCR_MODEL,
                     pages_used=pages_used,
                     page_count=explicit_page_count,
                     merge_mode="append",

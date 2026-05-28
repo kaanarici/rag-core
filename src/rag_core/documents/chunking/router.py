@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
-from rag_core.core_models import PreparedChunk
 from typing import Awaitable, Callable, List, Optional, cast
+
+from rag_core.config.chunking_config import (
+    CHUNKING_STRATEGY_AUTO,
+    CODE_CHUNKING_STRATEGY,
+    MARKDOWN_CHUNKING_STRATEGY,
+    SEMANTIC_CHUNKING_STRATEGY,
+)
+from rag_core.core_models import PreparedChunk
 
 from .code_detection import (
     detect_code_language,
@@ -28,12 +35,12 @@ def chunk_text(
         config = ChunkConfig()
 
     strategy = config.strategy
-    if strategy == "auto":
+    if strategy == CHUNKING_STRATEGY_AUTO:
         strategy = _detect_strategy(text, mime_type=mime_type, filename=filename)
 
-    if strategy == "code":
+    if strategy == CODE_CHUNKING_STRATEGY:
         language = detect_code_language(mime_type=mime_type, filename=filename)
-        chunker = create_chunking_strategy("code", language=language)
+        chunker = create_chunking_strategy(CODE_CHUNKING_STRATEGY, language=language)
     else:
         chunker = create_chunking_strategy(strategy)
     return chunker.chunk(text, config)
@@ -52,13 +59,13 @@ async def chunk_text_async(
         config = ChunkConfig()
 
     strategy = config.strategy
-    if strategy == "auto":
+    if strategy == CHUNKING_STRATEGY_AUTO:
         strategy = _detect_strategy(text, mime_type=mime_type, filename=filename)
 
-    if strategy == "semantic":
+    if strategy == SEMANTIC_CHUNKING_STRATEGY:
         chunker = cast(
             AsyncChunkingStrategy,
-            create_chunking_strategy("semantic", embed_fn=embed_fn),
+            create_chunking_strategy(SEMANTIC_CHUNKING_STRATEGY, embed_fn=embed_fn),
         )
         return await chunker.chunk_async(text, config)
 
@@ -82,6 +89,6 @@ def _detect_strategy(
         filename=filename,
         text=text,
     ):
-        return "code"
+        return CODE_CHUNKING_STRATEGY
 
-    return "markdown"
+    return MARKDOWN_CHUNKING_STRATEGY

@@ -2,49 +2,19 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
 from rag_core.cli import main
-from rag_core.core_models import IngestedDocument, RAGCoreConfig
-
-
-class _FakeRAGCore:
-    _last_instance: "_FakeRAGCore | None" = None
-
-    def __init__(self, config: RAGCoreConfig, **kwargs: Any) -> None:
-        self.config = config
-        self.event_sink = kwargs.get("event_sink")
-        self.ensure_ready_called = False
-        self.closed = False
-        self.ingest_url_calls: list[dict[str, Any]] = []
-        type(self)._last_instance = self
-
-    async def ensure_ready(self) -> None:
-        self.ensure_ready_called = True
-
-    async def ingest_url(self, url: str, **kwargs: Any) -> IngestedDocument:
-        self.ingest_url_calls.append({"url": url, **kwargs})
-        return IngestedDocument(
-            document_id="doc-url",
-            corpus_id=kwargs["corpus_id"],
-            namespace=kwargs["namespace"],
-            chunk_count=1,
-            filename="guide.txt",
-            mime_type="text/plain",
-            document_key="url:https://example.com/docs/guide?redacted",
-            ingest_state="created",
-            processing_version='{"base_version":"rag_core_processing_v1","source_type":"url"}',
-            metadata={"source_type": "url", "source_url": "https://example.com/docs/guide?redacted"},
-        )
-
-    async def close(self) -> None:
-        self.closed = True
-
-
-class _FakeOpenAIError(Exception):
-    __module__ = "openai"
+from rag_core.fetch_security import validate_fetch_url
+from tests.support.cli_remote import (
+    FakeOpenAIError,
+    FakeRemoteRAGCore,
+    install_fake_remote_core,
+    remote_url_key,
+    require_fake_remote_core,
+)
 
 
 def test_ingest_url_json_sets_runtime_source_type_to_url(
@@ -52,9 +22,7 @@ def test_ingest_url_json_sets_runtime_source_type_to_url(
     monkeypatch: Any,
     capsys: Any,
 ) -> None:
-    from rag_core import cli as cli_module
-
-    monkeypatch.setattr(cli_module, "RAGCore", _FakeRAGCore)
+    install_fake_remote_core(monkeypatch)
     raw_url = "https://example.com/docs/guide?private=alpha"
     exit_code = main(
         [
@@ -84,7 +52,7 @@ def test_ingest_url_json_sets_runtime_source_type_to_url(
     )
 
     assert exit_code == 0
-    instance = cast(_FakeRAGCore, _FakeRAGCore._last_instance)
+    instance = require_fake_remote_core()
     assert instance.ensure_ready_called is True
     assert instance.closed is True
     assert instance.config.ingest.source_type == "url"
@@ -103,7 +71,7 @@ def test_ingest_url_json_sets_runtime_source_type_to_url(
     assert call["fetch_limits"].max_redirects == 2
     output = capsys.readouterr().out
     payload = json.loads(output)
-    assert payload["document_key"] == "url:https://example.com/docs/guide?redacted"
+    assert payload["document_key"] == remote_url_key(validate_fetch_url(raw_url))
     assert payload["metadata"]["source_url"] == "https://example.com/docs/guide?redacted"
     assert "private=alpha" not in output
 
@@ -112,9 +80,7 @@ def test_ingest_url_text_output_uses_redacted_source_url(
     monkeypatch: Any,
     capsys: Any,
 ) -> None:
-    from rag_core import cli as cli_module
-
-    monkeypatch.setattr(cli_module, "RAGCore", _FakeRAGCore)
+    install_fake_remote_core(monkeypatch)
     exit_code = main(
         [
             "ingest-url",
@@ -138,10 +104,7 @@ def test_ingest_url_rejects_invalid_url_before_runtime_setup(
     monkeypatch: Any,
     capsys: Any,
 ) -> None:
-    from rag_core import cli as cli_module
-
-    _FakeRAGCore._last_instance = None
-    monkeypatch.setattr(cli_module, "RAGCore", _FakeRAGCore)
+    install_fake_remote_core(monkeypatch)
     with pytest.raises(SystemExit) as exc_info:
         main(
             [
@@ -157,7 +120,7 @@ def test_ingest_url_rejects_invalid_url_before_runtime_setup(
         )
 
     assert exc_info.value.code == 2
-    assert _FakeRAGCore._last_instance is None
+    assert FakeRemoteRAGCore._last_instance is None
     error = capsys.readouterr().err
     assert "unsupported fetch URL scheme" in error
     assert "Traceback" not in error
@@ -173,7 +136,7 @@ def test_ingest_url_provider_bootstrap_error_is_actionable(
         closed = False
 
         async def ensure_ready(self) -> None:
-            raise _FakeOpenAIError("raw api_key client option OPENAI_API_KEY")
+            raise FakeOpenAIError("raw api_key client option OPENAI_API_KEY")
 
         async def close(self) -> None:
             type(self).closed = True
@@ -217,7 +180,7 @@ def test_ingest_url_lazy_provider_bootstrap_error_is_actionable(
             return None
 
         async def ingest_url(self, *_args: Any, **_kwargs: Any) -> None:
-            raise _FakeOpenAIError("raw api_key client option OPENAI_API_KEY")
+            raise FakeOpenAIError("raw api_key client option OPENAI_API_KEY")
 
         async def close(self) -> None:
             type(self).closed = True
@@ -295,10 +258,7 @@ def test_ingest_url_private_address_requires_explicit_fetch_opt_in(
     monkeypatch: Any,
     capsys: Any,
 ) -> None:
-    from rag_core import cli as cli_module
-
-    _FakeRAGCore._last_instance = None
-    monkeypatch.setattr(cli_module, "RAGCore", _FakeRAGCore)
+    install_fake_remote_core(monkeypatch)
     private_url = "http://127.0.0.1:8000/docs?private=alpha"
 
     with pytest.raises(SystemExit) as exc_info:
@@ -316,7 +276,7 @@ def test_ingest_url_private_address_requires_explicit_fetch_opt_in(
         )
 
     assert exc_info.value.code == 2
-    assert _FakeRAGCore._last_instance is None
+    assert FakeRemoteRAGCore._last_instance is None
     error = capsys.readouterr().err
     assert "HTTP requires explicit opt-in" in error
     assert "private=alpha" not in error
@@ -337,7 +297,7 @@ def test_ingest_url_private_address_requires_explicit_fetch_opt_in(
     )
 
     assert exit_code == 0
-    instance = cast(_FakeRAGCore, _FakeRAGCore._last_instance)
+    instance = require_fake_remote_core()
     assert instance.ingest_url_calls[0]["url"] == private_url
     assert instance.ingest_url_calls[0]["fetch_policy"].allowed_schemes == (
         "https",
@@ -350,10 +310,7 @@ def test_ingest_url_rejects_bad_fetch_limits_before_runtime_setup(
     monkeypatch: Any,
     capsys: Any,
 ) -> None:
-    from rag_core import cli as cli_module
-
-    _FakeRAGCore._last_instance = None
-    monkeypatch.setattr(cli_module, "RAGCore", _FakeRAGCore)
+    install_fake_remote_core(monkeypatch)
 
     with pytest.raises(SystemExit) as exc_info:
         main(
@@ -372,7 +329,7 @@ def test_ingest_url_rejects_bad_fetch_limits_before_runtime_setup(
         )
 
     assert exc_info.value.code == 2
-    assert _FakeRAGCore._last_instance is None
+    assert FakeRemoteRAGCore._last_instance is None
     error = capsys.readouterr().err
     assert "max_bytes" in error
     assert "Traceback" not in error
@@ -382,10 +339,7 @@ def test_ingest_url_rejects_non_finite_fetch_timeout_before_runtime_setup(
     monkeypatch: Any,
     capsys: Any,
 ) -> None:
-    from rag_core import cli as cli_module
-
-    _FakeRAGCore._last_instance = None
-    monkeypatch.setattr(cli_module, "RAGCore", _FakeRAGCore)
+    install_fake_remote_core(monkeypatch)
 
     with pytest.raises(SystemExit) as exc_info:
         main(
@@ -404,7 +358,7 @@ def test_ingest_url_rejects_non_finite_fetch_timeout_before_runtime_setup(
         )
 
     assert exc_info.value.code == 2
-    assert _FakeRAGCore._last_instance is None
+    assert FakeRemoteRAGCore._last_instance is None
     error = capsys.readouterr().err
     assert "timeout_seconds" in error
     assert "Traceback" not in error
@@ -415,10 +369,7 @@ def test_ingest_url_rejects_malformed_fetch_env_before_runtime_setup(
     monkeypatch: Any,
     capsys: Any,
 ) -> None:
-    from rag_core import cli as cli_module
-
-    _FakeRAGCore._last_instance = None
-    monkeypatch.setattr(cli_module, "RAGCore", _FakeRAGCore)
+    install_fake_remote_core(monkeypatch)
     monkeypatch.setenv("RAG_CORE_FETCH_MAX_BYTES", "not-an-int")
 
     with pytest.raises(SystemExit) as exc_info:
@@ -438,7 +389,7 @@ def test_ingest_url_rejects_malformed_fetch_env_before_runtime_setup(
         )
 
     assert exc_info.value.code == 2
-    assert _FakeRAGCore._last_instance is None
+    assert FakeRemoteRAGCore._last_instance is None
     error = capsys.readouterr().err
     assert "RAG_CORE_FETCH_MAX_BYTES must be an integer" in error
     assert "Traceback" not in error

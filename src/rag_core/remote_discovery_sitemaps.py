@@ -5,6 +5,8 @@ from collections.abc import Callable
 from rag_core.fetch_security import FetchSecurityPolicy
 from rag_core.remote_discovery_documents import parse_sitemap_urls
 from rag_core.remote_discovery_models import (
+    REMOTE_DISCOVERY_KIND_SITEMAP,
+    REMOTE_DISCOVERY_KIND_SITEMAP_INDEX,
     RemoteDiscoveredUrl,
     RemoteDiscovery,
     discovery_key,
@@ -42,7 +44,7 @@ def expand_sitemap_index(
             policy=policy,
             max_urls=max_urls,
         )
-        if nested.source_kind == "sitemap_index":
+        if nested.source_kind == REMOTE_DISCOVERY_KIND_SITEMAP_INDEX:
             sitemap_queue.extend(nested.items)
             continue
         for item in nested.items:
@@ -53,7 +55,7 @@ def expand_sitemap_index(
                 raise ValueError(f"remote discovery exceeds max_urls ({max_urls})")
             seen_urls.add(key)
             urls.append(item)
-    return RemoteDiscovery(source_kind="sitemap", items=tuple(urls))
+    return RemoteDiscovery(source_kind=REMOTE_DISCOVERY_KIND_SITEMAP, items=tuple(urls))
 
 
 __all__ = ["expand_sitemap_index"]

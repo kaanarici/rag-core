@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from rag_core.contracts import search_user_documents_tool_result
-from rag_core.integrations.integration_context_text import context_pack_model_text
-from rag_core.search.context_pack import ModelContextPack
-from rag_core.search.types import SearchResult
+from rag_core.contracts import (
+    SupportsContextPackPromptPayload,
+    search_user_documents_tool_result,
+)
+from rag_core.integrations.integration_context_text import context_pack_prompt_text
+from rag_core.search import SearchResult
 
 
 def search_result_to_document_kwargs(result: SearchResult) -> dict[str, object]:
@@ -39,10 +41,12 @@ def search_result_to_document_kwargs(result: SearchResult) -> dict[str, object]:
     }
 
 
-def context_pack_to_tool_output(pack: ModelContextPack) -> tuple[str, dict[str, object]]:
-    """Map ``ModelContextPack`` into a `(content, artifact)` tool response."""
+def context_pack_to_tool_output(
+    pack: SupportsContextPackPromptPayload,
+) -> tuple[str, dict[str, object]]:
+    """Map prompt-safe context into a `(content, artifact)` tool response."""
 
-    return context_pack_model_text(pack), search_user_documents_tool_result(pack)
+    return context_pack_prompt_text(pack), search_user_documents_tool_result(pack)
 
 
 def _compact(data: dict[str, object | None]) -> dict[str, object]:

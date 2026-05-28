@@ -11,7 +11,13 @@ from typing import cast
 import pytest
 
 from rag_core.fetch_security import FetchLimits, FetchSecurityPolicy
-from rag_core.fetching import AddressResolver, FetchError, HttpFetchClient
+from rag_core.fetching import (
+    DEFAULT_FETCH_USER_AGENT,
+    AddressResolver,
+    FetchError,
+    HttpFetchClient,
+)
+from rag_core.runtime_metadata import DISTRIBUTION_NAME, package_version
 
 
 Route = tuple[int, dict[str, str], bytes]
@@ -85,6 +91,15 @@ def test_http_fetch_client_downloads_body_with_safe_url_metadata(
     assert response.url.redacted_url.endswith("/docs?redacted")
     rendered = repr(response) + repr(asdict(response))
     assert "token=secret" not in rendered
+
+
+def test_default_fetch_user_agent_uses_runtime_package_identity() -> None:
+    version = package_version()
+
+    assert DEFAULT_FETCH_USER_AGENT == (
+        f"{DISTRIBUTION_NAME}/{version}" if version is not None else DISTRIBUTION_NAME
+    )
+    assert DEFAULT_FETCH_USER_AGENT != "rag-core/0.1"
 
 
 def test_http_fetch_client_strips_url_whitespace_before_request(

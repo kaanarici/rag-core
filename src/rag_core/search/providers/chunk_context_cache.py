@@ -5,13 +5,19 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import ClassVar, Protocol, runtime_checkable
+from typing import Any, ClassVar, Protocol, runtime_checkable
 
 from rag_core.private_files import (
     harden_private_file,
     prepare_private_file_for_open,
 )
+from rag_core.search.providers.cache_provider_names import (
+    IN_MEMORY_CACHE_PROVIDER,
+    NO_CACHE_PROVIDER,
+    SQLITE_CACHE_PROVIDER,
+)
 from rag_core.search.providers.cache_sqlite import sqlite_table_schema
+from rag_core.search.providers.registry import CHUNK_CONTEXT_CACHES
 
 
 @dataclass(frozen=True)
@@ -49,6 +55,8 @@ class ChunkContextCache(Protocol):
 class NoChunkContextCache:
     """Default contextualizer cache that always misses."""
 
+    provider_name = NO_CACHE_PROVIDER
+
     async def get(self, key: ChunkContextKey) -> str | None:
         return None
 
@@ -64,6 +72,8 @@ class NoChunkContextCache:
 
 class InMemoryChunkContextCache:
     """Dict-backed chunk-context cache."""
+
+    provider_name = IN_MEMORY_CACHE_PROVIDER
 
     def __init__(self) -> None:
         self._store: dict[str, str] = {}
@@ -88,6 +98,8 @@ class InMemoryChunkContextCache:
 
 class SqliteChunkContextCache:
     """Disk-backed chunk-context cache."""
+
+    provider_name = SQLITE_CACHE_PROVIDER
 
     _CREATE_SQL = (
         "CREATE TABLE IF NOT EXISTS chunk_context_cache ("
@@ -188,3 +200,57 @@ class SqliteChunkContextCache:
 
 def _chunks(values: Sequence[str], size: int) -> list[Sequence[str]]:
     return [values[index : index + size] for index in range(0, len(values), size)]
+
+
+DEFAULT_CHUNK_CONTEXT_CACHE_PROVIDER = NO_CACHE_PROVIDER
+
+
+def _build_no_chunk_context_cache(**_: object) -> NoChunkContextCache:
+    return NoChunkContextCache()
+
+
+def _build_in_memory_chunk_context_cache(**_: object) -> InMemoryChunkContextCache:
+    return InMemoryChunkContextCache()
+
+
+def _build_sqlite_chunk_context_cache(**kwargs: Any) -> SqliteChunkContextCache:
+    return SqliteChunkContextCache(**kwargs)
+
+
+def create_chunk_context_cache(
+    provider: str | None = None,
+    **kwargs: Any,
+) -> ChunkContextCache:
+    """Resolve the ChunkContextCache provider category from a config name.
+
+    ``None`` resolves to ``"none"`` (the no-op chunk-context cache).
+    """
+    return CHUNK_CONTEXT_CACHES.create(
+        provider or DEFAULT_CHUNK_CONTEXT_CACHE_PROVIDER,
+        **kwargs,
+    )
+
+
+CHUNK_CONTEXT_CACHES.register(
+    DEFAULT_CHUNK_CONTEXT_CACHE_PROVIDER,
+    _build_no_chunk_context_cache,
+)
+CHUNK_CONTEXT_CACHES.register(
+    InMemoryChunkContextCache.provider_name,
+    _build_in_memory_chunk_context_cache,
+)
+CHUNK_CONTEXT_CACHES.register(
+    SqliteChunkContextCache.provider_name,
+    _build_sqlite_chunk_context_cache,
+)
+
+
+__all__ = [
+    "ChunkContextCache",
+    "ChunkContextKey",
+    "DEFAULT_CHUNK_CONTEXT_CACHE_PROVIDER",
+    "InMemoryChunkContextCache",
+    "NoChunkContextCache",
+    "SqliteChunkContextCache",
+    "create_chunk_context_cache",
+]

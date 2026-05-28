@@ -4,17 +4,22 @@ from __future__ import annotations
 
 from rag_core.search.policy import VectorStorePolicy
 from rag_core.search.query_plan import UnsupportedQueryStage
-from rag_core.search.types import SearchQuery, SearchResult, SparseVector
+from rag_core.search.request_models import SearchQuery
+from rag_core.search.sparse_channels import PRIMARY_SPARSE_CHANNEL
+from rag_core.search.vector_models import SearchResult, SparseVector
 
 from .memory_query_scoring import reciprocal_rank_fusion
 from .turbopuffer_client import TurboPufferNamespace
 from .turbopuffer_filters import _search_filter
 from .turbopuffer_query_plan import (
+    TURBOPUFFER_SEARCH_MODE_DENSE,
+    TURBOPUFFER_SEARCH_MODE_SPARSE_KNN,
     TurboPufferSearchExecution,
     resolve_sparse_query_vector,
     resolve_turbopuffer_search_execution,
 )
 from .turbopuffer_rows import _required_response_rows, _row_to_result
+from .vector_store_capabilities import TURBOPUFFER_VECTOR_STORE_PROVIDER_SPEC
 from .vector_dimensions import validate_query_dense_dimensions
 
 _TURBOPUFFER_SPARSE_FIELD = "sparse_vector"
@@ -48,7 +53,7 @@ async def search_turbopuffer_points(
     execution = resolve_turbopuffer_search_execution(query)
     filters = _search_filter(query=query, namespace=namespace, policy=policy)
 
-    if execution.mode == "dense":
+    if execution.mode == TURBOPUFFER_SEARCH_MODE_DENSE:
         return await _search_dense(
             namespace_client=namespace_client,
             query=query,
@@ -58,7 +63,7 @@ async def search_turbopuffer_points(
             filters=filters,
             top_k=execution.final_limit,
         )
-    if execution.mode == "sparse_knn":
+    if execution.mode == TURBOPUFFER_SEARCH_MODE_SPARSE_KNN:
         return await _search_sparse_knn(
             namespace_client=namespace_client,
             query=query,
@@ -95,7 +100,7 @@ async def _search_dense(
     validate_query_dense_dimensions(
         query.dense_vector,
         dense_dimensions=dense_dimensions,
-        backend="turbopuffer",
+        provider_name=TURBOPUFFER_VECTOR_STORE_PROVIDER_SPEC.name,
     )
     response = await namespace_client.query(
         rank_by=("vector", "ANN", query.dense_vector),
@@ -120,7 +125,7 @@ async def _search_sparse_knn(
 ) -> list[SearchResult]:
     sparse_vector = resolve_sparse_query_vector(
         query,
-        channel_name=execution.sparse_channel or "bm25",
+        channel_name=execution.sparse_channel or PRIMARY_SPARSE_CHANNEL,
     )
     response = await namespace_client.query(
         rank_by=(
@@ -157,7 +162,7 @@ async def _search_hybrid_rrf(
         validate_query_dense_dimensions(
             query.dense_vector,
             dense_dimensions=dense_dimensions,
-            backend="turbopuffer",
+            provider_name=TURBOPUFFER_VECTOR_STORE_PROVIDER_SPEC.name,
         )
         subqueries.append(
             {
@@ -170,7 +175,7 @@ async def _search_hybrid_rrf(
 
     if execution.sparse_limit is not None:
         lexical_query = (query.lexical_query or "").strip()
-        sparse_channel = execution.sparse_channel or "bm25"
+        sparse_channel = execution.sparse_channel or PRIMARY_SPARSE_CHANNEL
         if lexical_query:
             subqueries.append(
                 {

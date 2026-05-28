@@ -20,6 +20,7 @@ from rag_core.documents.converters.pdf_converter_inspector_results import (
 from rag_core.documents.ocr_commands import gemini as gemini_command
 from rag_core.documents.ocr_commands import mistral as mistral_command
 from rag_core.documents.ocr import OcrRequest, OcrResult
+from rag_core.documents.ocr_provider_names import COMMAND_OCR_PROVIDER
 from rag_core.documents.pdf_inspector import PdfInspectorDetectionResult
 from rag_core.documents.pdf_inspector import PdfInspectorExtractionResult
 
@@ -140,7 +141,7 @@ def test_gemini_ocr_request_keeps_api_key_out_of_url() -> None:
 
 def test_full_document_ocr_unknown_page_count_is_explicit() -> None:
     class _UnknownPageCountOcrProvider:
-        provider_name = "command"
+        provider_name = COMMAND_OCR_PROVIDER
         model_name = "ocr-test"
         supports_page_selection = False
 

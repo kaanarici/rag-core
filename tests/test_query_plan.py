@@ -6,6 +6,7 @@ from collections.abc import Callable
 
 import pytest
 
+from rag_core.retrieval_defaults import DEFAULT_SEARCH_LIMIT
 from rag_core.search import (
     Boost,
     DenseChannel,
@@ -18,7 +19,9 @@ from rag_core.search import (
     default_query_plan,
     query_plan_preset,
 )
-from rag_core.search.searcher import SearchRequest
+from rag_core.search.pipeline_runner import SearchRequest
+from rag_core.search.query_plan import DEFAULT_RRF_K
+from rag_core.search.sparse_channels import PRIMARY_SPARSE_CHANNEL
 from rag_core.search.types import SearchQuery, SearchSidecarQuery
 
 
@@ -73,6 +76,54 @@ def test_prefetch_limit_must_be_positive() -> None:
 def test_search_request_limit_must_be_positive() -> None:
     with pytest.raises(ValueError, match="SearchRequest.limit"):
         SearchRequest(query="q", corpus_ids=["c"], namespace="n", limit=0)
+
+
+def test_search_request_query_must_be_non_empty() -> None:
+    with pytest.raises(ValueError, match="SearchRequest.query"):
+        SearchRequest(query=" ", corpus_ids=["c"], namespace="n")
+
+
+@pytest.mark.parametrize(
+    ("factory", "message"),
+    [
+        (
+            lambda: SearchRequest(query="q", corpus_ids=[" "], namespace="n"),
+            "SearchRequest.corpus_ids",
+        ),
+        (
+            lambda: SearchRequest(
+                query="q",
+                corpus_ids=["c"],
+                namespace="n",
+                document_ids=[" "],
+            ),
+            "SearchRequest.document_ids",
+        ),
+        (
+            lambda: SearchQuery(
+                dense_vector=[0.1],
+                sparse_vector=SparseVector(indices=[], values=[]),
+                namespace="n",
+                corpus_ids=[" "],
+            ),
+            "SearchQuery.corpus_ids",
+        ),
+        (
+            lambda: SearchSidecarQuery(query="q", namespace="n", corpus_ids=[" "]),
+            "SearchSidecarQuery.corpus_ids",
+        ),
+        (
+            lambda: SearchSidecarQuery(query=" ", namespace="n", corpus_ids=["c"]),
+            "SearchSidecarQuery.query",
+        ),
+    ],
+)
+def test_search_requests_reject_blank_scope_values(
+    factory: Callable[[], object],
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        factory()
 
 
 def test_search_query_limit_must_be_positive() -> None:
@@ -161,7 +212,7 @@ def test_query_plan_can_carry_rerank_and_boost() -> None:
 def test_fuse_default_is_rrf_with_k60() -> None:
     fuse = PrefetchFusion()
     assert fuse.kind == "rrf"
-    assert fuse.rrf_k == 60
+    assert fuse.rrf_k == DEFAULT_RRF_K
     assert fuse.weights == ()
 
 
@@ -226,18 +277,26 @@ def test_boost_decay_requires_field_but_raw_does_not() -> None:
 # default_query_plan builder
 
 
-def test_default_query_plan_is_dense_plus_bm25_with_rrf60() -> None:
+def test_default_query_plan_is_dense_plus_primary_sparse_with_rrf60() -> None:
     plan = default_query_plan(result_limit=20)
     assert plan.final_limit == 20
     assert len(plan.prefetches) == 2
     assert isinstance(plan.prefetches[0].channel, DenseChannel)
     sparse = plan.prefetches[1].channel
     assert isinstance(sparse, SparseChannel)
-    assert sparse.vector_field == "bm25"
+    assert sparse.vector_field == PRIMARY_SPARSE_CHANNEL
     assert plan.fuse is not None
     assert plan.fuse.kind == "rrf"
-    assert plan.fuse.rrf_k == 60
+    assert plan.fuse.rrf_k == DEFAULT_RRF_K
     assert plan.prefetches[0].limit == plan.prefetches[1].limit == 80
+
+
+def test_query_plan_defaults_use_named_search_limit() -> None:
+    plan = default_query_plan()
+    bare_plan = QueryPlan(prefetches=(Prefetch(channel=DenseChannel(), limit=10),))
+
+    assert plan.final_limit == DEFAULT_SEARCH_LIMIT
+    assert bare_plan.final_limit == DEFAULT_SEARCH_LIMIT
 
 
 def test_default_query_plan_supports_multiple_sparse_channels() -> None:

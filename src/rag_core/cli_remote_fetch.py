@@ -11,16 +11,22 @@ from rag_core.fetch_security import (
     DEFAULT_FETCH_MAX_BYTES,
     DEFAULT_FETCH_MAX_REDIRECTS,
     DEFAULT_FETCH_TIMEOUT_SECONDS,
+    FETCH_ALLOW_HTTP_ENV,
+    FETCH_ALLOW_PRIVATE_ADDRESSES_ENV,
+    FETCH_MAX_BYTES_ENV,
+    FETCH_MAX_REDIRECTS_ENV,
+    FETCH_TIMEOUT_SECONDS_ENV,
 )
 from rag_core.fetch_security import FetchLimits, FetchScheme, FetchSecurityPolicy
 from rag_core.remote_discovery import RemoteDiscoveryReader
+from rag_core.remote_discovery_models import DEFAULT_REMOTE_SITEMAP_INDEX_MAX_FETCHES
 
 
 def fetch_policy_from_args(args: argparse.Namespace) -> FetchSecurityPolicy:
     allow_http = _arg_or_env_bool(
         args,
         "fetch_allow_http",
-        env_name="RAG_CORE_FETCH_ALLOW_HTTP",
+        env_name=FETCH_ALLOW_HTTP_ENV,
         default=False,
     )
     allowed_schemes: tuple[FetchScheme, ...] = (
@@ -31,7 +37,7 @@ def fetch_policy_from_args(args: argparse.Namespace) -> FetchSecurityPolicy:
         allow_private_addresses=_arg_or_env_bool(
             args,
             "fetch_allow_private_addresses",
-            env_name="RAG_CORE_FETCH_ALLOW_PRIVATE_ADDRESSES",
+            env_name=FETCH_ALLOW_PRIVATE_ADDRESSES_ENV,
             default=False,
         ),
     )
@@ -42,19 +48,19 @@ def fetch_limits_from_args(args: argparse.Namespace) -> FetchLimits:
         max_bytes=_arg_or_env_int(
             args,
             "fetch_max_bytes",
-            env_name="RAG_CORE_FETCH_MAX_BYTES",
+            env_name=FETCH_MAX_BYTES_ENV,
             default=DEFAULT_FETCH_MAX_BYTES,
         ),
         timeout_seconds=_arg_or_env_float(
             args,
             "fetch_timeout_seconds",
-            env_name="RAG_CORE_FETCH_TIMEOUT_SECONDS",
+            env_name=FETCH_TIMEOUT_SECONDS_ENV,
             default=DEFAULT_FETCH_TIMEOUT_SECONDS,
         ),
         max_redirects=_arg_or_env_int(
             args,
             "fetch_max_redirects",
-            env_name="RAG_CORE_FETCH_MAX_REDIRECTS",
+            env_name=FETCH_MAX_REDIRECTS_ENV,
             default=DEFAULT_FETCH_MAX_REDIRECTS,
         ),
     )
@@ -68,7 +74,7 @@ def discovery_max_urls(value: int | None, *, default: int) -> int:
 
 
 def discovery_max_sitemap_fetches(value: int | None) -> int:
-    resolved = 128 if value is None else value
+    resolved = DEFAULT_REMOTE_SITEMAP_INDEX_MAX_FETCHES if value is None else value
     if resolved <= 0:
         raise ValueError("--max-sitemap-fetches must be positive")
     return resolved

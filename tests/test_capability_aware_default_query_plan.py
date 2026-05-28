@@ -11,18 +11,19 @@ from rag_core.search.planning import (
     default_query_plan_for_capabilities,
     query_plan_preset,
 )
-from rag_core.search.providers.query_plan_capabilities import (
-    QDRANT_QUERY_PLAN_CAPABILITIES,
-    TURBOPUFFER_QUERY_PLAN_CAPABILITIES,
+from rag_core.search.providers.vector_store_capabilities import (
+    QDRANT_VECTOR_STORE_CAPABILITY_SPEC,
+    TURBOPUFFER_VECTOR_STORE_CAPABILITY_SPEC,
 )
 from rag_core.search.pipeline import HybridRetrieve, PipelineContext, PipelineQuery
 from rag_core.search.query_plan import (
+    PRIMARY_DENSE_QUERY_VECTOR,
     DenseChannel,
     Prefetch,
     SparseChannel,
     UnsupportedQueryStage,
 )
-from rag_core.search.searcher import SearchOrchestrator, SearchRequest
+from rag_core.search.pipeline_runner import SearchPipelineRunner, SearchRequest
 from rag_core.search.sparse_channels import (
     PRIMARY_SPARSE_CHANNEL,
     SECONDARY_SPARSE_CHANNEL,
@@ -34,6 +35,8 @@ from tests.support import (
     FakeSparseEmbedder,
     RecordingVectorStore,
 )
+
+_DENSE_PRIMARY_CHANNEL = f"dense:dense:{PRIMARY_DENSE_QUERY_VECTOR}"
 
 
 class _DenseOnlyStore(RecordingVectorStore):
@@ -91,7 +94,7 @@ def _assert_sparse_query_vectors_present(
 
 def test_default_query_plan_prefers_hybrid_when_declared() -> None:
     plan = default_query_plan_for_capabilities(
-        capabilities=QDRANT_QUERY_PLAN_CAPABILITIES,
+        capabilities=QDRANT_VECTOR_STORE_CAPABILITY_SPEC.query_plan,
         result_limit=5,
     )
 
@@ -105,7 +108,7 @@ def test_default_query_plan_prefers_hybrid_when_declared() -> None:
 
 def test_default_query_plan_uses_hybrid_when_turbopuffer_declares_hybrid() -> None:
     plan = default_query_plan_for_capabilities(
-        capabilities=TURBOPUFFER_QUERY_PLAN_CAPABILITIES,
+        capabilities=TURBOPUFFER_VECTOR_STORE_CAPABILITY_SPEC.query_plan,
         result_limit=5,
     )
 
@@ -174,8 +177,8 @@ def test_default_query_plan_is_absent_for_baseline_store_capability() -> None:
 def test_search_default_uses_capability_aware_dense_plan() -> None:
     async def scenario() -> _DenseOnlyStore:
         store = _DenseOnlyStore()
-        orchestrator = _orchestrator(store)
-        await orchestrator.search(
+        pipeline_runner = _pipeline_runner(store)
+        await pipeline_runner.search(
             SearchRequest(query="billing", corpus_ids=["docs"], namespace="acme")
         )
         return store
@@ -191,8 +194,8 @@ def test_search_default_leaves_baseline_store_query_plan_unset() -> None:
     async def scenario() -> tuple[_NoQueryPlanStore, SearchPlanned]:
         store = _NoQueryPlanStore()
         events = EventBuffer()
-        orchestrator = _orchestrator(store, event_sink=events)
-        await orchestrator.search(
+        pipeline_runner = _pipeline_runner(store, event_sink=events)
+        await pipeline_runner.search(
             SearchRequest(query="billing", corpus_ids=["docs"], namespace="acme")
         )
         [planned] = [
@@ -327,13 +330,13 @@ def test_search_planned_reflects_resolved_sparse_channels() -> None:
     async def scenario() -> tuple[_MultiSparseChannelStrictStore, SearchPlanned]:
         events = EventBuffer()
         store = _MultiSparseChannelStrictStore()
-        orchestrator = SearchOrchestrator(
+        pipeline_runner = SearchPipelineRunner(
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(include_extra_channel=False),
             vector_store=store,
             event_sink=events,
         )
-        await orchestrator.search(
+        await pipeline_runner.search(
             SearchRequest(query="billing", corpus_ids=["docs"], namespace="acme")
         )
         [planned] = [
@@ -345,7 +348,7 @@ def test_search_planned_reflects_resolved_sparse_channels() -> None:
     [call] = store.search_calls
     assert call.query_plan is not None
     assert planned.channels == (
-        "dense:dense:primary",
+        _DENSE_PRIMARY_CHANNEL,
         f"sparse:{PRIMARY_SPARSE_CHANNEL}:{PRIMARY_SPARSE_CHANNEL}",
     )
 
@@ -376,12 +379,12 @@ def test_declared_store_rejects_unsupported_explicit_plan_before_embedding() -> 
     assert sparse.embed_query_multi_calls == []
 
 
-def _orchestrator(
+def _pipeline_runner(
     store: RecordingVectorStore,
     *,
     event_sink: EventBuffer | None = None,
-) -> SearchOrchestrator:
-    return SearchOrchestrator(
+) -> SearchPipelineRunner:
+    return SearchPipelineRunner(
         embedding_provider=FakeEmbeddingProvider(),
         sparse_embedder=FakeSparseEmbedder(),
         vector_store=store,

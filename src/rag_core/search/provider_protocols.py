@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol, Sequence, runtime_checkable
 
+from rag_core.retrieval_defaults import DEFAULT_SEARCH_LIMIT
 from rag_core.search.request_models import (
     DeleteFilter,
     RerankResult,
@@ -43,13 +44,13 @@ class SparseEmbedder(Protocol):
 
 @runtime_checkable
 class RerankerProvider(Protocol):
-    """Protocol for reranking providers (Cohere, Jina, etc.)."""
+    """Protocol for reranking providers such as Cohere, Voyage, and ZeroEntropy."""
 
     async def rerank(
         self,
         query: str,
         documents: list[str],
-        top_k: int = 10,
+        top_k: int = DEFAULT_SEARCH_LIMIT,
     ) -> list[RerankResult]: ...
 
 
@@ -123,7 +124,7 @@ class StoreCapabilities:
 
 @runtime_checkable
 class VectorStore(Protocol):
-    """Vendor-neutral baseline every vector store backend must satisfy.
+    """Vendor-neutral baseline every vector store adapter must satisfy.
 
     Methods ``delete_point_ids`` and ``get_document_record`` are conditionally
     supported: callers must check ``capabilities`` before invoking them. An

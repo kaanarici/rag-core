@@ -14,6 +14,7 @@ from .qdrant_client import create_qdrant_client
 from .qdrant_health import _collection_fingerprint
 from .qdrant_lifecycle import QdrantAdapterConfig
 from .qdrant_shared import WriteLatencyTracker, compute_write_params
+from .vector_store_capabilities import QDRANT_VECTOR_STORE_PROVIDER_SPEC
 
 
 @dataclass(frozen=True)
@@ -67,9 +68,10 @@ def _log_qdrant_adapter_initialized(
     config: QdrantAdapterConfig,
 ) -> None:
     logger.info(
-        "QdrantVectorStore initialized: backend=qdrant dense_dimensions=%d "
+        "QdrantVectorStore initialized: provider=%s dense_dimensions=%d "
         "max_concurrent=%d max_batch_size=%d quantization=%s local=%s "
         "collection_fingerprint=%s",
+        QDRANT_VECTOR_STORE_PROVIDER_SPEC.name,
         config.dimensions,
         config.max_concurrent,
         config.max_batch_size,

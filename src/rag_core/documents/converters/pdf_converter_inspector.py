@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Dict, List, TypeAlias
 
+from rag_core.documents.page_indices import normalize_page_indices
+
 from ..pdf_inspector import PdfInspectorDetectionResult, PdfInspectorExtractionResult
 
 logger = logging.getLogger(__name__)
@@ -139,28 +141,11 @@ def _normalize_inspector_ocr_page_indices(
     page_count: int | None,
     default_all_pages: bool = False,
 ) -> List[int]:
-    normalized: List[int] = []
-    seen: set[int] = set()
-
-    if isinstance(raw_indices, list):
-        for raw_index in raw_indices:
-            if (
-                isinstance(raw_index, bool)
-                or not isinstance(raw_index, int)
-                or raw_index < 0
-            ):
-                continue
-            if page_count is not None and raw_index >= page_count:
-                continue
-            if raw_index in seen:
-                continue
-            seen.add(raw_index)
-            normalized.append(raw_index)
-
-    if normalized or not default_all_pages or not page_count or page_count <= 0:
-        return normalized
-
-    return list(range(page_count))
+    return normalize_page_indices(
+        raw_indices,
+        page_count=page_count,
+        default_all_pages=default_all_pages,
+    )
 
 
 def _telemetry_page_indices(indices: List[int]) -> List[int]:

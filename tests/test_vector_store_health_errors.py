@@ -16,7 +16,7 @@ class _FailingQdrantClient:
         return None
 
 
-def test_qdrant_health_omits_backend_exception_message(
+def test_qdrant_health_omits_adapter_exception_message(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     async def run() -> None:
@@ -36,7 +36,8 @@ def test_qdrant_health_omits_backend_exception_message(
             health = await store.check_health()
 
         assert health["healthy"] is False
-        assert health["backend"] == "qdrant"
+        assert health["adapter"] == "qdrant"
+        assert "backend" not in health
         assert health["error"] == "RuntimeError"
         assert "private qdrant detail" not in str(health)
         assert "private qdrant detail" not in caplog.text

@@ -8,7 +8,7 @@ import pytest
 
 from rag_core.search.providers.zeroentropy import ZeroEntropyReranker
 from rag_core.search.providers.rerank_results import rerank_provider_result_count
-from tests.support import TEST_API_SECRET
+from tests.support import TEST_API_SECRET, assert_caplog_omits_private
 
 LOGGER_NAME = "rag_core.search.providers.rerank_results"
 
@@ -94,10 +94,7 @@ def test_zeroentropy_reranker_result_validation_logs_are_sanitized(
     assert "value_type=bool" in caplog.text
     assert "value_type=str" in caplog.text
     assert "value_type=object" in caplog.text
-    assert SECRET not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert "TypeNameShouldNeverBeLogged" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(caplog, "TypeNameShouldNeverBeLogged")
 
 
 def test_zeroentropy_top_k_non_positive_returns_empty_without_provider_call() -> None:

@@ -2,11 +2,59 @@
 
 from __future__ import annotations
 
-import importlib.util
-
 from rag_core.config.env_access import get_env_stripped
 from rag_core.core_models import RAGCoreConfig
+from rag_core.documents.contextualizer_provider_names import (
+    ANTHROPIC_CONTEXTUALIZER_ID,
+    CONTEXTUALIZER_DISABLED_ALIAS,
+    CONTEXTUALIZER_PROVIDER_ORDER,
+    NOOP_CONTEXTUALIZER_ID,
+)
+from rag_core.documents.ocr_provider_names import (
+    GEMINI_OCR_PROVIDER,
+    MISTRAL_OCR_PROVIDER,
+    OCR_PROVIDER_ORDER,
+)
+from rag_core.provider_api_keys import (
+    ANTHROPIC_API_KEY_ENVS,
+    GEMINI_API_KEY_ENVS,
+    MISTRAL_API_KEY_ENVS,
+)
+from rag_core.provider_package_names import ANTHROPIC_PACKAGE, FASTEMBED_PACKAGE
+from rag_core.search.lexical_sidecar import (
+    PORTABLE_LEXICAL_SIDECAR_PROVIDER,
+    SEARCH_SIDECAR_PROVIDER_ORDER,
+)
+from rag_core.search.sparse_channels import (
+    PRIMARY_SPARSE_CHANNEL,
+    SECONDARY_SPARSE_CHANNEL,
+)
 
+from .diagnostic_support import (
+    FIELD_API_KEY_CONFIGURED,
+    FIELD_API_KEY_ENV,
+    FIELD_CONFIGURED,
+    FIELD_PACKAGE_AVAILABLE,
+    FIELD_PROVIDERS,
+    FIELD_READINESS_SCOPE,
+    FIELD_REGISTERED,
+    FIELD_RUNTIME_CONFIG,
+    FIELD_SUPPORT_LEVEL,
+    READINESS_PACKAGE_AND_ENV,
+    SUPPORT_DEFAULT,
+    SUPPORT_DEFAULT_NOOP,
+    SUPPORT_FIRST_PARTY_OPTIONAL,
+    SUPPORT_FIRST_PARTY_UTILITY,
+)
+from .cache_provider_names import CACHE_PROVIDER_ORDER, NO_CACHE_PROVIDER
+from .event_sink_category_diagnostics import describe_event_sink_provider_diagnostics
+from .provider_category_helpers import (
+    add_injected_provider,
+    api_env_configured,
+    normalize,
+    normalize_runtime_provider,
+    package_available,
+)
 from .registry import (
     CHUNK_CONTEXT_CACHES,
     EMBEDDING_CACHES,
@@ -14,49 +62,21 @@ from .registry import (
     SEARCH_SIDECARS,
     SPARSE_EMBEDDERS,
 )
+from .sparse import (
+    DEFAULT_SPARSE_EMBEDDER_PROVIDER,
+    SPARSE_EMBEDDER_PROVIDER_ORDER,
+    SPARSE_LOAD_NOT_CHECKED_BY_DOCTOR,
+    SPLADE_LOAD_UNKNOWN_UNTIL_RUN,
+)
 
-_CACHE_PROVIDER_ORDER = ("none", "in_memory", "sqlite")
 _SPARSE_MODEL_ENVS = (
     "SPARSE_EMBEDDING_MODEL",
     "SPARSE_EMBEDDING_MODEL_BM25",
     "SPARSE_EMBEDDING_MODEL_SPLADE",
 )
 _PACKAGE_BY_PROVIDER = {
-    "fastembed": "fastembed",
-    "anthropic": "anthropic",
-    "opentelemetry": "opentelemetry.trace",
-}
-_API_KEY_ENV_BY_PROVIDER = {
-    "mistral": "MISTRAL_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
-}
-_GEMINI_API_KEY_ENVS = ("GOOGLE_API_KEY", "GEMINI_API_KEY")
-_SPARSE_ALIASES = {"fastembedsparseembedder": "fastembed"}
-_CONTEXTUALIZER_ALIASES = {
-    "noopcontextualizer": "noop",
-    "anthropicchunkcontextualizer": "anthropic",
-}
-_CACHE_ALIASES = {
-    "nocache": "none",
-    "nochunkcontextcache": "none",
-    "inmemorycache": "in_memory",
-    "inmemorychunkcontextcache": "in_memory",
-    "sqlitecache": "sqlite",
-    "sqlitechunkcontextcache": "sqlite",
-}
-_SEARCH_SIDECAR_ALIASES = {"portablelexicalsidecar": "portable_lexical"}
-_EVENT_SINK_ALIASES = {
-    "noop": "none",
-    "noopsink": "none",
-    "loggingsink": "logging",
-    "jsonlsink": "jsonl",
-    "eventbuffer": "buffer",
-    "opentelemetrysink": "opentelemetry",
-}
-_EVENT_SINK_RUNTIME_CONFIG = {
-    "logging": "RAGCore(..., event_sink=LoggingSink(...))",
-    "jsonl": "RAGCore(..., event_sink=JsonlSink(...))",
-    "buffer": "RAGCore(..., event_sink=EventBuffer())",
+    DEFAULT_SPARSE_EMBEDDER_PROVIDER: FASTEMBED_PACKAGE,
+    ANTHROPIC_CONTEXTUALIZER_ID: ANTHROPIC_PACKAGE,
 }
 
 
@@ -64,27 +84,29 @@ def describe_sparse_provider_diagnostics(
     *,
     runtime_provider: str | None = None,
 ) -> dict[str, object]:
-    configured = _normalize_runtime_provider(
+    configured = normalize_runtime_provider(
         runtime_provider,
-        aliases=_SPARSE_ALIASES,
-        default="fastembed",
+        default=DEFAULT_SPARSE_EMBEDDER_PROVIDER,
     )
     providers: dict[str, object] = {
-        "fastembed": {
-            "support_level": "default",
-            "configured": configured == "fastembed",
-            "package_available": _package_available("fastembed"),
-            "runtime_config": "RAGCore(..., sparse_embedder=...) or default",
-            "readiness_scope": "package_and_env",
+        DEFAULT_SPARSE_EMBEDDER_PROVIDER: {
+            FIELD_SUPPORT_LEVEL: SUPPORT_DEFAULT,
+            FIELD_CONFIGURED: configured == DEFAULT_SPARSE_EMBEDDER_PROVIDER,
+            FIELD_PACKAGE_AVAILABLE: package_available(
+                DEFAULT_SPARSE_EMBEDDER_PROVIDER,
+                packages_by_provider=_PACKAGE_BY_PROVIDER,
+            ),
+            FIELD_RUNTIME_CONFIG: "RAGCore(..., sparse_embedder=...) or default",
+            FIELD_READINESS_SCOPE: READINESS_PACKAGE_AND_ENV,
             "channels": {
-                "bm25": {
+                PRIMARY_SPARSE_CHANNEL: {
                     "enabled": True,
-                    "load_status": "not_checked_by_doctor",
+                    "load_status": SPARSE_LOAD_NOT_CHECKED_BY_DOCTOR,
                 },
-                "splade": {
+                SECONDARY_SPARSE_CHANNEL: {
                     "enabled_by_default": True,
                     "live_ready": None,
-                    "load_status": "unknown_until_sparse_embedding_runs",
+                    "load_status": SPLADE_LOAD_UNKNOWN_UNTIL_RUN,
                 },
             },
             "model_env_configured": {
@@ -93,11 +115,15 @@ def describe_sparse_provider_diagnostics(
             },
         }
     }
-    _add_injected_provider(providers, configured, known=("fastembed",))
+    add_injected_provider(
+        providers,
+        configured,
+        known=SPARSE_EMBEDDER_PROVIDER_ORDER,
+    )
     return {
-        "configured": configured,
-        "registered": list(SPARSE_EMBEDDERS.names()),
-        "providers": providers,
+        FIELD_CONFIGURED: configured,
+        FIELD_REGISTERED: list(SPARSE_EMBEDDERS.names()),
+        FIELD_PROVIDERS: providers,
     }
 
 
@@ -105,34 +131,34 @@ def describe_ocr_provider_diagnostics(
     *,
     runtime_provider: str | None = None,
 ) -> dict[str, object]:
-    configured = _normalize_runtime_provider(runtime_provider)
+    configured = normalize_runtime_provider(runtime_provider)
     providers: dict[str, object] = {
-        "mistral": {
-            "support_level": "first_party_optional",
-            "configured": configured == "mistral",
-            "package_available": True,
-            "api_key_env": _API_KEY_ENV_BY_PROVIDER["mistral"],
-            "api_key_configured": _api_env_configured(
-                (_API_KEY_ENV_BY_PROVIDER["mistral"],)
+        MISTRAL_OCR_PROVIDER: {
+            FIELD_SUPPORT_LEVEL: SUPPORT_FIRST_PARTY_OPTIONAL,
+            FIELD_CONFIGURED: configured == MISTRAL_OCR_PROVIDER,
+            FIELD_PACKAGE_AVAILABLE: True,
+            FIELD_API_KEY_ENV: MISTRAL_API_KEY_ENVS[0],
+            FIELD_API_KEY_CONFIGURED: api_env_configured(
+                MISTRAL_API_KEY_ENVS
             ),
             "supports_page_selection": True,
-            "runtime_config": "RAGCore(..., ocr_provider=...)",
+            FIELD_RUNTIME_CONFIG: "RAGCore(..., ocr_provider=...)",
         },
-        "gemini": {
-            "support_level": "first_party_optional",
-            "configured": configured == "gemini",
-            "package_available": True,
-            "api_key_env": list(_GEMINI_API_KEY_ENVS),
-            "api_key_configured": _api_env_configured(_GEMINI_API_KEY_ENVS),
+        GEMINI_OCR_PROVIDER: {
+            FIELD_SUPPORT_LEVEL: SUPPORT_FIRST_PARTY_OPTIONAL,
+            FIELD_CONFIGURED: configured == GEMINI_OCR_PROVIDER,
+            FIELD_PACKAGE_AVAILABLE: True,
+            FIELD_API_KEY_ENV: list(GEMINI_API_KEY_ENVS),
+            FIELD_API_KEY_CONFIGURED: api_env_configured(GEMINI_API_KEY_ENVS),
             "supports_page_selection": False,
-            "runtime_config": "RAGCore(..., ocr_provider=...)",
+            FIELD_RUNTIME_CONFIG: "RAGCore(..., ocr_provider=...)",
         },
     }
-    _add_injected_provider(providers, configured, known=("mistral", "gemini"))
+    add_injected_provider(providers, configured, known=OCR_PROVIDER_ORDER)
     return {
-        "configured": configured,
-        "registered": list(OCR_PROVIDERS.names()),
-        "providers": providers,
+        FIELD_CONFIGURED: configured,
+        FIELD_REGISTERED: list(OCR_PROVIDERS.names()),
+        FIELD_PROVIDERS: providers,
     }
 
 
@@ -140,36 +166,37 @@ def describe_contextualizer_diagnostics(
     *,
     runtime_provider: str | None = None,
 ) -> dict[str, object]:
-    configured = _normalize_runtime_provider(
-        runtime_provider,
-        aliases=_CONTEXTUALIZER_ALIASES,
-        default="none",
-    ) or "none"
-    if configured.startswith("anthropic:"):
-        configured = "anthropic"
+    configured = _normalize_contextualizer_provider(runtime_provider)
+    if configured.startswith(f"{ANTHROPIC_CONTEXTUALIZER_ID}:"):
+        configured = ANTHROPIC_CONTEXTUALIZER_ID
     providers: dict[str, object] = {
-        "noop": {
-            "support_level": "default_noop",
-            "configured": configured == "noop" or configured == "none",
-            "package_available": True,
-            "runtime_config": "RAGCore(..., chunk_contextualizer=None)",
+        NOOP_CONTEXTUALIZER_ID: {
+            FIELD_SUPPORT_LEVEL: SUPPORT_DEFAULT_NOOP,
+            FIELD_CONFIGURED: configured == NOOP_CONTEXTUALIZER_ID,
+            FIELD_PACKAGE_AVAILABLE: True,
+            FIELD_RUNTIME_CONFIG: "RAGCore(..., chunk_contextualizer=None)",
         },
-        "anthropic": {
-            "support_level": "first_party_optional",
-            "configured": configured == "anthropic",
-            "package_available": _package_available("anthropic"),
-            "api_key_env": _API_KEY_ENV_BY_PROVIDER["anthropic"],
-            "api_key_configured": _api_env_configured(
-                (_API_KEY_ENV_BY_PROVIDER["anthropic"],)
+        ANTHROPIC_CONTEXTUALIZER_ID: {
+            FIELD_SUPPORT_LEVEL: SUPPORT_FIRST_PARTY_OPTIONAL,
+            FIELD_CONFIGURED: configured == ANTHROPIC_CONTEXTUALIZER_ID,
+            FIELD_PACKAGE_AVAILABLE: package_available(
+                ANTHROPIC_CONTEXTUALIZER_ID,
+                packages_by_provider=_PACKAGE_BY_PROVIDER,
             ),
-            "runtime_config": "RAGCore(..., chunk_contextualizer=...)",
+            FIELD_API_KEY_ENV: ANTHROPIC_API_KEY_ENVS[0],
+            FIELD_API_KEY_CONFIGURED: api_env_configured(ANTHROPIC_API_KEY_ENVS),
+            FIELD_RUNTIME_CONFIG: "RAGCore(..., chunk_contextualizer=...)",
         },
     }
-    _add_injected_provider(providers, configured, known=("none", "noop", "anthropic"))
+    add_injected_provider(
+        providers,
+        configured,
+        known=CONTEXTUALIZER_PROVIDER_ORDER,
+    )
     return {
-        "configured": configured,
-        "registered": [],
-        "providers": providers,
+        FIELD_CONFIGURED: configured,
+        FIELD_REGISTERED: [],
+        FIELD_PROVIDERS: providers,
     }
 
 
@@ -178,20 +205,20 @@ def describe_embedding_cache_provider_diagnostics(
     config: RAGCoreConfig,
     runtime_provider: str | None = None,
 ) -> dict[str, object]:
-    configured = _normalize_runtime_provider(
+    configured = normalize_runtime_provider(
         runtime_provider,
-        aliases=_CACHE_ALIASES,
-        default=_normalize(config.ingest.embedding_cache_provider) or "none",
-    ) or "none"
+        default=normalize(config.ingest.embedding_cache_provider)
+        or NO_CACHE_PROVIDER,
+    ) or NO_CACHE_PROVIDER
     providers: dict[str, object] = {
         provider: _cache_provider_diagnostics(provider, configured=configured)
-        for provider in _CACHE_PROVIDER_ORDER
+        for provider in CACHE_PROVIDER_ORDER
     }
-    _add_injected_provider(providers, configured, known=_CACHE_PROVIDER_ORDER)
+    add_injected_provider(providers, configured, known=CACHE_PROVIDER_ORDER)
     return {
-        "configured": configured,
-        "registered": list(EMBEDDING_CACHES.names()),
-        "providers": providers,
+        FIELD_CONFIGURED: configured,
+        FIELD_REGISTERED: list(EMBEDDING_CACHES.names()),
+        FIELD_PROVIDERS: providers,
     }
 
 
@@ -199,20 +226,19 @@ def describe_chunk_context_cache_provider_diagnostics(
     *,
     runtime_provider: str | None = None,
 ) -> dict[str, object]:
-    configured = _normalize_runtime_provider(
+    configured = normalize_runtime_provider(
         runtime_provider,
-        aliases=_CACHE_ALIASES,
-        default="none",
-    ) or "none"
+        default=NO_CACHE_PROVIDER,
+    ) or NO_CACHE_PROVIDER
     providers: dict[str, object] = {
         provider: _cache_provider_diagnostics(provider, configured=configured)
-        for provider in _CACHE_PROVIDER_ORDER
+        for provider in CACHE_PROVIDER_ORDER
     }
-    _add_injected_provider(providers, configured, known=_CACHE_PROVIDER_ORDER)
+    add_injected_provider(providers, configured, known=CACHE_PROVIDER_ORDER)
     return {
-        "configured": configured,
-        "registered": list(CHUNK_CONTEXT_CACHES.names()),
-        "providers": providers,
+        FIELD_CONFIGURED: configured,
+        FIELD_REGISTERED: list(CHUNK_CONTEXT_CACHES.names()),
+        FIELD_PROVIDERS: providers,
     }
 
 
@@ -221,70 +247,33 @@ def describe_search_sidecar_provider_diagnostics(
     config: RAGCoreConfig,
     runtime_provider: str | None = None,
 ) -> dict[str, object]:
-    configured = _normalize_runtime_provider(
-        runtime_provider,
-        aliases=_SEARCH_SIDECAR_ALIASES,
-    )
+    configured = normalize_runtime_provider(runtime_provider)
     if not configured:
-        configured = _normalize(config.ingest.lexical_search_provider)
+        configured = normalize(config.ingest.lexical_search_provider)
     if not configured:
         configured = None
     if not configured and config.ingest.enable_lexical_search:
-        configured = "portable_lexical"
+        configured = PORTABLE_LEXICAL_SIDECAR_PROVIDER
     providers: dict[str, object] = {
-        "portable_lexical": {
-            "support_level": "first_party_utility",
-            "configured": configured == "portable_lexical",
-            "package_available": True,
-            "runtime_config": (
+        PORTABLE_LEXICAL_SIDECAR_PROVIDER: {
+            FIELD_SUPPORT_LEVEL: SUPPORT_FIRST_PARTY_UTILITY,
+            FIELD_CONFIGURED: configured == PORTABLE_LEXICAL_SIDECAR_PROVIDER,
+            FIELD_PACKAGE_AVAILABLE: True,
+            FIELD_RUNTIME_CONFIG: (
                 "RAGCoreConfig.ingest.lexical_search_provider or "
                 "RAGCore(..., search_sidecar=...)"
             ),
         }
     }
-    _add_injected_provider(providers, configured, known=("portable_lexical",))
-    return {
-        "configured": configured or None,
-        "registered": list(SEARCH_SIDECARS.names()),
-        "providers": providers,
-    }
-
-
-def describe_event_sink_provider_diagnostics(
-    *,
-    runtime_provider: str | None = None,
-) -> dict[str, object]:
-    configured = _normalize_runtime_provider(
-        runtime_provider,
-        aliases=_EVENT_SINK_ALIASES,
-        default="none",
-    ) or "none"
-    providers: dict[str, object] = {
-        "none": {
-            "support_level": "default_noop",
-            "configured": configured == "none",
-            "package_available": True,
-            "runtime_config": "RAGCore(..., event_sink=None)",
-        },
-        "logging": _event_sink_diagnostics("logging", configured=configured),
-        "jsonl": _event_sink_diagnostics("jsonl", configured=configured),
-        "buffer": _event_sink_diagnostics("buffer", configured=configured),
-        "opentelemetry": {
-            "support_level": "first_party_optional",
-            "configured": configured == "opentelemetry",
-            "package_available": _package_available("opentelemetry"),
-            "runtime_config": "RAGCore(..., event_sink=OpenTelemetrySink())",
-        },
-    }
-    _add_injected_provider(
+    add_injected_provider(
         providers,
         configured,
-        known=("none", "logging", "jsonl", "buffer", "opentelemetry"),
+        known=SEARCH_SIDECAR_PROVIDER_ORDER,
     )
     return {
-        "configured": configured,
-        "registered": [],
-        "providers": providers,
+        FIELD_CONFIGURED: configured or None,
+        FIELD_REGISTERED: list(SEARCH_SIDECARS.names()),
+        FIELD_PROVIDERS: providers,
     }
 
 
@@ -294,70 +283,25 @@ def _cache_provider_diagnostics(
     configured: str,
 ) -> dict[str, object]:
     return {
-        "support_level": "default_noop" if provider == "none" else "first_party_utility",
-        "configured": provider == configured,
-        "package_available": True,
-        "runtime_config": "registered provider name or direct constructor injection",
+        FIELD_SUPPORT_LEVEL: (
+            SUPPORT_DEFAULT_NOOP
+            if provider == NO_CACHE_PROVIDER
+            else SUPPORT_FIRST_PARTY_UTILITY
+        ),
+        FIELD_CONFIGURED: provider == configured,
+        FIELD_PACKAGE_AVAILABLE: True,
+        FIELD_RUNTIME_CONFIG: "registered provider name or direct constructor injection",
     }
 
 
-def _event_sink_diagnostics(provider: str, *, configured: str) -> dict[str, object]:
-    return {
-        "support_level": "first_party_utility",
-        "configured": provider == configured,
-        "package_available": True,
-        "runtime_config": _EVENT_SINK_RUNTIME_CONFIG[provider],
-    }
-
-
-def _add_injected_provider(
-    providers: dict[str, object],
-    configured: str | None,
-    *,
-    known: tuple[str, ...],
-) -> None:
-    if configured is None or configured in known:
-        return
-    providers[configured] = {
-        "support_level": "injected",
-        "configured": True,
-        "package_available": None,
-        "runtime_config": "direct constructor injection",
-    }
-
-
-def _normalize_runtime_provider(
-    value: str | None,
-    *,
-    aliases: dict[str, str] | None = None,
-    default: str | None = None,
-) -> str | None:
-    normalized = _normalize(value)
-    if not normalized:
-        return default
-    compact = normalized.replace("_", "").replace("-", "")
-    return (aliases or {}).get(compact, normalized)
-
-
-def _api_env_configured(
-    env_names: tuple[str, ...],
-    *,
-    explicit_key: str | None = None,
-) -> bool:
-    return bool((explicit_key or "").strip()) or any(
-        bool(get_env_stripped(env_name)) for env_name in env_names
+def _normalize_contextualizer_provider(value: str | None) -> str:
+    configured = normalize_runtime_provider(
+        value,
+        default=NOOP_CONTEXTUALIZER_ID,
     )
-
-
-def _package_available(provider: str) -> bool:
-    try:
-        return importlib.util.find_spec(_PACKAGE_BY_PROVIDER[provider]) is not None
-    except ModuleNotFoundError:
-        return False
-
-
-def _normalize(value: str | None) -> str:
-    return (value or "").strip().lower()
+    if configured == CONTEXTUALIZER_DISABLED_ALIAS:
+        return NOOP_CONTEXTUALIZER_ID
+    return configured or NOOP_CONTEXTUALIZER_ID
 
 
 __all__ = [

@@ -15,7 +15,7 @@ from rag_core.events.types import (
 )
 from rag_core.search.pipeline import IdentityFuse, PassThroughRerank, RetrievalPipeline
 from rag_core.search.pipeline.types import PipelineContext, PipelineQuery
-from rag_core.search.searcher import SearchOrchestrator, SearchRequest
+from rag_core.search.pipeline_runner import SearchPipelineRunner, SearchRequest
 from rag_core.search.types import SearchResult
 
 from tests.support import (
@@ -174,7 +174,7 @@ def test_pipeline_stage_failures_emit_sanitized_stage_error(case: _StageCase) ->
     asyncio.run(run())
 
 
-def test_search_orchestrator_stage_errors_stay_sanitized_on_public_path() -> None:
+def test_search_pipeline_runner_stage_errors_stay_sanitized_on_public_path() -> None:
     async def run() -> None:
         events = EventBuffer()
         pipeline = RetrievalPipeline(
@@ -182,7 +182,7 @@ def test_search_orchestrator_stage_errors_stay_sanitized_on_public_path() -> Non
             fuse=IdentityFuse(),
             rerank=PassThroughRerank(),
         )
-        orchestrator = SearchOrchestrator(
+        pipeline_runner = SearchPipelineRunner(
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(),
             vector_store=RecordingVectorStore(),
@@ -191,7 +191,7 @@ def test_search_orchestrator_stage_errors_stay_sanitized_on_public_path() -> Non
         )
 
         with pytest.raises(RuntimeError, match="private"):
-            await orchestrator.search(
+            await pipeline_runner.search(
                 SearchRequest(
                     query="private query text",
                     namespace="ns",

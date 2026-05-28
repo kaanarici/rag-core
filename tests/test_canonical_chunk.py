@@ -1,5 +1,6 @@
 import pytest
 
+from rag_core.config import MARKDOWN_CHUNKING_STRATEGY
 from rag_core.core_builders import build_index_request
 from rag_core.core_models import PreparedChunk, PreparedDocument, ProcessingFingerprint
 from rag_core.core_prepare import prepare_pre_chunked_texts, prepare_text_chunks
@@ -9,7 +10,11 @@ from rag_core.documents.chunking.router import chunk_text
 
 
 def _config() -> ChunkConfig:
-    return ChunkConfig(max_chars=2000, overlap=200, strategy="markdown")
+    return ChunkConfig(
+        max_chars=2000,
+        overlap=200,
+        strategy=MARKDOWN_CHUNKING_STRATEGY,
+    )
 
 
 def test_chunkers_and_router_return_prepared_chunks() -> None:
@@ -23,7 +28,7 @@ def test_chunkers_and_router_return_prepared_chunks() -> None:
         assert isinstance(chunk, PreparedChunk)
         assert chunk.text
         assert chunk.embedding_text == chunk.text
-        assert chunk.chunking_strategy == "markdown"
+        assert chunk.chunking_strategy == MARKDOWN_CHUNKING_STRATEGY
     assert all(isinstance(chunk, PreparedChunk) for chunk in routed)
 
 
@@ -34,7 +39,7 @@ def test_prepare_text_chunks_populates_canonical_fields() -> None:
     assert chunk.start_char == 0
     assert 0 < chunk.end_char <= len(text)
     assert chunk.text in text
-    assert chunk.chunking_strategy == "markdown"
+    assert chunk.chunking_strategy == MARKDOWN_CHUNKING_STRATEGY
     assert chunk.word_count > 0
 
 

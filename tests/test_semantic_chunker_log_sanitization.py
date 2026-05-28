@@ -11,6 +11,7 @@ from rag_core.documents.chunking.semantic import (
     SemanticChunker,
     _LocalSemanticEmbedder,
 )
+from tests.support import assert_caplog_omits_private
 
 _TEXT = (
     "Alpha topic starts with setup. "
@@ -75,10 +76,7 @@ def test_local_semantic_embedder_setup_warning_is_sanitized(
     _assert_heuristic_fallback(chunks)
     assert "safe-local-model" in caplog.text
     assert "LocalModelSetupError" in caplog.text
-    assert "raw local setup detail" not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(caplog, "raw local setup detail")
 
 
 def test_local_semantic_embedding_failure_warning_includes_model_context(
@@ -106,10 +104,7 @@ def test_local_semantic_embedding_failure_warning_includes_model_context(
     _assert_heuristic_fallback(chunks)
     assert "safe-local-model" in caplog.text
     assert "ProviderEmbeddingError" in caplog.text
-    assert "raw local model embed detail" not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(caplog, "raw local model embed detail")
 
 
 def test_semantic_embedding_failure_warning_is_sanitized(
@@ -130,7 +125,4 @@ def test_semantic_embedding_failure_warning_is_sanitized(
 
     _assert_heuristic_fallback(chunks)
     assert "ProviderEmbeddingError" in caplog.text
-    assert "raw provider/model exception text" not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(caplog, "raw provider/model exception text")

@@ -11,6 +11,7 @@ from rag_core.documents.converters.base import (
     QualityScore,
     QualityVerdict,
 )
+from tests.support import assert_caplog_omits_private
 
 
 class ProviderSecretError(RuntimeError):
@@ -67,10 +68,7 @@ def test_hybrid_converter_success_debug_log_is_sanitized(
     assert result.needs_ocr is False
     assert "hybrid-test" in caplog.text
     assert "extracted via text layer" in caplog.text
-    assert "private-roadmap.pdf" not in caplog.text
-    assert "private bytes" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(caplog, "private-roadmap.pdf", "private bytes")
 
 
 def test_hybrid_converter_quality_fallback_debug_log_is_sanitized(
@@ -101,11 +99,7 @@ def test_hybrid_converter_quality_fallback_debug_log_is_sanitized(
     assert result.quality.details == "raw quality detail with api key sk-test-secret"
     assert "hybrid-test" in caplog.text
     assert "poor" in caplog.text
-    assert "raw quality detail" not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "private-roadmap.pdf" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(caplog, "raw quality detail", "private-roadmap.pdf")
 
 
 def test_hybrid_converter_failure_warning_is_sanitized(
@@ -130,8 +124,4 @@ def test_hybrid_converter_failure_warning_is_sanitized(
     assert result.metadata["error"] == "ProviderSecretError"
     assert "hybrid-test" in caplog.text
     assert "ProviderSecretError" in caplog.text
-    assert "raw extraction detail" not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "private-roadmap.pdf" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(caplog, "raw extraction detail", "private-roadmap.pdf")

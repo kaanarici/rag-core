@@ -1,10 +1,10 @@
-"""Retrieve a context pack for an application model call."""
+"""Retrieve prompt-safe context text for an application model call."""
 
 from __future__ import annotations
 
 import asyncio
 
-from rag_core import ModelContextPack, RAGCore
+from rag_core import ContextPack, RAGCore
 from rag_core.demo import build_demo_core
 
 
@@ -28,7 +28,7 @@ async def seed_help_center(core: RAGCore) -> None:
     )
 
 
-async def build_chatbot_context(core: RAGCore, query: str) -> ModelContextPack:
+async def build_chatbot_context(core: RAGCore, query: str) -> ContextPack:
     return await core.retrieve_context(
         query=query,
         namespace="acme",
@@ -39,7 +39,7 @@ async def build_chatbot_context(core: RAGCore, query: str) -> ModelContextPack:
     )
 
 
-async def run_chatbot_context_demo(query: str) -> ModelContextPack:
+async def run_chatbot_context_demo(query: str) -> ContextPack:
     core = build_demo_core(collection="chatbot_context")
     async with core:
         await seed_help_center(core)
@@ -48,12 +48,11 @@ async def run_chatbot_context_demo(query: str) -> ModelContextPack:
 
 async def run_demo() -> None:
     context = await run_chatbot_context_demo("How can a customer pay an invoice?")
-    print("Context to pass into your model call:")
-    print(context.as_text())
-    print("\nCitations:")
-    for source in context.citations:
-        title = source.title or source.document_key or source.document_id or source.result_id
-        print(f"- {source.source_id}: {title}")
+    print("Prompt-safe context text:")
+    print(context.as_prompt_text())
+    if context.prompt_citation_summary:
+        print("\nCitations:")
+        print(context.prompt_citation_summary)
 
 
 def main() -> None:

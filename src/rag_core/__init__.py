@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     from .core import RAGCore as RAGCore
     from .core_models import CorpusManifest as CorpusManifest
     from .core_models import CorpusManifestEntry as CorpusManifestEntry
+    from .core_models import DeleteDocumentResult as DeleteDocumentResult
     from .core_models import IngestedDocument as IngestedDocument
     from .core_models import OcrMetadata as OcrMetadata
     from .core_models import OcrRoutingSignal as OcrRoutingSignal
@@ -15,19 +16,20 @@ if TYPE_CHECKING:
     from .core_models import PreparedDocument as PreparedDocument
     from .core_models import ProcessingFingerprint as ProcessingFingerprint
     from .core_models import RAGCoreConfig as RAGCoreConfig
-    from .search.context_pack import ContextSnippet as ContextSnippet
-    from .search.context_pack import ModelContextPack as ModelContextPack
-    from .search.context_pack import SourceLocator as SourceLocator
-    from .search.context_pack import SourcePreview as SourcePreview
-    from .search.context_pack import SourceReference as SourceReference
-    from .search.types import SearchResult as SearchResult
+    from .search import ContextSnippet as ContextSnippet
+    from .search import ContextPack as ContextPack
+    from .search import SearchResult as SearchResult
+    from .search import SourceLocator as SourceLocator
+    from .search import SourcePreview as SourcePreview
+    from .search import SourceReference as SourceReference
 
 __all__ = [
     "ContextSnippet",
     "CorpusManifest",
     "CorpusManifestEntry",
+    "DeleteDocumentResult",
     "IngestedDocument",
-    "ModelContextPack",
+    "ContextPack",
     "OcrMetadata",
     "OcrRoutingSignal",
     "ParsedDocument",
@@ -43,11 +45,12 @@ __all__ = [
 ]
 
 _EXPORTS = {
-    "ContextSnippet": ("rag_core.search.context_pack", "ContextSnippet"),
+    "ContextSnippet": ("rag_core.search", "ContextSnippet"),
     "CorpusManifest": ("rag_core.core_models", "CorpusManifest"),
     "CorpusManifestEntry": ("rag_core.core_models", "CorpusManifestEntry"),
+    "DeleteDocumentResult": ("rag_core.core_models", "DeleteDocumentResult"),
     "IngestedDocument": ("rag_core.core_models", "IngestedDocument"),
-    "ModelContextPack": ("rag_core.search.context_pack", "ModelContextPack"),
+    "ContextPack": ("rag_core.search", "ContextPack"),
     "OcrMetadata": ("rag_core.core_models", "OcrMetadata"),
     "OcrRoutingSignal": ("rag_core.core_models", "OcrRoutingSignal"),
     "ParsedDocument": ("rag_core.core_models", "ParsedDocument"),
@@ -56,10 +59,10 @@ _EXPORTS = {
     "ProcessingFingerprint": ("rag_core.core_models", "ProcessingFingerprint"),
     "RAGCore": ("rag_core.core", "RAGCore"),
     "RAGCoreConfig": ("rag_core.core_models", "RAGCoreConfig"),
-    "SearchResult": ("rag_core.search.types", "SearchResult"),
-    "SourceLocator": ("rag_core.search.context_pack", "SourceLocator"),
-    "SourcePreview": ("rag_core.search.context_pack", "SourcePreview"),
-    "SourceReference": ("rag_core.search.context_pack", "SourceReference"),
+    "SearchResult": ("rag_core.search", "SearchResult"),
+    "SourceLocator": ("rag_core.search", "SourceLocator"),
+    "SourcePreview": ("rag_core.search", "SourcePreview"),
+    "SourceReference": ("rag_core.search", "SourceReference"),
 }
 
 

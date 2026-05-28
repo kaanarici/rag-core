@@ -6,9 +6,15 @@ import zlib
 from collections import Counter
 from typing import TYPE_CHECKING, TypedDict
 
-from rag_core.config import EmbeddingConfig, QdrantConfig, RerankerConfig
+from rag_core.config import (
+    DEFAULT_RERANKER_PROVIDER,
+    EmbeddingConfig,
+    QdrantConfig,
+    RerankerConfig,
+)
 from rag_core.core import RAGCore, RAGCoreConfig
-from rag_core.search.types import SparseVector
+from rag_core.search.sparse_channels import PRIMARY_SPARSE_CHANNEL
+from rag_core.search.vector_models import SparseVector
 
 if TYPE_CHECKING:
     from rag_core.events.sink import EventSink
@@ -54,13 +60,13 @@ class DemoSparseEmbedder:
         return [_sparse_vector(text) for text in texts]
 
     def embed_texts_multi(self, texts: list[str]) -> list[dict[str, SparseVector]]:
-        return [{"bm25": vector} for vector in self.embed_texts(texts)]
+        return [{PRIMARY_SPARSE_CHANNEL: vector} for vector in self.embed_texts(texts)]
 
     def embed_query(self, query: str) -> SparseVector:
         return _sparse_vector(query)
 
     def embed_query_multi(self, query: str) -> dict[str, SparseVector]:
-        return {"bm25": self.embed_query(query)}
+        return {PRIMARY_SPARSE_CHANNEL: self.embed_query(query)}
 
 
 def build_demo_core(
@@ -81,7 +87,7 @@ def build_demo_core(
                 model="demo-dense-v1",
                 dimensions=_DEMO_EMBEDDING_DIMENSIONS,
             ),
-            reranker=RerankerConfig(provider="none"),
+            reranker=RerankerConfig(provider=DEFAULT_RERANKER_PROVIDER),
         ),
         embedding_provider=DemoEmbeddingProvider(),
         sparse_embedder=DemoSparseEmbedder(),

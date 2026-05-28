@@ -17,12 +17,12 @@ from .indexer_validation import (
     validate_embedding_store_dimensions,
     validate_index_namespace,
 )
-from rag_core.search.types import (
-    DeleteFilter,
+from rag_core.search.provider_protocols import (
     EmbeddingProvider,
     SparseEmbedder,
     VectorStore,
 )
+from rag_core.search.request_models import DeleteFilter
 
 if TYPE_CHECKING:
     from rag_core.events.sink import EventSink

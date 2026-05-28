@@ -12,7 +12,7 @@ import zipfile
 from rag_core.demo import build_demo_core
 from rag_core.fetch_security import validate_fetch_url
 from rag_core.fetching import FetchResponse
-from rag_core.remote_document_keys import public_remote_document_key
+from rag_core.sources import public_remote_document_key
 
 _REMOTE_URL = "https://example.com/docs/remote-guide?token=secret"
 _REMOTE_BODY = b"Remote guide pages can be fetched, parsed, indexed, and cited."
@@ -92,7 +92,7 @@ async def run_demo() -> dict[str, object]:
                 _require_document_key(remote_doc.document_key)
             ),
             "citation_count": len(context.citations),
-            "context_text": context.as_text(),
+            "context_text": context.as_prompt_text(),
         }
 
 

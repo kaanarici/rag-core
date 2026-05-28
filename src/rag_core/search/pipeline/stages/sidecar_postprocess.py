@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
-
 from rag_core.search.pipeline.merge_strategies import (
     PreferSidecarMerge,
     SidecarMergeStrategy,
@@ -16,21 +14,16 @@ from rag_core.search.pipeline.stages.sidecar_application import (
     sidecar_provider_name,
 )
 from rag_core.search.pipeline.stages.sidecar_prefetch import (
-    _SIDECAR_FUTURE_KEY as _SIDECAR_FUTURE_KEY,
     cancel_prefetched_sidecar,
     resolve_sidecar_results,
     start_prefetched_sidecar,
 )
-from rag_core.search.types import SearchResult
-
-if TYPE_CHECKING:
-    from rag_core.events.sink import EventSink
-
+from rag_core.search.vector_models import SearchResult
 
 class SidecarPrefetchTransform:
     """Fire the sidecar query early so its I/O overlaps with vector search.
 
-    The in-flight task is stored in ``query.extra`` for ``SidecarPostprocess``.
+    The in-flight task is stored in ``query.state`` for ``SidecarPostprocess``.
     """
 
     async def transform(
@@ -59,7 +52,7 @@ class SidecarPostprocess:
             await cancel_prefetched_sidecar(query)
             return results
         ctx.execution.attempted_sidecar = True
-        sink = cast("EventSink | None", ctx.event_sink)
+        sink = ctx.event_sink
         provider = sidecar_provider_name(ctx.sidecar)
         resolution = await resolve_sidecar_results(query, ctx.sidecar)
         if resolution.error_type:

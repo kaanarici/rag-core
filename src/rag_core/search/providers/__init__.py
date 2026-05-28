@@ -11,14 +11,11 @@ __all__ = (
     "EmbedCacheKey",
     "EmbeddingCache",
     "ProviderRegistry",
-    "QueryPlanCapabilities",
     "QdrantVectorStore",
     "RERANKER_PROVIDERS",
     "SEARCH_SIDECARS",
     "SPARSE_EMBEDDERS",
-    "StoreCapabilities",
     "VECTOR_STORES",
-    "VectorStorePolicy",
     "create_chunk_context_cache",
     "create_embedding_cache",
     "create_embedding_provider",
@@ -29,31 +26,28 @@ __all__ = (
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "ChunkContextCache": (
-        "rag_core.search.providers.embedding_cache",
+        "rag_core.search.providers.chunk_context_cache",
         "ChunkContextCache",
     ),
     "ChunkContextKey": (
-        "rag_core.search.providers.embedding_cache",
+        "rag_core.search.providers.chunk_context_cache",
         "ChunkContextKey",
     ),
     "EmbedCacheKey": (
-        "rag_core.search.providers.embedding_cache",
+        "rag_core.search.providers.embedding_cache_models",
         "EmbedCacheKey",
     ),
     "EmbeddingCache": (
-        "rag_core.search.providers.embedding_cache",
+        "rag_core.search.providers.embedding_cache_models",
         "EmbeddingCache",
     ),
-    "QueryPlanCapabilities": ("rag_core.search.types", "QueryPlanCapabilities"),
     "QdrantVectorStore": (
         "rag_core.search.providers.qdrant_store",
         "QdrantVectorStore",
     ),
-    "StoreCapabilities": ("rag_core.search.types", "StoreCapabilities"),
     "VECTOR_STORES": ("rag_core.search.providers.registry", "VECTOR_STORES"),
-    "VectorStorePolicy": ("rag_core.search.policy", "VectorStorePolicy"),
     "create_chunk_context_cache": (
-        "rag_core.search.providers.embedding_cache",
+        "rag_core.search.providers.chunk_context_cache",
         "create_chunk_context_cache",
     ),
     "create_embedding_cache": (

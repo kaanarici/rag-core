@@ -7,6 +7,20 @@ from typing import Any
 from starlette.responses import JSONResponse
 
 
+class RuntimeRequestError(ValueError):
+    """Invalid runtime HTTP request shape or field values."""
+
+    def __init__(
+        self,
+        *,
+        message: str,
+        details: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.message = message
+        self.details = details
+
+
 def api_error(
     *,
     code: str,
@@ -38,3 +52,6 @@ async def parse_json_object(request: Any) -> dict[str, Any] | JSONResponse:
             status_code=400,
         )
     return body
+
+
+__all__ = ["RuntimeRequestError", "api_error", "parse_json_object"]

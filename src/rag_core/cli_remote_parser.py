@@ -5,6 +5,19 @@ import argparse
 from rag_core.cli_config_parser import add_config_flags
 from rag_core.cli_events_parser import add_events_jsonl_flag
 from rag_core.cli_fetch_parser import add_fetch_flags
+from rag_core.remote_discovery_models import (
+    REMOTE_DISCOVERY_CLI_KIND_LLMS_TXT,
+    REMOTE_DISCOVERY_CLI_KIND_SITEMAP,
+)
+from rag_core.cli_source_flags import (
+    add_force_reindex_flag,
+    add_json_flag,
+    add_manifest_dir_flag,
+    add_max_concurrency_flag,
+    add_metadata_flag,
+    add_plan_json_flag,
+    add_scope_flags,
+)
 
 
 def add_remote_commands(
@@ -43,29 +56,24 @@ def _add_ingest_url_command(
     )
     add_config_flags(ingest_url)
     ingest_url.add_argument("url", help="HTTPS URL to fetch and ingest.")
-    ingest_url.add_argument("--namespace", required=True)
-    ingest_url.add_argument("--corpus-id", required=True)
+    add_scope_flags(ingest_url)
     ingest_url.add_argument("--document-id")
-    ingest_url.add_argument(
-        "--force-reindex",
-        action="store_true",
+    add_force_reindex_flag(
+        ingest_url,
         help="Reindex the URL even when fetched content is unchanged.",
     )
-    _add_manifest_dir_argument(
+    add_manifest_dir_flag(
         ingest_url,
         manifest_dir_default=manifest_dir_default,
         manifest_dir_help_default=manifest_dir_help_default,
     )
-    ingest_url.add_argument(
-        "--metadata",
-        action="append",
-        default=[],
-        metavar="KEY=VALUE",
+    add_metadata_flag(
+        ingest_url,
         help="Repeatable metadata field applied to the ingested document.",
     )
     add_events_jsonl_flag(ingest_url)
     add_fetch_flags(ingest_url)
-    ingest_url.add_argument("--json", action="store_true", help="Emit JSON output.")
+    add_json_flag(ingest_url, help="Emit JSON output.")
 
 
 def _add_ingest_urls_command(
@@ -87,41 +95,34 @@ def _add_ingest_urls_command(
     ingest_urls.add_argument(
         "url_file", help="Text file with one HTTP(S) URL per line."
     )
-    ingest_urls.add_argument("--namespace", required=True)
-    ingest_urls.add_argument("--corpus-id", required=True)
-    ingest_urls.add_argument(
-        "--max-concurrency",
-        type=int,
-        default=1,
+    add_scope_flags(ingest_urls)
+    add_max_concurrency_flag(
+        ingest_urls,
         help="Maximum URL ingests to run concurrently.",
     )
-    ingest_urls.add_argument(
-        "--plan-json",
-        action="store_true",
+    add_plan_json_flag(
+        ingest_urls,
         help=(
             "Print the redacted URL source-item plan, then exit without "
-            "constructing the runtime or fetching URLs."
+            "assembling RAGCore or fetching URLs."
         ),
     )
-    _add_manifest_dir_argument(
+    add_manifest_dir_flag(
         ingest_urls,
         manifest_dir_default=manifest_dir_default,
         manifest_dir_help_default=manifest_dir_help_default,
     )
-    ingest_urls.add_argument(
-        "--metadata",
-        action="append",
-        default=[],
+    add_metadata_flag(
+        ingest_urls,
         help="Attach metadata as KEY=VALUE. Repeat for multiple fields.",
     )
-    ingest_urls.add_argument(
-        "--force-reindex",
-        action="store_true",
+    add_force_reindex_flag(
+        ingest_urls,
         help="Reindex every URL even when fetched content is unchanged.",
     )
     add_events_jsonl_flag(ingest_urls)
     add_fetch_flags(ingest_urls)
-    ingest_urls.add_argument("--json", action="store_true", help="Emit JSONL output.")
+    add_json_flag(ingest_urls, help="Emit JSONL output.")
 
 
 def _add_discover_remote_command(
@@ -140,7 +141,10 @@ def _add_discover_remote_command(
     discover_remote.add_argument("url", help="HTTPS sitemap or llms.txt URL.")
     discover_remote.add_argument(
         "--kind",
-        choices=("sitemap", "llms-txt"),
+        choices=(
+            REMOTE_DISCOVERY_CLI_KIND_SITEMAP,
+            REMOTE_DISCOVERY_CLI_KIND_LLMS_TXT,
+        ),
         required=True,
         help="Discovery artifact format.",
     )
@@ -173,25 +177,7 @@ def _add_discover_remote_command(
         ),
     )
     add_fetch_flags(discover_remote)
-    discover_remote.add_argument(
-        "--json", action="store_true", help="Emit JSON output."
-    )
-
-
-def _add_manifest_dir_argument(
-    parser: argparse.ArgumentParser,
-    *,
-    manifest_dir_default: str,
-    manifest_dir_help_default: str,
-) -> None:
-    parser.add_argument(
-        "--manifest-dir",
-        default=manifest_dir_default,
-        help=(
-            "Directory under which JSONL manifests are written. "
-            f"Default: {manifest_dir_help_default}"
-        ),
-    )
+    add_json_flag(discover_remote, help="Emit JSON output.")
 
 
 __all__ = ["add_remote_commands"]

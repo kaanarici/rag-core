@@ -4,16 +4,20 @@ from __future__ import annotations
 
 from rag_core.search.planning import validate_query_plan_capabilities
 from rag_core.search.query_plan import (
+    FUSION_KIND_WEIGHTED_RRF,
     DenseChannel,
     Prefetch,
     QueryPlan,
     UnsupportedQueryStage,
 )
-from rag_core.search.types import DeleteFilter, SearchQuery
+from rag_core.search.request_models import DeleteFilter, SearchQuery
 
 from .qdrant_query_plan import validate_qdrant_query_plan_shape
 from .qdrant_shared import _DENSE_VECTOR_NAME
-from .query_plan_capabilities import QDRANT_QUERY_PLAN_CAPABILITIES
+from .vector_store_capabilities import (
+    QDRANT_VECTOR_STORE_CAPABILITY_SPEC,
+    QDRANT_VECTOR_STORE_PROVIDER_SPEC,
+)
 from .vector_dimensions import validate_query_dense_dimensions
 
 
@@ -31,13 +35,13 @@ def validate_qdrant_search_request(
         validate_query_dense_dimensions(
             query.dense_vector,
             dense_dimensions=dense_dimensions,
-            backend="qdrant",
+            provider_name=QDRANT_VECTOR_STORE_PROVIDER_SPEC.name,
         )
     if query.query_plan is not None:
         validate_query_plan_capabilities(
             query.query_plan,
-            capabilities=QDRANT_QUERY_PLAN_CAPABILITIES,
-            backend="qdrant",
+            capabilities=QDRANT_VECTOR_STORE_CAPABILITY_SPEC.query_plan,
+            provider_name=QDRANT_VECTOR_STORE_PROVIDER_SPEC.name,
         )
         validate_qdrant_query_plan_preflight(query.query_plan)
     return namespace
@@ -57,7 +61,7 @@ def validate_qdrant_query_plan_preflight(plan: QueryPlan) -> None:
     prefetch_count = len(plan.prefetches)
     if plan.fuse is not None and prefetch_count < 2:
         raise UnsupportedQueryStage("PrefetchFusion requires at least two prefetches")
-    if plan.fuse is not None and plan.fuse.kind == "weighted_rrf":
+    if plan.fuse is not None and plan.fuse.kind == FUSION_KIND_WEIGHTED_RRF:
         if len(plan.fuse.weights) != prefetch_count:
             raise UnsupportedQueryStage(
                 "PrefetchFusion(weighted_rrf) requires one weight per prefetch "

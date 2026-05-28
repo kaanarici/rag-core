@@ -11,8 +11,12 @@ class FakeContextPack:
     def as_text(self) -> str:
         return "[C1] Billing guide\nInvoices can be paid by card."
 
+    def as_prompt_text(self) -> str:
+        return "[S1] Billing guide\nInvoices can be paid by card."
+
     def to_payload(self) -> dict[str, object]:
         return {
+            "context_text": "[C1] Billing guide\nInvoices can be paid by card.",
             "query": "billing policy",
             "snippets": [],
             "citations": [],
@@ -75,7 +79,7 @@ def test_retrieve_context_emits_canonical_context_payload(
 
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["context_text"] == "[C1] Billing guide\nInvoices can be paid by card."
+    assert payload["context_text"] == "[S1] Billing guide\nInvoices can be paid by card."
     assert payload["citation_summary"] == "[C1] Billing guide"
     assert "ok" not in payload
     assert RecordingCore.calls == [
@@ -86,12 +90,65 @@ def test_retrieve_context_emits_canonical_context_payload(
             "limit": 3,
             "rerank": False,
             "query_plan": None,
+            "content_types": None,
+            "document_ids": None,
             "metadata_filter": None,
             "max_chars": 1000,
             "max_tokens": None,
         }
     ]
     assert not RecordingCore.search_called
+
+
+def test_retrieve_context_default_limit_matches_context_pack_default(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    RecordingCore.calls = []
+    monkeypatch.setattr(cli, "RAGCore", RecordingCore)
+
+    exit_code = cli.main(
+        [
+            "retrieve-context",
+            "billing policy",
+            "--namespace",
+            "acme",
+            "--corpus-id",
+            "help",
+        ]
+    )
+
+    assert exit_code == 0
+    capsys.readouterr()
+    assert RecordingCore.calls[0]["limit"] == 8
+
+
+def test_retrieve_context_passes_scope_filters(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    RecordingCore.calls = []
+    monkeypatch.setattr(cli, "RAGCore", RecordingCore)
+
+    exit_code = cli.main(
+        [
+            "retrieve-context",
+            "billing policy",
+            "--namespace",
+            "acme",
+            "--corpus-id",
+            "help",
+            "--content-type",
+            "document",
+            "--document-id",
+            "doc-1",
+        ]
+    )
+
+    assert exit_code == 0
+    capsys.readouterr()
+    assert RecordingCore.calls[0]["content_types"] == ["document"]
+    assert RecordingCore.calls[0]["document_ids"] == ["doc-1"]
 
 
 def test_retrieve_context_rejects_raw_json_mode_before_runtime_setup(

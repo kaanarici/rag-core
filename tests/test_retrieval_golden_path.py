@@ -1,6 +1,6 @@
 """Golden retrieval path: parse/chunk/index into real local Qdrant, then search.
 
-Most search tests intentionally use fake stores to pin orchestration. This file
+Most search tests intentionally use fake stores to pin pipeline wiring. This file
 is the opposite: keep it small, but make it exercise the user-facing retrieval
 path over a real local Qdrant collection.
 """

@@ -5,16 +5,22 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from rag_core.config.vector_store_config import (
+    DEFAULT_TURBOPUFFER_DELETE_CONTINUATION_LIMIT,
+)
 from rag_core.search.policy import VectorStorePolicy
-from rag_core.search.types import DeleteFilter, VectorPoint
+from rag_core.search.request_models import DeleteFilter
+from rag_core.search.vector_models import VectorPoint
 
 from .turbopuffer_client import TurboPufferNamespace
-from .turbopuffer_config import validate_turbopuffer_write_batch_size
+from .turbopuffer_config import (
+    validate_turbopuffer_delete_continuation_limit,
+    validate_turbopuffer_write_batch_size,
+)
 from .turbopuffer_filters import _delete_filter
 from .turbopuffer_payloads import _point_to_row, _schema, _validate_point_id
+from .vector_store_capabilities import TURBOPUFFER_VECTOR_STORE_PROVIDER_SPEC
 from .vector_dimensions import validate_point_dense_dimensions
-
-DEFAULT_TURBOPUFFER_DELETE_CONTINUATION_LIMIT = 1000
 
 
 @dataclass(frozen=True)
@@ -48,7 +54,7 @@ async def upsert_turbopuffer_points(
     validate_point_dense_dimensions(
         points,
         dense_dimensions=dense_dimensions,
-        backend="turbopuffer",
+        provider_name=TURBOPUFFER_VECTOR_STORE_PROVIDER_SPEC.name,
     )
     rows = [_point_to_row(point) for point in points]
     schema = _schema(dense_dimensions, policy=policy)
@@ -71,7 +77,9 @@ async def delete_turbopuffer_filter(
     namespace = (filter_values.namespace or "").strip()
     if not namespace:
         raise ValueError("namespace is required for delete")
-    continuation_limit = _validate_delete_continuation_limit(continuation_limit)
+    continuation_limit = validate_turbopuffer_delete_continuation_limit(
+        continuation_limit
+    )
     delete_filter = _delete_filter(
         filter_values=filter_values,
         namespace=namespace,
@@ -113,9 +121,3 @@ async def delete_turbopuffer_point_ids(
     await namespace_client.write(
         deletes=[_validate_point_id(point_id) for point_id in point_ids]
     )
-
-
-def _validate_delete_continuation_limit(value: int) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ValueError("turbopuffer delete continuation_limit must be positive")
-    return value

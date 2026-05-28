@@ -5,6 +5,8 @@ import uuid
 from typing import cast
 from urllib import error, request
 
+from rag_core.documents.http_errors import safe_http_status
+
 
 def upload_file(*, api_key: str, filename: str, file_bytes: bytes) -> str:
     boundary = f"ragcore-{uuid.uuid4().hex}"
@@ -66,7 +68,7 @@ def _load_json(req: request.Request) -> dict[str, object]:
         with request.urlopen(req) as response:
             return cast(dict[str, object], json.loads(response.read().decode("utf-8")))
     except error.HTTPError as exc:
-        http_status = _safe_http_status(exc)
+        http_status = safe_http_status(exc)
     raise RuntimeError(f"Mistral OCR request failed ({http_status})")
 
 
@@ -105,10 +107,3 @@ def _build_multipart_body(
         )
     chunks.append(f"--{boundary}--\r\n".encode())
     return b"".join(chunks)
-
-
-def _safe_http_status(exc: error.HTTPError) -> int | str:
-    code = getattr(exc, "code", None)
-    if isinstance(code, bool) or not isinstance(code, int):
-        return "unknown"
-    return code

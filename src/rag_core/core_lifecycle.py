@@ -3,8 +3,15 @@ from __future__ import annotations
 import hashlib
 
 from rag_core.core_models import ProcessingFingerprint
+from rag_core.ingest_states import (
+    INGEST_STATE_CREATED,
+    INGEST_STATE_REINDEXED,
+    INGEST_STATE_REPLACED,
+    INGEST_STATE_UNCHANGED,
+    IngestState,
+)
 from rag_core.search.policy import DEFAULT_POLICY, VectorStorePolicy
-from rag_core.search.types import StoredDocumentRecord
+from rag_core.search.request_models import StoredDocumentRecord
 
 
 def compute_content_sha256(file_bytes: bytes) -> str:
@@ -47,13 +54,13 @@ def resolve_ingest_state(
     content_sha256: str,
     processing_version: ProcessingFingerprint,
     force_reindex: bool = False,
-) -> tuple[str, bool]:
+) -> tuple[IngestState, bool]:
     if existing is None:
-        return "created", True
+        return INGEST_STATE_CREATED, True
     if existing.content_sha256 == content_sha256:
         if force_reindex:
-            return "reindexed", True
+            return INGEST_STATE_REINDEXED, True
         if existing.processing_version != processing_version.serialize():
-            return "reindexed", True
-        return "unchanged", False
-    return "replaced", True
+            return INGEST_STATE_REINDEXED, True
+        return INGEST_STATE_UNCHANGED, False
+    return INGEST_STATE_REPLACED, True

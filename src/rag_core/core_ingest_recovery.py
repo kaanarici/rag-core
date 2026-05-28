@@ -1,3 +1,5 @@
+"""Ingest recovery helpers for manifest writes, vector-index cleanup, and sidecar sync."""
+
 from __future__ import annotations
 
 from dataclasses import replace
@@ -7,18 +9,20 @@ from urllib.parse import urlsplit
 from typing import TYPE_CHECKING, Any
 
 from rag_core.core_ocr_metadata import read_ocr_metadata
-from rag_core.core_models import CorpusManifestEntry
+from rag_core.core_manifest_builders import build_manifest_entry
+from rag_core.core_models import CorpusManifestEntry, IngestedDocument
 from rag_core.core_sidecar_sync import sync_search_sidecar
-from rag_core.events.emit import emit_event
+from rag_core.events.emit import emit_event, stage_guard
 from rag_core.events.types import StageError
-from rag_core.manifest_persistence import read_entries
+from rag_core.manifest_persistence import delete_entry, read_entries, write_entry
+from rag_core.remote_document_keys import public_remote_document_key
 from rag_core.search.indexer_models import IndexResult
 from rag_core.search.policy import VectorStorePolicy
-from rag_core.search.types import SearchSidecar, StoredDocumentRecord
+from rag_core.search.provider_protocols import SearchSidecar, VectorStore
+from rag_core.search.request_models import StoredDocumentRecord
 
 if TYPE_CHECKING:
     from rag_core.events.sink import EventSink
-    from rag_core.search.indexer import DocumentIndexer
 
 
 def sync_sidecar_or_emit_error(
@@ -48,45 +52,75 @@ def sync_sidecar_or_emit_error(
         raise
 
 
-async def delete_indexed_document(
+def write_final_manifest(
     *,
-    indexer: "DocumentIndexer",
-    sidecar: SearchSidecar | None,
-    document_id: str,
-    namespace: str,
-    corpus_id: str,
+    event_sink: "EventSink | None",
+    manifest_directory: Path,
+    ingested: IngestedDocument,
 ) -> None:
-    await indexer.delete_document(
-        document_id=document_id,
-        namespace=namespace,
-        corpus_id=corpus_id,
+    with stage_guard(event_sink, stage="manifest"):
+        write_entry(
+            manifest_directory,
+            build_manifest_entry(ingested),
+        )
+
+
+def retry_final_manifest_write(
+    *,
+    event_sink: "EventSink | None",
+    manifest_directory: Path,
+    ingested: IngestedDocument,
+) -> None:
+    write_final_manifest(
+        event_sink=event_sink,
+        manifest_directory=manifest_directory,
+        ingested=ingested,
     )
-    if sidecar is not None:
-        sidecar.delete_document(
-            namespace=namespace,
-            document_id=document_id,
-            corpus_id=corpus_id,
-        )
 
 
-async def rollback_indexed_document(
+async def restore_manifest_from_vector_store(
     *,
-    indexer: "DocumentIndexer",
-    sidecar: SearchSidecar | None,
+    store: VectorStore,
+    event_sink: "EventSink | None",
+    manifest_directory: Path,
     namespace: str,
     corpus_id: str,
     document_id: str,
+    filename: str,
+    mime_type: str,
+    document_key: str,
+    fallback_entry: CorpusManifestEntry | None,
 ) -> None:
-    try:
-        await delete_indexed_document(
-            indexer=indexer,
-            sidecar=sidecar,
+    """Rebuild the manifest entry from the vector store after ingest rollback."""
+    if store.capabilities.document_record_lookup:
+        record = await store.get_document_record(
             namespace=namespace,
             corpus_id=corpus_id,
             document_id=document_id,
         )
-    except Exception:
+        with stage_guard(event_sink, stage="manifest"):
+            if record is None:
+                delete_entry(
+                    manifest_directory,
+                    namespace=namespace,
+                    corpus_id=corpus_id,
+                    document_id=document_id,
+                )
+                return
+            write_entry(
+                manifest_directory,
+                restored_manifest_entry_from_existing_record(
+                    record,
+                    previous=fallback_entry,
+                    filename=filename,
+                    mime_type=mime_type,
+                    document_key=document_key,
+                ),
+            )
         return
+    if fallback_entry is not None:
+        with stage_guard(event_sink, stage="manifest"):
+            write_entry(manifest_directory, fallback_entry)
 
 
 def latest_manifest_entry(
@@ -299,7 +333,7 @@ def _filename_from_url_document_key(document_key: str, *, fallback: str) -> str:
 
 
 def _public_document_key(document_key: str) -> str:
-    return document_key.split("|query_sha256:", 1)[0]
+    return public_remote_document_key(document_key)
 
 
 def manifest_parser(value: object) -> str | None:
@@ -307,3 +341,17 @@ def manifest_parser(value: object) -> str | None:
         return None
     parser = value.strip()
     return parser or None
+
+
+__all__ = [
+    "filename_from_document_key",
+    "latest_manifest_entry",
+    "manifest_entry_from_existing_record",
+    "manifest_parser",
+    "refreshed_manifest_entry",
+    "restored_manifest_entry_from_existing_record",
+    "restore_manifest_from_vector_store",
+    "retry_final_manifest_write",
+    "sync_sidecar_or_emit_error",
+    "write_final_manifest",
+]

@@ -1,4 +1,4 @@
-"""Embedding and chunk-context cache providers."""
+"""Concrete embedding cache providers and cache factory registrations."""
 
 from __future__ import annotations
 
@@ -10,15 +10,11 @@ from rag_core.private_files import (
     harden_private_file,
     prepare_private_file_for_open,
 )
-from rag_core.search.providers.chunk_context_cache import (
-    ChunkContextCache,
-    ChunkContextKey,
-    InMemoryChunkContextCache,
-    NoChunkContextCache,
-    SqliteChunkContextCache,
+from rag_core.search.providers.cache_provider_names import (
+    NO_CACHE_PROVIDER,
+    SQLITE_CACHE_PROVIDER,
 )
 from rag_core.search.providers.registry import (
-    CHUNK_CONTEXT_CACHES,
     EMBEDDING_CACHES,
 )
 from rag_core.search.providers.embedding_sqlite_cache import (
@@ -31,9 +27,8 @@ from rag_core.search.providers.embedding_sqlite_cache import (
     write_embedding_cache_vectors,
 )
 from rag_core.search.providers.embedding_cache_models import (
-    EmbedCacheKey,
-    EmbeddingCache,
-    sha256_text,
+    EmbedCacheKey as _EmbedCacheKey,
+    EmbeddingCache as _EmbeddingCache,
 )
 from rag_core.search.providers.embedding_memory_cache import InMemoryCache, NoCache
 
@@ -44,6 +39,8 @@ class SqliteCache:
     Vectors are stored as packed float32 blobs to keep the schema small. The
     connection is opened lazily and reused.
     """
+
+    provider_name = SQLITE_CACHE_PROVIDER
 
     _EXPECTED_SCHEMA: ClassVar[frozenset[tuple[str, str, int, int]]] = frozenset(
         EXPECTED_EMBEDDING_CACHE_SCHEMA
@@ -67,7 +64,7 @@ class SqliteCache:
     def _ensure_schema(self, connection: sqlite3.Connection) -> None:
         ensure_embedding_cache_schema(connection)
 
-    async def get(self, key: EmbedCacheKey) -> list[float] | None:
+    async def get(self, key: _EmbedCacheKey) -> list[float] | None:
         return read_embedding_cache_vector(
             self._connect(),
             cache_key=key.stringify(),
@@ -75,8 +72,8 @@ class SqliteCache:
 
     async def get_many(
         self,
-        keys: list[EmbedCacheKey],
-    ) -> dict[EmbedCacheKey, list[float]]:
+        keys: list[_EmbedCacheKey],
+    ) -> dict[_EmbedCacheKey, list[float]]:
         vectors = read_embedding_cache_vectors(
             self._connect(),
             cache_keys=[key.stringify() for key in keys],
@@ -87,7 +84,7 @@ class SqliteCache:
             if (cache_key := key.stringify()) in vectors
         }
 
-    async def put(self, key: EmbedCacheKey, vector: list[float]) -> None:
+    async def put(self, key: _EmbedCacheKey, vector: list[float]) -> None:
         write_embedding_cache_vector(
             self._connect(),
             cache_key=key.stringify(),
@@ -103,7 +100,7 @@ class SqliteCache:
 
     async def put_many(
         self,
-        items: dict[EmbedCacheKey, list[float]],
+        items: dict[_EmbedCacheKey, list[float]],
     ) -> None:
         write_embedding_cache_vectors(
             self._connect(),
@@ -129,6 +126,9 @@ class SqliteCache:
             self._connection = None
 
 
+DEFAULT_EMBEDDING_CACHE_PROVIDER = NO_CACHE_PROVIDER
+
+
 def _build_no_embedding_cache(**_: Any) -> NoCache:
     return NoCache()
 
@@ -141,61 +141,31 @@ def _build_sqlite_embedding_cache(**kwargs: Any) -> SqliteCache:
     return SqliteCache(**kwargs)
 
 
-def _build_no_chunk_context_cache(**_: Any) -> NoChunkContextCache:
-    return NoChunkContextCache()
-
-
-def _build_in_memory_chunk_context_cache(**_: Any) -> InMemoryChunkContextCache:
-    return InMemoryChunkContextCache()
-
-
-def _build_sqlite_chunk_context_cache(**kwargs: Any) -> SqliteChunkContextCache:
-    return SqliteChunkContextCache(**kwargs)
-
-
 def create_embedding_cache(
     provider: str | None = None,
     **kwargs: Any,
-) -> EmbeddingCache:
+) -> _EmbeddingCache:
     """Resolve the EmbeddingCache provider category from a config name.
 
     ``None`` resolves to ``"none"`` (the no-op :class:`NoCache`).
     """
-    return EMBEDDING_CACHES.create(provider or "none", **kwargs)
+    return EMBEDDING_CACHES.create(
+        provider or DEFAULT_EMBEDDING_CACHE_PROVIDER,
+        **kwargs,
+    )
 
 
-def create_chunk_context_cache(
-    provider: str | None = None,
-    **kwargs: Any,
-) -> ChunkContextCache:
-    """Resolve the ChunkContextCache provider category from a config name.
-
-    ``None`` resolves to ``"none"`` (the no-op :class:`NoChunkContextCache`).
-    """
-    return CHUNK_CONTEXT_CACHES.create(provider or "none", **kwargs)
-
-
-EMBEDDING_CACHES.register("none", _build_no_embedding_cache)
-EMBEDDING_CACHES.register("in_memory", _build_in_memory_embedding_cache)
-EMBEDDING_CACHES.register("sqlite", _build_sqlite_embedding_cache)
-
-CHUNK_CONTEXT_CACHES.register("none", _build_no_chunk_context_cache)
-CHUNK_CONTEXT_CACHES.register("in_memory", _build_in_memory_chunk_context_cache)
-CHUNK_CONTEXT_CACHES.register("sqlite", _build_sqlite_chunk_context_cache)
-
+EMBEDDING_CACHES.register(
+    DEFAULT_EMBEDDING_CACHE_PROVIDER,
+    _build_no_embedding_cache,
+)
+EMBEDDING_CACHES.register(InMemoryCache.provider_name, _build_in_memory_embedding_cache)
+EMBEDDING_CACHES.register(SqliteCache.provider_name, _build_sqlite_embedding_cache)
 
 __all__ = [
-    "ChunkContextCache",
-    "ChunkContextKey",
-    "EmbedCacheKey",
-    "EmbeddingCache",
+    "DEFAULT_EMBEDDING_CACHE_PROVIDER",
     "InMemoryCache",
-    "InMemoryChunkContextCache",
     "NoCache",
-    "NoChunkContextCache",
     "SqliteCache",
-    "SqliteChunkContextCache",
-    "create_chunk_context_cache",
     "create_embedding_cache",
-    "sha256_text",
 ]

@@ -11,6 +11,7 @@ from rag_core.fetch_security_network import (
     normalize_fetch_hostname,
     validate_fetch_host,
 )
+from rag_core.remote_document_keys import private_remote_document_key
 
 FetchScheme = Literal["http", "https"]
 
@@ -73,7 +74,7 @@ def redact_fetch_url(url: str) -> str:
     return urlunsplit((scheme, netloc, path, query, ""))
 
 
-def safe_remote_redacted_url(url: ValidatedFetchUrl) -> str:
+def safe_remote_event_url(url: ValidatedFetchUrl) -> str:
     netloc = _netloc(
         host=url.host,
         port=_canonical_url_port(scheme=url.scheme, port=url.port),
@@ -92,15 +93,9 @@ def safe_remote_source_url(url: ValidatedFetchUrl) -> str:
 
 
 def safe_remote_document_key(url: ValidatedFetchUrl) -> str:
-    netloc = _netloc(
-        host=url.host,
-        port=_canonical_url_port(scheme=url.scheme, port=url.port),
+    return private_remote_document_key(
+        f"url:{safe_remote_source_url(url)}", url.query_sha256
     )
-    path_sha256 = hashlib.sha256(url.path.encode("utf-8")).hexdigest()
-    key = f"url:{url.scheme}://{netloc}/#path:{path_sha256}"
-    if isinstance(url.query_sha256, str) and url.query_sha256:
-        return f"{key}#query:{url.query_sha256}"
-    return key
 
 
 def _fetch_scheme(
@@ -186,7 +181,7 @@ __all__ = [
     "ValidatedFetchUrl",
     "redact_fetch_url",
     "safe_remote_document_key",
-    "safe_remote_redacted_url",
+    "safe_remote_event_url",
     "safe_remote_source_url",
     "validate_fetch_url_parts",
 ]

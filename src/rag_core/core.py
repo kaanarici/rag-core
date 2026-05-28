@@ -18,12 +18,10 @@ if TYPE_CHECKING:
     from rag_core.documents.ocr import OcrProvider
     from rag_core.events.sink import EventSink
     from rag_core.search.indexer import DocumentIndexer
-    from rag_core.search.providers.embedding_cache import (
-        ChunkContextCache,
-        EmbeddingCache,
-    )
-    from rag_core.search.searcher import SearchOrchestrator
-    from rag_core.search.types import (
+    from rag_core.search.providers.chunk_context_cache import ChunkContextCache
+    from rag_core.search.providers.embedding_cache_models import EmbeddingCache
+    from rag_core.search.pipeline_runner import SearchPipelineRunner
+    from rag_core.search.provider_protocols import (
         EmbeddingProvider,
         RerankerProvider,
         SearchSidecar,
@@ -50,7 +48,7 @@ class RAGCore(
     _reranker: "RerankerProvider"
     _sidecar: "SearchSidecar | None"
     _indexer: "DocumentIndexer"
-    _search: "SearchOrchestrator"
+    _search: "SearchPipelineRunner"
     _ingest: "CoreIngestor"
     _collection_name: str
 

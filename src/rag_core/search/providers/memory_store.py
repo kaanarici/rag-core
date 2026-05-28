@@ -2,7 +2,7 @@
 
 Implements the ``VectorStore`` surface in pure Python for dense/sparse hybrid
 retrieval with RRF fusion over an in-memory point map. Useful for protocol
-validation, not intended as a production backend.
+validation, not intended as a production vector store.
 """
 
 from __future__ import annotations
@@ -10,17 +10,18 @@ from __future__ import annotations
 from typing import Sequence
 
 from rag_core.search.policy import DEFAULT_POLICY, VectorStorePolicy
+from rag_core.search.provider_protocols import StoreCapabilities
 from rag_core.search.query_plan import DenseChannel
 from rag_core.search.query_plan import Prefetch
 from rag_core.search.query_plan import QueryPlan
-from rag_core.search.stored_payload import payload_to_result
-from rag_core.search.types import (
+from rag_core.search.request_models import (
     DeleteFilter,
-    MetadataFilterCapabilities,
     SearchQuery,
-    SearchResult,
-    StoreCapabilities,
     StoredDocumentRecord,
+)
+from rag_core.search.stored_payload import payload_to_result
+from rag_core.search.vector_models import (
+    SearchResult,
     VectorPoint,
 )
 
@@ -29,7 +30,10 @@ from .memory_filters import matches_memory_delete_filter, matches_memory_search_
 from .memory_query_plan import rank_memory_points
 from .memory_query_plan import validate_memory_query_plan
 from .memory_query_scoring import MemoryPoint
-from .query_plan_capabilities import MEMORY_QUERY_PLAN_CAPABILITIES
+from .vector_store_capabilities import (
+    MEMORY_VECTOR_STORE_CAPABILITY_SPEC,
+    MEMORY_VECTOR_STORE_PROVIDER_SPEC,
+)
 from .registry import VECTOR_STORES
 from .vector_dimensions import (
     validate_point_dense_dimensions,
@@ -47,19 +51,8 @@ class InMemoryVectorStore:
 
     @property
     def capabilities(self) -> StoreCapabilities:
-        return StoreCapabilities(
-            per_point_delete=True,
-            document_record_lookup=True,
+        return MEMORY_VECTOR_STORE_CAPABILITY_SPEC.to_store_capabilities(
             dense_vector_dimensions=self._dense_dimensions,
-            query_plan=MEMORY_QUERY_PLAN_CAPABILITIES,
-            metadata_filter=MetadataFilterCapabilities(
-                term=True,
-                in_=True,
-                numeric_range=True,
-                string_range=True,
-                geo=True,
-                boolean=True,
-            ),
         )
 
     async def __aenter__(self) -> "InMemoryVectorStore":
@@ -78,7 +71,7 @@ class InMemoryVectorStore:
     async def check_health(self) -> dict[str, object]:
         return {
             "healthy": True,
-            "backend": "memory",
+            "adapter": MEMORY_VECTOR_STORE_PROVIDER_SPEC.name,
             "points_count": len(self._points),
         }
 
@@ -128,7 +121,7 @@ class InMemoryVectorStore:
             validate_query_dense_dimensions(
                 query.dense_vector,
                 dense_dimensions=self._dense_dimensions,
-                backend="InMemoryVectorStore",
+                provider_name="InMemoryVectorStore",
             )
 
         candidates = [
@@ -185,7 +178,7 @@ class InMemoryVectorStore:
             validate_point_dense_dimensions(
                 points,
                 dense_dimensions=expected,
-                backend="InMemoryVectorStore",
+                provider_name="InMemoryVectorStore",
             )
         dimensions = next(iter(incoming_dimensions))
         if self._dense_dimensions is None:
@@ -194,7 +187,7 @@ class InMemoryVectorStore:
         validate_point_dense_dimensions(
             points,
             dense_dimensions=self._dense_dimensions,
-            backend="InMemoryVectorStore",
+            provider_name="InMemoryVectorStore",
         )
 
 
@@ -214,4 +207,7 @@ def _prefetch_uses_dense_vector(prefetch: Prefetch) -> bool:
     return any(_prefetch_uses_dense_vector(nested) for nested in prefetch.nested)
 
 
-VECTOR_STORES.register("memory", lambda **kw: InMemoryVectorStore(**kw))
+VECTOR_STORES.register(
+    MEMORY_VECTOR_STORE_PROVIDER_SPEC.name,
+    lambda **kw: InMemoryVectorStore(**kw),
+)

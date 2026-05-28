@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from rag_core.documents.contextualizer import ChunkContextualizer
     from rag_core.documents.ocr import OcrProvider
     from rag_core.events.sink import EventSink
-    from rag_core.search.providers.embedding_cache import ChunkContextCache
+    from rag_core.search.providers.chunk_context_cache import ChunkContextCache
 
 
 async def parse_document_bytes(

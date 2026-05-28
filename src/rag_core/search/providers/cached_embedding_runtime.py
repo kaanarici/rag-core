@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from typing import Protocol, cast
 
-from rag_core.search.types import EmbeddingProvider
+from rag_core.search.provider_protocols import EmbeddingProvider
 
-from .cached_embedding_observations import EmbeddingCacheObservation
+from .cached_embedding_observations import (
+    EMBEDDING_OPERATION_QUERY,
+    EMBEDDING_OPERATION_TEXTS,
+    EmbeddingCacheObservation,
+)
 from .embedding_cache_models import EmbeddingCache, EmbedCacheKey
 from .embedding_results import safe_ordered_embedding_vectors
 
@@ -64,7 +68,7 @@ async def embed_texts_with_cache(
         await _put_many(cache, cache_items)
 
     return _filled_vectors(results), EmbeddingCacheObservation(
-        operation="embed_texts",
+        operation=EMBEDDING_OPERATION_TEXTS,
         input_count=len(texts),
         cache_hits=cache_hits,
         cache_misses=cache_misses,
@@ -114,7 +118,7 @@ async def embed_query_with_cache(
     if not cache_queries:
         vector = await _embed_single_query(inner, query)
         return vector, EmbeddingCacheObservation(
-            operation="embed_query",
+            operation=EMBEDDING_OPERATION_QUERY,
             input_count=1,
             cache_hits=0,
             cache_misses=0,
@@ -126,7 +130,7 @@ async def embed_query_with_cache(
     cached_vector = _valid_cached_vector(cached, inner=inner)
     if cached_vector is not None:
         return cached_vector, EmbeddingCacheObservation(
-            operation="embed_query",
+            operation=EMBEDDING_OPERATION_QUERY,
             input_count=1,
             cache_hits=1,
             cache_misses=0,
@@ -137,7 +141,7 @@ async def embed_query_with_cache(
     vector = _validated_single_vector(vector, inner=inner)
     await cache.put(key, vector)
     return vector, EmbeddingCacheObservation(
-        operation="embed_query",
+        operation=EMBEDDING_OPERATION_QUERY,
         input_count=1,
         cache_hits=0,
         cache_misses=1,

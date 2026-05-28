@@ -5,6 +5,21 @@ from collections.abc import Callable, Iterable, Sequence
 from typing import Protocol, TypeVar
 
 from rag_core.core_models import CorpusManifestEntry
+from rag_core.manifest_reconciliation_reasons import (
+    MANIFEST_REASON_CONTENT_SHA256_CHANGED,
+    MANIFEST_REASON_CONTENT_SHA256_MATCH,
+    MANIFEST_REASON_DUPLICATE_DOCUMENT_KEY,
+    MANIFEST_REASON_ENTRY_WITHOUT_SOURCE,
+    MANIFEST_REASON_PRESENT_WITHOUT_HASH_CHECK,
+    MANIFEST_REASON_SOURCE_NOT_IN_MANIFEST,
+)
+from rag_core.manifest_reconciliation_statuses import (
+    MANIFEST_STATUS_CHANGED,
+    MANIFEST_STATUS_DUPLICATE,
+    MANIFEST_STATUS_MISSING,
+    MANIFEST_STATUS_ORPHANED,
+    MANIFEST_STATUS_UNCHANGED,
+)
 
 _ItemT = TypeVar("_ItemT")
 _ItemFactory = Callable[..., _ItemT]
@@ -36,14 +51,14 @@ def build_reconciliation_items(
             source = source_by_key.get(key)
             items.append(
                 item_type(
-                    status="duplicate",
+                    status=MANIFEST_STATUS_DUPLICATE,
                     document_key=key,
                     document_id=entry.document_id,
                     manifest_content_sha256=entry.content_sha256,
                     source_content_sha256=(
                         source.content_sha256 if source is not None else None
                     ),
-                    reason="duplicate_manifest_document_key",
+                    reason=MANIFEST_REASON_DUPLICATE_DOCUMENT_KEY,
                 )
             )
 
@@ -59,11 +74,11 @@ def build_reconciliation_items(
         if key not in source_by_key:
             items.append(
                 item_type(
-                    status="orphaned",
+                    status=MANIFEST_STATUS_ORPHANED,
                     document_key=key,
                     document_id=entry.document_id,
                     manifest_content_sha256=entry.content_sha256,
-                    reason="manifest_entry_without_source",
+                    reason=MANIFEST_REASON_ENTRY_WITHOUT_SOURCE,
                 )
             )
     return items
@@ -77,31 +92,31 @@ def _source_item(
 ) -> _ItemT:
     if matched_entry is None:
         return item_type(
-            status="missing",
+            status=MANIFEST_STATUS_MISSING,
             document_key=source.document_key,
             source_content_sha256=source.content_sha256,
-            reason="source_not_in_manifest",
+            reason=MANIFEST_REASON_SOURCE_NOT_IN_MANIFEST,
         )
     if _content_changed(source=source, entry=matched_entry):
         return item_type(
-            status="changed",
+            status=MANIFEST_STATUS_CHANGED,
             document_key=source.document_key,
             document_id=matched_entry.document_id,
             manifest_content_sha256=matched_entry.content_sha256,
             source_content_sha256=source.content_sha256,
-            reason="content_sha256_changed",
+            reason=MANIFEST_REASON_CONTENT_SHA256_CHANGED,
         )
     return item_type(
-        status="unchanged",
+        status=MANIFEST_STATUS_UNCHANGED,
         document_key=source.document_key,
         document_id=matched_entry.document_id,
         manifest_content_sha256=matched_entry.content_sha256,
         source_content_sha256=source.content_sha256,
         reason=(
-            "content_sha256_match"
+            MANIFEST_REASON_CONTENT_SHA256_MATCH
             if source.content_sha256 is not None
             and matched_entry.content_sha256 is not None
-            else "present_without_hash_check"
+            else MANIFEST_REASON_PRESENT_WITHOUT_HASH_CHECK
         ),
     )
 

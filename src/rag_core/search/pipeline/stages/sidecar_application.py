@@ -9,7 +9,8 @@ from rag_core.events.emit import emit_event
 from rag_core.events.types import SidecarApplied
 from rag_core.search.pipeline.types import PipelineQuery
 from rag_core.search.result_filters import result_matches_sidecar_query
-from rag_core.search.types import SearchResult, SearchSidecarQuery
+from rag_core.search.request_models import SearchSidecarQuery
+from rag_core.search.vector_models import SearchResult
 
 if TYPE_CHECKING:
     from rag_core.events.sink import EventSink

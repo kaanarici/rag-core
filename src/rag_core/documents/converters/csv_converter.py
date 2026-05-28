@@ -16,6 +16,7 @@ from .base import (
     safe_decode,
     score_text_quality,
 )
+from .converter_keys import CSV_CONVERTER_KEY
 from .csv_detection import detect_delimiter, detect_header_row
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ class CsvConverter(BaseConverter):
     - Row limit for large CSVs
     """
 
-    format_name = "csv"
+    format_name = CSV_CONVERTER_KEY
 
     def __init__(self, *, max_rows: int = 0) -> None:
         self._max_rows = max(

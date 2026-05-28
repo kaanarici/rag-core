@@ -2,7 +2,7 @@ import asyncio
 import json
 
 from rag_core import RAGCore
-from rag_core.cli_doctor import _planned_runtime_payload
+from rag_core.cli_doctor import _planned_core_payload
 
 from tests.support import (
     FakeEmbeddingProvider,
@@ -41,7 +41,7 @@ def test_describe_runtime_reports_standard_source_processing_versions() -> None:
 
 
 def test_doctor_payload_reports_standard_source_processing_versions() -> None:
-    payload = _planned_runtime_payload(
+    payload = _planned_core_payload(
         make_test_config(
             qdrant_collection="rag_core_doctor_source_versions",
             embedding_dimensions=4,

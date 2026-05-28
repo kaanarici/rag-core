@@ -16,7 +16,7 @@ def test_load_cases_validates_and_loads_jsonl_rows(tmp_path: Path) -> None:
                 "query": "billing policy",
                 "namespace": "acme",
                 "corpus_ids": ["help"],
-                "expected_chunk_ids": ["doc-a#chunk-1", "doc-a#chunk-2"],
+                "expected_ids": ["doc-a#chunk-1", "doc-a#chunk-2"],
                 "expected_grades": {"doc-a#chunk-1": 3, "doc-a#chunk-2": 1},
             }
         )
@@ -33,6 +33,27 @@ def test_load_cases_validates_and_loads_jsonl_rows(tmp_path: Path) -> None:
             expected_grades={"doc-a#chunk-1": 3, "doc-a#chunk-2": 1},
         )
     ]
+    assert load_cases(path)[0].expected_ids == ("doc-a#chunk-1", "doc-a#chunk-2")
+
+
+def test_load_cases_accepts_legacy_expected_chunk_ids(tmp_path: Path) -> None:
+    path = tmp_path / "cases.jsonl"
+    path.write_text(
+        json.dumps(
+            {
+                "query": "billing policy",
+                "namespace": "acme",
+                "corpus_ids": ["help"],
+                "expected_chunk_ids": ["doc-a"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    [case] = load_cases(path)
+
+    assert case.expected_ids == ("doc-a",)
+    assert case.expected_chunk_ids == ("doc-a",)
 
 
 def test_load_cases_strips_stable_identifier_fields(tmp_path: Path) -> None:
@@ -44,7 +65,7 @@ def test_load_cases_strips_stable_identifier_fields(tmp_path: Path) -> None:
                 "query": " billing policy ",
                 "namespace": " acme ",
                 "corpus_ids": [" help "],
-                "expected_chunk_ids": [" doc-a#chunk-1 "],
+                "expected_ids": [" doc-a#chunk-1 "],
                 "expected_grades": {" doc-a#chunk-1 ": 3},
             }
         ),
@@ -74,7 +95,7 @@ def test_load_cases_rejects_duplicate_case_id_after_stripping(tmp_path: Path) ->
                         "query": "q1",
                         "namespace": "acme",
                         "corpus_ids": ["help"],
-                        "expected_chunk_ids": ["doc"],
+                        "expected_ids": ["doc"],
                     }
                 ),
                 json.dumps(
@@ -83,7 +104,7 @@ def test_load_cases_rejects_duplicate_case_id_after_stripping(tmp_path: Path) ->
                         "query": "q2",
                         "namespace": "acme",
                         "corpus_ids": ["help"],
-                        "expected_chunk_ids": ["doc"],
+                        "expected_ids": ["doc"],
                     }
                 ),
             ]
@@ -104,7 +125,7 @@ def test_load_cases_rejects_duplicate_case_id_after_stripping(tmp_path: Path) ->
                 "query": "",
                 "namespace": "acme",
                 "corpus_ids": ["help"],
-                "expected_chunk_ids": ["doc"],
+                "expected_ids": ["doc"],
             },
             "query must be a non-empty string",
         ),
@@ -113,7 +134,7 @@ def test_load_cases_rejects_duplicate_case_id_after_stripping(tmp_path: Path) ->
                 "query": "q",
                 "namespace": "acme",
                 "corpus_ids": "help",
-                "expected_chunk_ids": ["doc"],
+                "expected_ids": ["doc"],
             },
             "corpus_ids must be a non-empty string array",
         ),
@@ -122,25 +143,25 @@ def test_load_cases_rejects_duplicate_case_id_after_stripping(tmp_path: Path) ->
                 "query": "q",
                 "namespace": "acme",
                 "corpus_ids": ["help"],
-                "expected_chunk_ids": [],
+                "expected_ids": [],
             },
-            "expected_chunk_ids must be a non-empty string array",
+            "expected_ids must be a non-empty string array",
         ),
         (
             {
                 "query": "q",
                 "namespace": "acme",
                 "corpus_ids": ["help"],
-                "expected_chunk_ids": ["doc-a#chunk-secret", " doc-a#chunk-secret "],
+                "expected_ids": ["doc-a#chunk-secret", " doc-a#chunk-secret "],
             },
-            "expected_chunk_ids must not contain duplicate ids",
+            "expected_ids must not contain duplicate ids",
         ),
         (
             {
                 "query": "q",
                 "namespace": "acme",
                 "corpus_ids": ["help"],
-                "expected_chunk_ids": ["doc"],
+                "expected_ids": ["doc"],
                 "expected_grades": {"doc-a#chunk-secret": True},
             },
             "expected_grades values must be non-negative integers",
@@ -150,20 +171,30 @@ def test_load_cases_rejects_duplicate_case_id_after_stripping(tmp_path: Path) ->
                 "query": "q",
                 "namespace": "acme",
                 "corpus_ids": ["help"],
-                "expected_chunk_ids": ["doc"],
+                "expected_ids": ["doc"],
                 "expected_grades": {"other-doc": 1},
             },
-            "expected_grades positive ids must match expected_chunk_ids",
+            "expected_grades positive ids must match expected_ids",
         ),
         (
             {
                 "query": "q",
                 "namespace": "acme",
                 "corpus_ids": ["help"],
-                "expected_chunk_ids": ["doc"],
+                "expected_ids": ["doc"],
                 "expected_grades": {"doc": 0},
             },
-            "expected_grades positive ids must match expected_chunk_ids",
+            "expected_grades positive ids must match expected_ids",
+        ),
+        (
+            {
+                "query": "q",
+                "namespace": "acme",
+                "corpus_ids": ["help"],
+                "expected_ids": ["doc"],
+                "expected_chunk_ids": ["doc"],
+            },
+            "use expected_ids or expected_chunk_ids, not both",
         ),
     ),
 )
@@ -217,7 +248,7 @@ def test_load_cases_rejects_all_blank_lines(tmp_path: Path) -> None:
 def test_load_cases_rejects_duplicate_json_object_keys(tmp_path: Path) -> None:
     path = tmp_path / "cases.jsonl"
     path.write_text(
-        '{"query":"q1","query":"q2","namespace":"acme","corpus_ids":["help"],"expected_chunk_ids":["doc"]}',
+        '{"query":"q1","query":"q2","namespace":"acme","corpus_ids":["help"],"expected_ids":["doc"]}',
         encoding="utf-8",
     )
 

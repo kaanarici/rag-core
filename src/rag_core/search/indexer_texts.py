@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from rag_core.config import INGEST_SOURCE_TYPE_URL, PRECHUNKED_CHUNKING_STRATEGY
 from rag_core.core_models import PreparedChunk
 from rag_core.core_prepare import (
     prepare_pre_chunked_texts,
@@ -9,7 +10,7 @@ from rag_core.core_prepare import (
 )
 from rag_core.documents.chunking.router import is_code_content
 from rag_core.search.text_builder import build_sparse_text, build_textual_representation
-from rag_core.search.types import ContentType
+from rag_core.search.vector_models import ContentType
 
 from .indexer_models import IndexRequest
 
@@ -67,7 +68,7 @@ def resolve_chunks(req: IndexRequest) -> list[PreparedChunk]:
             req.pre_chunked_texts,
             embedding_texts=req.embedding_chunk_texts,
             chunk_metadata=req.chunk_metadata,
-            chunking_strategy=req.chunker_strategy or "prechunked",
+            chunking_strategy=req.chunker_strategy or PRECHUNKED_CHUNKING_STRATEGY,
         )
     return prepare_text_chunks(
         req.text,
@@ -132,6 +133,6 @@ def _build_sparse_texts(
 
 
 def _textual_path(req: IndexRequest) -> str | None:
-    if req.source_type == "url":
+    if req.source_type == INGEST_SOURCE_TYPE_URL:
         return req.document_path or req.path
     return req.document_key

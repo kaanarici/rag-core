@@ -6,9 +6,9 @@ not pass one see byte-identical behavior to the no-events build.
 
 from __future__ import annotations
 
+import errno
 import json
 import logging
-import errno
 from pathlib import Path
 from threading import Lock
 
@@ -19,6 +19,12 @@ from .sink_payloads import event_to_jsonl_dict, event_to_otel_attributes, summar
 from .types import Event
 
 _DEFAULT_LOGGER = logging.getLogger("rag_core.events")
+NOOP_EVENT_SINK_PROVIDER = "none"
+LOGGING_EVENT_SINK_PROVIDER = "logging"
+JSONL_EVENT_SINK_PROVIDER = "jsonl"
+BUFFER_EVENT_SINK_PROVIDER = "buffer"
+MULTI_EVENT_SINK_PROVIDER = "multi"
+OPENTELEMETRY_EVENT_SINK_PROVIDER = "opentelemetry"
 
 
 class _FailureCounter:
@@ -45,12 +51,16 @@ class _FailureCounter:
 class NoOpSink:
     """Drop every event. Default sink when no observer is wired."""
 
+    provider_name = NOOP_EVENT_SINK_PROVIDER
+
     def emit(self, event: Event) -> None:
         return None
 
 
 class LoggingSink(_FailureCounter):
     """Forward each event to stdlib ``logging`` at the configured level."""
+
+    provider_name = LOGGING_EVENT_SINK_PROVIDER
 
     def __init__(
         self,
@@ -77,6 +87,8 @@ class LoggingSink(_FailureCounter):
 
 class JsonlSink(_FailureCounter):
     """Append each event as one JSON line to ``path``."""
+
+    provider_name = JSONL_EVENT_SINK_PROVIDER
 
     def __init__(self, path: str | Path) -> None:
         super().__init__()
@@ -115,6 +127,8 @@ class JsonlSink(_FailureCounter):
 class MultiSink(_FailureCounter):
     """Fan an event out to a fixed set of underlying sinks."""
 
+    provider_name = MULTI_EVENT_SINK_PROVIDER
+
     def __init__(self, *sinks: EventSink) -> None:
         super().__init__()
         self._sinks: tuple[EventSink, ...] = sinks
@@ -138,6 +152,8 @@ class MultiSink(_FailureCounter):
 
 class EventBuffer(_FailureCounter):
     """Keep every event in memory. Useful for tests and quick inspection."""
+
+    provider_name = BUFFER_EVENT_SINK_PROVIDER
 
     def __init__(self) -> None:
         super().__init__()
@@ -170,6 +186,8 @@ class OpenTelemetrySink(_FailureCounter):
     Requires ``opentelemetry-api``; raises ``ImportError`` at construction time
     if it's missing rather than at module import.
     """
+
+    provider_name = OPENTELEMETRY_EVENT_SINK_PROVIDER
 
     def __init__(self, *, include_sensitive_attributes: bool = False) -> None:
         super().__init__()
@@ -204,3 +222,14 @@ def _sink_failure_count(sink: EventSink) -> int | None:
     if not isinstance(failure_count, bool) and isinstance(failure_count, int):
         return failure_count
     return None
+
+
+DEFAULT_EVENT_SINK_PROVIDER = NOOP_EVENT_SINK_PROVIDER
+EVENT_SINK_PROVIDER_ORDER = (
+    DEFAULT_EVENT_SINK_PROVIDER,
+    LOGGING_EVENT_SINK_PROVIDER,
+    JSONL_EVENT_SINK_PROVIDER,
+    BUFFER_EVENT_SINK_PROVIDER,
+    MULTI_EVENT_SINK_PROVIDER,
+    OPENTELEMETRY_EVENT_SINK_PROVIDER,
+)

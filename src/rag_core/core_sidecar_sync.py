@@ -8,7 +8,7 @@ from rag_core.search.policy import DEFAULT_POLICY, VectorStorePolicy
 from rag_core.search.stored_payload import payload_to_result
 
 if TYPE_CHECKING:
-    from rag_core.search.types import SearchSidecar
+    from rag_core.search.provider_protocols import SearchSidecar
 
 
 def sync_search_sidecar(

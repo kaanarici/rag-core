@@ -21,7 +21,7 @@ from rag_core.events.types import (
     StageError,
 )
 
-from tests.support import TEST_API_SECRET
+from tests.support import TEST_API_SECRET, assert_caplog_omits_private
 
 LOGGER_NAME = "rag_core.events"
 SECRET = TEST_API_SECRET
@@ -38,18 +38,13 @@ def _messages(caplog: pytest.LogCaptureFixture) -> str:
     return "\n".join(record.getMessage() for record in caplog.records)
 
 
-def _assert_private_context_omitted(
-    caplog: pytest.LogCaptureFixture,
-    message: str,
-) -> None:
-    assert SECRET not in message
-    assert "/private/customer/report.pdf" not in message
-    assert "https://docs.example.com/private" not in message
-    assert "tenant-acme" not in message
-    assert "corpus-finance" not in message
-    assert "doc-payroll" not in message
-    assert "Traceback" not in message
-    assert all(record.exc_info is None for record in caplog.records)
+_PRIVATE_LOG_FORBIDDEN = (
+    "/private/customer/report.pdf",
+    "https://docs.example.com/private",
+    "tenant-acme",
+    "corpus-finance",
+    "doc-payroll",
+)
 
 
 def test_logging_sink_omits_identifiers_while_preserving_safe_ingest_context(
@@ -75,7 +70,7 @@ def test_logging_sink_omits_identifiers_while_preserving_safe_ingest_context(
     assert "document_id=" not in message
     assert "filename=" not in message
     assert "content_sha256=" not in message
-    _assert_private_context_omitted(caplog, message)
+    assert_caplog_omits_private(caplog, *_PRIVATE_LOG_FORBIDDEN)
 
 
 def test_logging_sink_omits_search_scope_but_keeps_shape(
@@ -97,7 +92,7 @@ def test_logging_sink_omits_search_scope_but_keeps_shape(
     assert "limit=5" in message
     assert "namespace=" not in message
     assert "corpus_ids=" not in message
-    _assert_private_context_omitted(caplog, message)
+    assert_caplog_omits_private(caplog, *_PRIVATE_LOG_FORBIDDEN)
 
 
 def test_logging_sink_omits_error_messages_urls_and_quality_details(
@@ -142,7 +137,7 @@ def test_logging_sink_omits_error_messages_urls_and_quality_details(
     assert "redacted_url=" not in message
     assert "quality_details=" not in message
     assert "message=" not in message
-    _assert_private_context_omitted(caplog, message)
+    assert_caplog_omits_private(caplog, *_PRIVATE_LOG_FORBIDDEN)
 
 
 def test_logging_sink_reports_omitted_fields_when_only_sensitive_values_exist(
@@ -159,7 +154,7 @@ def test_logging_sink_reports_omitted_fields_when_only_sensitive_values_exist(
 
     message = _messages(caplog)
     assert message == "index.deleted fields=omitted"
-    _assert_private_context_omitted(caplog, message)
+    assert_caplog_omits_private(caplog, *_PRIVATE_LOG_FORBIDDEN)
 
 
 def test_logging_sink_keeps_known_safe_normalized_labels(
@@ -178,6 +173,7 @@ def test_logging_sink_keeps_known_safe_normalized_labels(
             SearchPlanned(
                 namespace=f"tenant-acme-{SECRET}",
                 corpus_ids=(f"corpus-finance-{SECRET}",),
+                search_profile="balanced",
                 boost="linear_decay",
                 metadata_filter="Term",
             )
@@ -186,13 +182,14 @@ def test_logging_sink_keeps_known_safe_normalized_labels(
     message = _messages(caplog)
     assert "ingest.skipped reason='content_unchanged'" in message
     assert "search.planned" in message
+    assert "search_profile='balanced'" in message
     assert "boost='linear_decay'" in message
     assert "metadata_filter='Term'" in message
     assert "namespace=" not in message
     assert "corpus_id=" not in message
     assert "corpus_ids=" not in message
     assert "document_id=" not in message
-    _assert_private_context_omitted(caplog, message)
+    assert_caplog_omits_private(caplog, *_PRIVATE_LOG_FORBIDDEN)
 
 
 def test_logging_sink_omits_unrecognized_sensitive_labels(
@@ -200,11 +197,18 @@ def test_logging_sink_omits_unrecognized_sensitive_labels(
 ) -> None:
     with caplog.at_level(logging.INFO, logger=LOGGER_NAME):
         LoggingSink().emit(IngestSkipped(reason=SECRET))
-        LoggingSink().emit(SearchPlanned(boost=SECRET, metadata_filter=SECRET))
+        LoggingSink().emit(
+            SearchPlanned(
+                search_profile=SECRET,
+                boost=SECRET,
+                metadata_filter=SECRET,
+            )
+        )
 
     message = _messages(caplog)
     assert SECRET not in message
     assert "reason=" not in message
+    assert "search_profile='unknown'" in message
     assert "boost=" not in message
     assert "metadata_filter=" not in message
     assert all(record.exc_info is None for record in caplog.records)

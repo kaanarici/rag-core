@@ -1,4 +1,4 @@
-"""Stable JSON contracts for app-level tool integrations."""
+"""Tool contracts and scope helpers for app-owned retrieval integrations."""
 
 from .tool_contracts import (
     SEARCH_USER_DOCUMENTS_INPUT_SCHEMA,
@@ -15,11 +15,15 @@ from .tool_contracts import (
     SEARCH_USER_DOCUMENTS_OUTPUT_SCHEMA,
     SEARCH_USER_DOCUMENTS_TOOL_NAME,
     SearchUserDocumentsRequest,
-    SupportsContextPackPayload,
+    SupportsContextPackPromptPayload,
     ToolContract,
+    normalize_static_content_types,
+    normalize_static_retrieval_scope,
     parse_search_user_documents_request,
+    scope_document_ids,
     search_user_documents_tool_contract,
     search_user_documents_tool_result,
+    validate_bound_namespace,
     validate_search_user_documents_bounds,
 )
 
@@ -38,10 +42,14 @@ __all__ = (
     "SEARCH_USER_DOCUMENTS_OUTPUT_SCHEMA",
     "SEARCH_USER_DOCUMENTS_TOOL_NAME",
     "SearchUserDocumentsRequest",
-    "SupportsContextPackPayload",
+    "SupportsContextPackPromptPayload",
     "ToolContract",
+    "normalize_static_content_types",
+    "normalize_static_retrieval_scope",
     "parse_search_user_documents_request",
+    "scope_document_ids",
     "search_user_documents_tool_contract",
     "search_user_documents_tool_result",
+    "validate_bound_namespace",
     "validate_search_user_documents_bounds",
 )

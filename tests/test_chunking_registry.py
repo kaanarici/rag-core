@@ -5,6 +5,11 @@ from typing import Any, List
 import pytest
 
 from rag_core.core_models import PreparedChunk
+from rag_core.config import (
+    CODE_CHUNKING_STRATEGY,
+    MARKDOWN_CHUNKING_STRATEGY,
+    SEMANTIC_CHUNKING_STRATEGY,
+)
 from rag_core.documents import CHUNKING_STRATEGIES, create_chunking_strategy
 from rag_core.documents.chunking.code import CodeChunker
 from rag_core.documents.chunking.markdown import MarkdownChunker
@@ -21,9 +26,9 @@ def test_chunking_strategies_is_typed_provider_registry() -> None:
 @pytest.mark.parametrize(
     ("name", "expected_type"),
     [
-        ("markdown", MarkdownChunker),
-        ("semantic", SemanticChunker),
-        ("code", CodeChunker),
+        (MARKDOWN_CHUNKING_STRATEGY, MarkdownChunker),
+        (SEMANTIC_CHUNKING_STRATEGY, SemanticChunker),
+        (CODE_CHUNKING_STRATEGY, CodeChunker),
     ],
 )
 def test_builtin_chunking_strategy_resolves_to_concrete_type(
@@ -79,13 +84,15 @@ def test_router_delegates_to_registry() -> None:
 
     from rag_core.documents.chunking.builtins import _build_markdown_chunker
 
-    CHUNKING_STRATEGIES.unregister("markdown")
-    CHUNKING_STRATEGIES.register("markdown", lambda **kwargs: _Sentinel())
+    CHUNKING_STRATEGIES.unregister(MARKDOWN_CHUNKING_STRATEGY)
+    CHUNKING_STRATEGIES.register(MARKDOWN_CHUNKING_STRATEGY, lambda **kwargs: _Sentinel())
     try:
-        result = chunk_text("hello world", config=ChunkConfig(strategy="markdown"))
+        result = chunk_text(
+            "hello world", config=ChunkConfig(strategy=MARKDOWN_CHUNKING_STRATEGY)
+        )
     finally:
-        CHUNKING_STRATEGIES.unregister("markdown")
-        CHUNKING_STRATEGIES.register("markdown", _build_markdown_chunker)
+        CHUNKING_STRATEGIES.unregister(MARKDOWN_CHUNKING_STRATEGY)
+        CHUNKING_STRATEGIES.register(MARKDOWN_CHUNKING_STRATEGY, _build_markdown_chunker)
 
     assert result == []
     assert captured["text"] == "hello world"

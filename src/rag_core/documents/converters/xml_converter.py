@@ -7,6 +7,7 @@ import logging
 from defusedxml import minidom
 
 from .base import BaseConverter, ConversionResult, safe_decode, score_text_quality
+from .converter_keys import XML_CONVERTER_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 class XmlConverter(BaseConverter):
     """Converts XML files to pretty-printed markdown code fences."""
 
-    format_name = "xml"
+    format_name = XML_CONVERTER_KEY
 
     async def convert(
         self,
@@ -44,8 +45,7 @@ class XmlConverter(BaseConverter):
                 content = "```xml\n%s\n```" % formatted
             except Exception as exc:
                 logger.debug(
-                    "%s parsing failed; falling back to raw code fence "
-                    "(error_type=%s)",
+                    "%s parsing failed; falling back to raw code fence (error_type=%s)",
                     self.format_name.upper(),
                     type(exc).__name__,
                 )

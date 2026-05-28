@@ -1,6 +1,7 @@
 import pytest
 
 import rag_core.documents.converters as converters_module
+from rag_core.config import DEFAULT_RERANKER_PROVIDER
 from rag_core.config.env_access import (
     get_env_bool,
     get_env_float,
@@ -11,6 +12,12 @@ from rag_core.config.env_access import (
 from rag_core.documents import build_gemini_ocr_provider, build_mistral_ocr_provider
 from rag_core.documents.converters import get_converter, registry_loader
 from rag_core.documents.converters.registry_specs import ConverterSpec
+from rag_core.documents.ocr_provider_names import (
+    DEFAULT_GEMINI_OCR_MODEL,
+    DEFAULT_MISTRAL_OCR_MODEL,
+    GEMINI_OCR_PROVIDER,
+    MISTRAL_OCR_PROVIDER,
+)
 from rag_core.search.providers.reranker import NoOpReranker, create_reranker
 
 
@@ -73,13 +80,13 @@ def test_registry_loader_raises_for_required_converter_failure(
 
 
 def test_create_reranker_none_has_runtime_metadata() -> None:
-    reranker = create_reranker(provider="none")
+    reranker = create_reranker(provider=DEFAULT_RERANKER_PROVIDER)
 
     assert isinstance(reranker, NoOpReranker)
-    assert reranker.provider_name == "none"
-    assert reranker.model_name == "none"
-    assert getattr(reranker, "_rag_core_provider_requested") == "none"
-    assert getattr(reranker, "_rag_core_provider_effective") == "none"
+    assert reranker.provider_name == DEFAULT_RERANKER_PROVIDER
+    assert reranker.model_name == DEFAULT_RERANKER_PROVIDER
+    assert getattr(reranker, "_rag_core_provider_requested") == DEFAULT_RERANKER_PROVIDER
+    assert getattr(reranker, "_rag_core_provider_effective") == DEFAULT_RERANKER_PROVIDER
     assert getattr(reranker, "_rag_core_fallback_reason") is None
 
 
@@ -104,7 +111,7 @@ def test_create_reranker_missing_key_falls_back_to_noop(
 
     assert isinstance(reranker, NoOpReranker)
     assert getattr(reranker, "_rag_core_provider_requested") == provider
-    assert getattr(reranker, "_rag_core_provider_effective") == "none"
+    assert getattr(reranker, "_rag_core_provider_effective") == DEFAULT_RERANKER_PROVIDER
     assert getattr(reranker, "_rag_core_fallback_reason") == expected_reason
 
 
@@ -129,15 +136,15 @@ def test_create_reranker_rejects_unknown_provider() -> None:
     [
         (
             build_mistral_ocr_provider,
-            "mistral",
-            "mistral-ocr-latest",
+            MISTRAL_OCR_PROVIDER,
+            DEFAULT_MISTRAL_OCR_MODEL,
             True,
             "rag_core.documents.ocr_commands.mistral",
         ),
         (
             build_gemini_ocr_provider,
-            "gemini",
-            "gemini-2.5-flash",
+            GEMINI_OCR_PROVIDER,
+            DEFAULT_GEMINI_OCR_MODEL,
             False,
             "rag_core.documents.ocr_commands.gemini",
         ),

@@ -5,12 +5,22 @@ from typing import Protocol, cast
 
 from rag_core.events.emit import emit_event, now_ms
 from rag_core.events.sink import EventSink
+from rag_core.events.trace_payload_fields import CONTEXT_PACK_SEARCH_STAGE
 from rag_core.events.trace_summary_models import safe_search_id
 from rag_core.events.types import SearchStageCompleted, StageError
-from rag_core.search.context_pack import ModelContextPack, build_context_pack
-from rag_core.search.query_plan import QueryPlan
-from rag_core.search.searcher import SearchRequest, SearchRunResult
-from rag_core.search.types import Filter, RerankBudget, SearchResult
+from rag_core.retrieval_defaults import (
+    DEFAULT_CONTEXT_LIMIT,
+    DEFAULT_RERANK,
+    DEFAULT_SEARCH_LIMIT,
+    DEFAULT_USE_LEXICAL_SEARCH,
+)
+from rag_core.search import ContextPack, Filter, QueryPlan, RerankBudget, SearchResult
+from rag_core.search.context_pack import build_context_pack
+from rag_core.search.pipeline_runner import (
+    SearchExecutionOptions,
+    SearchRequest,
+    SearchRunResult,
+)
 
 
 class SearchRunner(Protocol):
@@ -23,10 +33,11 @@ async def search_with_core(
     query: str,
     namespace: str,
     corpus_ids: list[str],
-    limit: int = 10,
+    limit: int = DEFAULT_SEARCH_LIMIT,
+    content_types: list[str] | None = None,
     document_ids: list[str] | None = None,
-    rerank: bool = False,
-    use_lexical_search: bool = True,
+    rerank: bool = DEFAULT_RERANK,
+    use_lexical_search: bool = DEFAULT_USE_LEXICAL_SEARCH,
     query_plan: QueryPlan | None = None,
     metadata_filter: Filter | None = None,
     rerank_budget: RerankBudget | None = None,
@@ -37,12 +48,15 @@ async def search_with_core(
             corpus_ids=corpus_ids,
             namespace=namespace,
             limit=limit,
+            content_types=content_types,
             document_ids=document_ids,
             rerank=rerank,
-            use_lexical_search=use_lexical_search,
-            query_plan=query_plan,
             metadata_filter=metadata_filter,
             rerank_budget=rerank_budget,
+            execution=SearchExecutionOptions(
+                use_lexical_search=use_lexical_search,
+                query_plan=query_plan,
+            ),
         )
     )
 
@@ -54,22 +68,24 @@ async def retrieve_context_with_core(
     query: str,
     namespace: str,
     corpus_ids: list[str],
-    limit: int = 8,
+    limit: int = DEFAULT_CONTEXT_LIMIT,
+    content_types: list[str] | None = None,
     document_ids: list[str] | None = None,
-    rerank: bool = False,
-    use_lexical_search: bool = True,
+    rerank: bool = DEFAULT_RERANK,
+    use_lexical_search: bool = DEFAULT_USE_LEXICAL_SEARCH,
     query_plan: QueryPlan | None = None,
     metadata_filter: Filter | None = None,
     rerank_budget: RerankBudget | None = None,
     max_chars: int | None = None,
     max_tokens: int | None = None,
-) -> ModelContextPack:
+) -> ContextPack:
     search_run = await _search_with_trace_if_available(
         search=search,
         query=query,
         namespace=namespace,
         corpus_ids=corpus_ids,
         limit=limit,
+        content_types=content_types,
         document_ids=document_ids,
         rerank=rerank,
         use_lexical_search=use_lexical_search,
@@ -92,7 +108,7 @@ async def retrieve_context_with_core(
         emit_event(
             event_sink,
             StageError(
-                stage="context_pack",
+                stage=CONTEXT_PACK_SEARCH_STAGE,
                 error_type=type(exc).__name__,
                 search_id=safe_search_identifier,
             ),
@@ -101,7 +117,7 @@ async def retrieve_context_with_core(
     emit_event(
         event_sink,
         SearchStageCompleted(
-            stage="context_pack",
+            stage=CONTEXT_PACK_SEARCH_STAGE,
             stage_name="build_context_pack",
             candidate_count=len(hits),
             result_count=len(pack.snippets),
@@ -133,6 +149,7 @@ async def _search_with_trace_if_available(
     namespace: str,
     corpus_ids: list[str],
     limit: int,
+    content_types: list[str] | None,
     document_ids: list[str] | None,
     rerank: bool,
     use_lexical_search: bool,
@@ -145,12 +162,15 @@ async def _search_with_trace_if_available(
         corpus_ids=corpus_ids,
         namespace=namespace,
         limit=limit,
+        content_types=content_types,
         document_ids=document_ids,
         rerank=rerank,
-        use_lexical_search=use_lexical_search,
-        query_plan=query_plan,
         metadata_filter=metadata_filter,
         rerank_budget=rerank_budget,
+        execution=SearchExecutionOptions(
+            use_lexical_search=use_lexical_search,
+            query_plan=query_plan,
+        ),
     )
     search_with_trace = getattr(search, "search_with_trace", None)
     if callable(search_with_trace):

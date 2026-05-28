@@ -12,6 +12,17 @@ from collections.abc import Callable
 from importlib import import_module
 from typing import TYPE_CHECKING, Generic, TypeVar
 
+from .provider_category_names import (
+    CHUNK_CONTEXT_CACHE_PROVIDER_CATEGORY,
+    EMBEDDING_CACHE_PROVIDER_CATEGORY,
+    EMBEDDING_PROVIDER_CATEGORY,
+    OCR_PROVIDER_CATEGORY,
+    RERANKER_PROVIDER_CATEGORY,
+    SEARCH_SIDECAR_PROVIDER_CATEGORY,
+    SPARSE_PROVIDER_CATEGORY,
+    VECTOR_STORE_PROVIDER_CATEGORY,
+)
+
 T = TypeVar("T")
 ProviderFactory = Callable[..., T]
 
@@ -88,7 +99,7 @@ if TYPE_CHECKING:
     from rag_core.documents.ocr import OcrProvider
     from rag_core.search.providers.chunk_context_cache import ChunkContextCache
     from rag_core.search.providers.embedding_cache_models import EmbeddingCache
-    from rag_core.search.types import (
+    from rag_core.search.provider_protocols import (
         EmbeddingProvider,
         RerankerProvider,
         SearchSidecar,
@@ -98,30 +109,30 @@ if TYPE_CHECKING:
 
 
 EMBEDDING_PROVIDERS: ProviderRegistry["EmbeddingProvider"] = ProviderRegistry(
-    "embedding"
+    EMBEDDING_PROVIDER_CATEGORY
 ).with_builtins("rag_core.search.providers.embedding")
 RERANKER_PROVIDERS: ProviderRegistry["RerankerProvider"] = ProviderRegistry(
-    "reranker"
+    RERANKER_PROVIDER_CATEGORY
 ).with_builtins("rag_core.search.providers.reranker")
 SPARSE_EMBEDDERS: ProviderRegistry["SparseEmbedder"] = ProviderRegistry(
-    "sparse"
+    SPARSE_PROVIDER_CATEGORY
 ).with_builtins("rag_core.search.providers.sparse")
 OCR_PROVIDERS: ProviderRegistry["OcrProvider"] = ProviderRegistry(
-    "ocr"
+    OCR_PROVIDER_CATEGORY
 ).with_builtins("rag_core.documents.ocr")
 VECTOR_STORES: ProviderRegistry["VectorStore"] = ProviderRegistry(
-    "vector_store"
+    VECTOR_STORE_PROVIDER_CATEGORY
 ).with_builtins(
     "rag_core.search.providers.qdrant_store",
     "rag_core.search.providers.memory_store",
     "rag_core.search.providers.turbopuffer_store",
 )
 SEARCH_SIDECARS: ProviderRegistry["SearchSidecar"] = ProviderRegistry(
-    "search_sidecar"
+    SEARCH_SIDECAR_PROVIDER_CATEGORY
 ).with_builtins("rag_core.search.lexical_sidecar")
 EMBEDDING_CACHES: ProviderRegistry["EmbeddingCache"] = ProviderRegistry(
-    "embedding_cache"
+    EMBEDDING_CACHE_PROVIDER_CATEGORY
 ).with_builtins("rag_core.search.providers.embedding_cache")
 CHUNK_CONTEXT_CACHES: ProviderRegistry["ChunkContextCache"] = ProviderRegistry(
-    "chunk_context_cache"
-).with_builtins("rag_core.search.providers.embedding_cache")
+    CHUNK_CONTEXT_CACHE_PROVIDER_CATEGORY
+).with_builtins("rag_core.search.providers.chunk_context_cache")

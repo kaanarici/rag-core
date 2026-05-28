@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
+from rag_core.config.ingest_config import DEFAULT_INGEST_SOURCE_TYPE
 from rag_core.core_lifecycle import (
     compute_content_sha256,
     resolve_document_id,
@@ -79,4 +80,4 @@ def _resolved_source_type(
     source_type: str | None,
 ) -> str:
     resolved = source_type if source_type is not None else default_source_type
-    return resolved.strip() or "file"
+    return resolved.strip() or DEFAULT_INGEST_SOURCE_TYPE

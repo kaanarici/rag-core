@@ -6,7 +6,8 @@ import logging
 import math
 from typing import TypeGuard
 
-from rag_core.search.types import RerankResult
+from rag_core.search.providers.provider_result_values import safe_provider_value_type
+from rag_core.search.request_models import RerankResult
 
 logger = logging.getLogger(__name__)
 
@@ -31,20 +32,6 @@ def rerank_provider_result_count(results: list[RerankResult]) -> int:
     return len(results)
 
 
-def _safe_value_type(value: object) -> str:
-    if isinstance(value, bool):
-        return "bool"
-    if isinstance(value, int):
-        return "int"
-    if isinstance(value, float):
-        return "float"
-    if isinstance(value, str):
-        return "str"
-    if value is None:
-        return "none"
-    return "object"
-
-
 def _is_int_index(value: object) -> TypeGuard[int]:
     return isinstance(value, int) and not isinstance(value, bool)
 
@@ -66,7 +53,7 @@ def safe_indexed_rerank_results(
             logger.warning(
                 "%s returned invalid rerank index (value_type=%s)",
                 provider_name,
-                _safe_value_type(raw_index),
+                safe_provider_value_type(raw_index),
             )
             continue
         if raw_index in seen_indices:
@@ -76,7 +63,7 @@ def safe_indexed_rerank_results(
             logger.warning(
                 "%s returned invalid rerank score (reason=invalid_type value_type=%s)",
                 provider_name,
-                _safe_value_type(raw_score),
+                safe_provider_value_type(raw_score),
             )
             continue
         try:
@@ -85,14 +72,14 @@ def safe_indexed_rerank_results(
             logger.warning(
                 "%s returned invalid rerank score (reason=invalid_value value_type=%s)",
                 provider_name,
-                _safe_value_type(raw_score),
+                safe_provider_value_type(raw_score),
             )
             continue
         if not math.isfinite(score):
             logger.warning(
                 "%s returned non-finite rerank score (value_type=%s)",
                 provider_name,
-                _safe_value_type(raw_score),
+                safe_provider_value_type(raw_score),
             )
             continue
         seen_indices.add(raw_index)

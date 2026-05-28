@@ -5,7 +5,7 @@ from __future__ import annotations
 from qdrant_client import AsyncQdrantClient
 
 from rag_core.search.policy import VectorStorePolicy
-from rag_core.search.types import StoredDocumentRecord
+from rag_core.search.request_models import StoredDocumentRecord
 
 from .qdrant_filters import build_document_count_filter, build_document_lookup_filter
 from .qdrant_payloads import (

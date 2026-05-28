@@ -4,18 +4,31 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_PROCESSING_VERSION = "rag_core_processing_v1"
+INGEST_SOURCE_TYPE_FILE = "file"
+INGEST_SOURCE_TYPE_URL = "url"
+INGEST_SOURCE_TYPE_ARCHIVE = "archive"
+DEFAULT_INGEST_SOURCE_TYPE = INGEST_SOURCE_TYPE_FILE
+STANDARD_INGEST_SOURCE_TYPES = (
+    INGEST_SOURCE_TYPE_FILE,
+    INGEST_SOURCE_TYPE_URL,
+    INGEST_SOURCE_TYPE_ARCHIVE,
+)
+DEFAULT_CLI_MANIFEST_DIRECTORY = ".rag-core/manifest"
+DEFAULT_INGEST_MAX_CONCURRENCY = 1
+CLI_MANIFEST_DIR_ENV = "RAG_CORE_MANIFEST_DIR"
+PROCESSING_VERSION_ENV = "RAG_CORE_PROCESSING_VERSION"
 
 
 @dataclass(frozen=True)
 class IngestConfig:
     processing_version: str = DEFAULT_PROCESSING_VERSION
-    source_type: str = "file"
+    source_type: str = DEFAULT_INGEST_SOURCE_TYPE
     enable_lexical_search: bool = False
     manifest_directory: Path | None = None
     """Directory under which manifest JSONL files are written, one per corpus.
 
     When unset, the engine does not persist a manifest. The CLI defaults to
-    ``./.rag-core/manifest`` so ``list-corpora`` style commands have data.
+    ``DEFAULT_CLI_MANIFEST_DIRECTORY`` so manifest inspection commands have data.
     """
     lexical_search_provider: str | None = None
     """Name of a lexical search provider registered in ``SEARCH_SIDECARS``.

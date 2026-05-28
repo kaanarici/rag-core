@@ -1,5 +1,6 @@
 import pytest
 
+from rag_core.config import CODE_CHUNKING_STRATEGY, MARKDOWN_CHUNKING_STRATEGY
 from rag_core.core_prepare import prepare_text_chunks
 from rag_core.documents.chunking.router import chunk_text, is_code_content
 
@@ -37,7 +38,7 @@ def test_router_picks_code_strategy_for_source_files() -> None:
     chunks = chunk_text("def run():\n    return True\n", filename="script.py")
 
     assert chunks
-    assert chunks[0].metadata.get("chunking_strategy") == "code"
+    assert chunks[0].metadata.get("chunking_strategy") == CODE_CHUNKING_STRATEGY
 
 
 def test_prepared_chunks_preserve_router_positions_and_strategy() -> None:
@@ -51,4 +52,4 @@ def test_prepared_chunks_preserve_router_positions_and_strategy() -> None:
     assert p.embedding_text == r.text
     assert p.word_count == len(r.text.split())
     assert p.token_count == len(r.text.split())
-    assert p.chunking_strategy == "markdown"
+    assert p.chunking_strategy == MARKDOWN_CHUNKING_STRATEGY

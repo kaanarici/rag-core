@@ -8,6 +8,7 @@ import pytest
 
 from rag_core.documents.contextualizer import ChunkContextRequest
 from rag_core.documents.contextualizer_adapters import AnthropicChunkContextualizer
+from tests.support import assert_caplog_omits_private
 
 
 class ProviderSecretError(RuntimeError):
@@ -48,10 +49,10 @@ def test_anthropic_contextualizer_failure_log_is_sanitized(
     assert "claude-test" in caplog.text
     assert "chunk 3" in caplog.text
     assert "ProviderSecretError" in caplog.text
-    assert "raw provider detail" not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "sensitive-roadmap.md" not in caplog.text
-    assert "private document body" not in caplog.text
-    assert "private chunk text" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(
+        caplog,
+        "raw provider detail",
+        "sensitive-roadmap.md",
+        "private document body",
+        "private chunk text",
+    )

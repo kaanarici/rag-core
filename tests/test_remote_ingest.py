@@ -18,7 +18,7 @@ from rag_core.events import (
     FetchStarted,
 )
 from rag_core.fetch_security import FetchLimits, FetchSecurityPolicy, validate_fetch_url
-from rag_core.fetch_security_url import safe_remote_source_url
+from rag_core.fetch_security_url import safe_remote_document_key
 from rag_core.fetching import FetchResponse
 from rag_core.core_remote import ingest_remote_url
 from rag_core.remote_ingest_models import RemoteUrlSourceItem
@@ -663,8 +663,4 @@ def _fetch_response(
 
 
 def _url_key(url: str) -> str:
-    validated = validate_fetch_url(url)
-    key = f"url:{safe_remote_source_url(validated)}"
-    if validated.query_sha256:
-        return f"{key}|query_sha256:{validated.query_sha256}"
-    return key
+    return safe_remote_document_key(validate_fetch_url(url))

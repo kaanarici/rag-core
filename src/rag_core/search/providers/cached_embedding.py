@@ -1,6 +1,6 @@
 """Embedding-provider wrapper that consults an :class:`EmbeddingCache`.
 
-The wrapper preserves the :class:`rag_core.search.types.EmbeddingProvider`
+The wrapper preserves the :class:`rag_core.search.provider_protocols.EmbeddingProvider`
 shape so callers swap it in transparently. Query embeddings skip the cache by
 default because queries are typically unique per request; corpus-side
 ``embed_texts`` calls are where reuse pays off.
@@ -8,7 +8,7 @@ default because queries are typically unique per request; corpus-side
 
 from __future__ import annotations
 
-from rag_core.search.types import EmbeddingProvider
+from rag_core.search.provider_protocols import EmbeddingProvider
 
 from .cached_embedding_observations import (
     CachedEmbeddingDiagnostics,
@@ -17,13 +17,17 @@ from .cached_embedding_observations import (
 from .cached_embedding_state import (
     CachedEmbeddingCounters,
     CachedEmbeddingKeyBuilder,
-    EmbeddingInputType,
     Hasher,
     cached_embedding_provider_fingerprint,
     cached_embedding_provider_name,
 )
 from .cached_embedding_runtime import embed_query_with_cache, embed_texts_with_cache
 from .embedding_cache_models import EmbeddingCache, EmbedCacheKey, sha256_text
+from .embedding_input_types import (
+    EMBEDDING_INPUT_DOCUMENT,
+    EMBEDDING_INPUT_QUERY,
+    EmbeddingInputType,
+)
 
 DEFAULT_EMBEDDING_NORMALIZATION = "text_sha256_utf8"
 
@@ -111,7 +115,7 @@ class CachedEmbeddingProvider:
             keys=[
                 self._build_key(
                     text,
-                    input_type="document",
+                    input_type=EMBEDDING_INPUT_DOCUMENT,
                     processing_fingerprint=processing_fingerprint,
                 )
                 for text in texts
@@ -129,7 +133,7 @@ class CachedEmbeddingProvider:
     ) -> tuple[list[float], EmbeddingCacheObservation]:
         key = self._build_key(
             query,
-            input_type="query",
+            input_type=EMBEDDING_INPUT_QUERY,
             processing_fingerprint=self._processing_fingerprint,
         )
         vector, observation = await embed_query_with_cache(

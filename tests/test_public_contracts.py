@@ -1,19 +1,27 @@
+import ast
 import asyncio
+import importlib
 import subprocess
 import sys
 from dataclasses import fields
+from pathlib import Path
 from typing import Any, cast
 
 import rag_core
+import rag_core.config as config_module
+import rag_core.documents as documents_module
 import rag_core.documents.converters as converters_module
 import rag_core.search as search_module
 import rag_core.integrations as integrations
 import rag_core.search as search
 import rag_core.search.providers as provider_exports
+import rag_core.search.providers.chunk_context_cache as chunk_context_cache_module
+import rag_core.search.providers.embedding_cache as embedding_cache_module
 from rag_core import (
     CorpusManifestEntry,
+    DeleteDocumentResult,
     IngestedDocument,
-    ModelContextPack,
+    ContextPack,
     ParsedDocument,
     PreparedChunk,
     PreparedDocument,
@@ -43,6 +51,9 @@ from rag_core.sources import (
     LocalFileSourceReader,
     LocalSourceItem,
     LocalSourcePlan,
+    ManifestReconciliation,
+    ManifestReconciliationItem,
+    ManifestSource,
     RemoteDiscoveredUrl,
     RemoteDiscovery,
     RemoteDiscoveryReader,
@@ -51,6 +62,8 @@ from rag_core.sources import (
     ZipArchiveSourceReader,
     parse_llms_txt_urls,
     parse_sitemap_urls,
+    public_remote_document_key,
+    reconcile_entries,
 )
 from rag_core.search.providers.cached_embedding import (
     CachedEmbeddingDiagnostics,
@@ -66,17 +79,76 @@ from tests.support import (
 )
 
 
+def _stub_public_names(path: Path) -> set[str]:
+    names: set[str] = set()
+    for node in ast.parse(path.read_text(encoding="utf-8")).body:
+        if isinstance(node, ast.ImportFrom):
+            names.update(
+                alias.asname
+                for alias in node.names
+                if alias.asname and not alias.asname.startswith("_")
+            )
+        elif isinstance(node, ast.FunctionDef):
+            names.add(node.name)
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id != "__all__"
+        ):
+            names.add(node.target.id)
+    return names
+
+
+def _stub_all_names(path: Path) -> set[str]:
+    for node in ast.parse(path.read_text(encoding="utf-8")).body:
+        value: ast.expr | None = None
+        if isinstance(node, ast.Assign):
+            if any(
+                isinstance(target, ast.Name) and target.id == "__all__"
+                for target in node.targets
+            ):
+                value = node.value
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "__all__"
+        ):
+            value = node.value
+        if value is None:
+            continue
+        parsed = ast.literal_eval(value)
+        assert isinstance(parsed, (list, tuple))
+        return set(parsed)
+    raise AssertionError(f"{path} does not define literal __all__")
+
+
+def test_shipped_public_stubs_match_runtime_exports() -> None:
+    stubbed_modules = {
+        "rag_core": Path("src/rag_core/__init__.pyi"),
+        "rag_core.events": Path("src/rag_core/events/__init__.pyi"),
+        "rag_core.integrations": Path("src/rag_core/integrations/__init__.pyi"),
+        "rag_core.search": Path("src/rag_core/search/__init__.pyi"),
+        "rag_core.search.providers": Path("src/rag_core/search/providers/__init__.pyi"),
+    }
+
+    for module_name, stub_path in stubbed_modules.items():
+        module = importlib.import_module(module_name)
+        assert _stub_public_names(stub_path) == set(module.__all__)
+        assert _stub_all_names(stub_path) == set(module.__all__)
+
+
 def test_root_public_types_are_importable() -> None:
     # The root package stays small: engine facade plus first-order data shapes.
     public_types = (
         CorpusManifestEntry,
+        DeleteDocumentResult,
         RAGCore,
         RAGCoreConfig,
         ParsedDocument,
         IngestedDocument,
         PreparedChunk,
         PreparedDocument,
-        ModelContextPack,
+        ContextPack,
         SearchResult,
     )
     for cls in public_types:
@@ -85,8 +157,9 @@ def test_root_public_types_are_importable() -> None:
         "ContextSnippet",
         "CorpusManifest",
         "CorpusManifestEntry",
+        "DeleteDocumentResult",
         "IngestedDocument",
-        "ModelContextPack",
+        "ContextPack",
         "OcrMetadata",
         "OcrRoutingSignal",
         "ParsedDocument",
@@ -113,6 +186,46 @@ def test_root_public_types_are_importable() -> None:
     assert EmbeddingCacheObservation.__name__ == "EmbeddingCacheObservation"
 
 
+def test_rag_core_facade_methods_are_curated() -> None:
+    beta_core_methods = {
+        "close",
+        "delete_document",
+        "ingest_archive",
+        "ingest_bytes",
+        "ingest_file",
+        "ingest_files",
+        "ingest_url",
+        "ingest_urls",
+        "parse_bytes",
+        "prepare_bytes",
+        "prepare_file",
+        "retrieve_context",
+        "search",
+    }
+    experimental_facade_methods = {
+        "build_corpus_manifest",
+        "build_manifest_entry",
+        "check_health",
+        "describe_runtime",
+        "ensure_ready",
+        "manifest_bytes",
+        "manifest_file",
+    }
+    for method in beta_core_methods | experimental_facade_methods:
+        assert callable(getattr(RAGCore, method))
+    assert not hasattr(RAGCore, "ingest_folder")
+
+
+def test_stability_docs_name_the_actual_rag_core_ingest_shape() -> None:
+    stability = Path("docs/stability.md").read_text(encoding="utf-8")
+
+    assert "local file/directory paths via `ingest_files`" in stability
+    assert "files/folders" not in stability
+    assert "`RAGCore.ingest_folder`" not in stability
+    assert "`rag_core.search.provider_protocols` protocols" in stability
+    assert "re-exported from `rag_core.search.types` for compatibility" in stability
+
+
 def test_context_pack_citation_primitives_are_public_imports() -> None:
     assert rag_core.ContextSnippet is ContextSnippet
     assert rag_core.SourceLocator is SourceLocator
@@ -123,6 +236,73 @@ def test_context_pack_citation_primitives_are_public_imports() -> None:
     assert search.SourceLocator is SourceLocator
     assert search.SourcePreview is SourcePreview
     assert search.SourceReference is SourceReference
+
+
+def test_config_namespace_exports_curated_config_shapes_and_constants() -> None:
+    assert config_module.__all__ == [
+        "ChunkingConfig",
+        "BUILTIN_CHUNKING_STRATEGIES",
+        "CHUNKING_STRATEGY_AUTO",
+        "CLI_MANIFEST_DIR_ENV",
+        "CODE_CHUNKING_STRATEGY",
+        "CONTENT_CHUNKER_CHUNKING_STRATEGY",
+        "MARKDOWN_CHUNKING_STRATEGY",
+        "PRECHUNKED_CHUNKING_STRATEGY",
+        "SEMANTIC_CHUNKING_STRATEGY",
+        "DEFAULT_TURBOPUFFER_DELETE_CONTINUATION_LIMIT",
+        "DEFAULT_VECTOR_STORE_PROVIDER",
+        "DEFAULT_EMBEDDING_MODEL",
+        "DEFAULT_EMBEDDING_PROVIDER",
+        "DEFAULT_CLI_MANIFEST_DIRECTORY",
+        "DEFAULT_INGEST_MAX_CONCURRENCY",
+        "DEFAULT_INGEST_SOURCE_TYPE",
+        "DEFAULT_PROCESSING_VERSION",
+        "DEFAULT_TURBOPUFFER_DISTANCE_METRIC",
+        "DEFAULT_QDRANT_COLLECTION",
+        "DEFAULT_QDRANT_DIMENSION_AWARE_COLLECTION",
+        "DEFAULT_RERANKER_PROVIDER",
+        "DEMO_EMBEDDING_MODEL",
+        "DEMO_EMBEDDING_PROVIDER",
+        "EMBEDDING_BATCH_SIZE_ENV",
+        "EMBEDDING_DIMENSIONS_ENV",
+        "EMBEDDING_MODEL_ENV",
+        "EMBEDDING_PROVIDER_ENV",
+        "EmbeddingConfig",
+        "IngestConfig",
+        "INGEST_SOURCE_TYPE_ARCHIVE",
+        "INGEST_SOURCE_TYPE_FILE",
+        "INGEST_SOURCE_TYPE_URL",
+        "PROCESSING_VERSION_ENV",
+        "QdrantConfig",
+        "QDRANT_COLLECTION_ENV",
+        "QDRANT_DIMENSION_AWARE_COLLECTION_ENV",
+        "QDRANT_LOCATION_ENV",
+        "QDRANT_URL_ENV",
+        "RERANKER_MODEL_ENV",
+        "RERANKER_PROVIDER_ENV",
+        "RerankerConfig",
+        "SUPPORTED_TURBOPUFFER_DISTANCE_METRICS",
+        "SUPPORTED_VECTOR_STORE_PROVIDERS",
+        "STANDARD_INGEST_SOURCE_TYPES",
+        "TURBOPUFFER_BASE_URL_ENV",
+        "TURBOPUFFER_DELETE_CONTINUATION_LIMIT_ENV",
+        "TURBOPUFFER_DISTANCE_METRIC_ENV",
+        "TURBOPUFFER_NAMESPACE_ENV",
+        "TURBOPUFFER_REGION_ENV",
+        "TurboPufferVectorStoreConfig",
+        "VECTOR_STORE_ENV",
+        "VectorStoreConfig",
+    ]
+    for helper in (
+        "get_env",
+        "get_env_bool",
+        "get_env_float",
+        "get_env_int",
+        "get_env_optional",
+        "get_env_optional_bool",
+        "get_env_stripped",
+    ):
+        assert not hasattr(config_module, helper)
 
 
 def test_source_preview_remains_a_small_app_facing_payload() -> None:
@@ -146,6 +326,9 @@ def test_source_primitives_are_sources_namespace_public_imports() -> None:
     assert LocalFileSourceReader.__name__ == "LocalFileSourceReader"
     assert LocalSourceItem.__name__ == "LocalSourceItem"
     assert LocalSourcePlan.__name__ == "LocalSourcePlan"
+    assert ManifestReconciliation.__name__ == "ManifestReconciliation"
+    assert ManifestReconciliationItem.__name__ == "ManifestReconciliationItem"
+    assert ManifestSource.__name__ == "ManifestSource"
     assert RemoteDiscoveredUrl.__name__ == "RemoteDiscoveredUrl"
     assert RemoteDiscovery.__name__ == "RemoteDiscovery"
     assert RemoteDiscoveryReader.__name__ == "RemoteDiscoveryReader"
@@ -154,6 +337,36 @@ def test_source_primitives_are_sources_namespace_public_imports() -> None:
     assert ZipArchiveSourceReader.__name__ == "ZipArchiveSourceReader"
     assert callable(parse_llms_txt_urls)
     assert callable(parse_sitemap_urls)
+    assert (
+        public_remote_document_key(
+            "url:https://example.com/docs?redacted|query_sha256:abc"
+        )
+        == "url:https://example.com/docs?redacted"
+    )
+    assert callable(reconcile_entries)
+
+
+def test_source_reconciliation_primitives_are_app_owned_status_only() -> None:
+    entry = CorpusManifestEntry(
+        document_id="doc-old",
+        namespace="acme",
+        corpus_id="help",
+        document_key="old.md",
+        content_sha256="old-hash",
+        filename="old.md",
+        mime_type="text/markdown",
+        chunk_count=1,
+    )
+
+    reconciliation = reconcile_entries(
+        [entry],
+        [ManifestSource(document_key="new.md", content_sha256="new-hash")],
+    )
+
+    assert [(item.status, item.document_key) for item in reconciliation.items] == [
+        ("missing", "new.md"),
+        ("orphaned", "old.md"),
+    ]
 
 
 def test_remote_discovery_exposes_fetchable_and_redacted_url_sequences() -> None:
@@ -175,6 +388,10 @@ def test_sources_namespace_is_curated() -> None:
         "LocalFileSourceReader",
         "LocalSourceItem",
         "LocalSourcePlan",
+        "ManifestReconciliation",
+        "ManifestReconciliationItem",
+        "ManifestReconciliationStatus",
+        "ManifestSource",
         "RemoteDiscoveredUrl",
         "RemoteDiscovery",
         "RemoteDiscoveryKind",
@@ -192,9 +409,12 @@ def test_sources_namespace_is_curated() -> None:
         "is_supported_local_file",
         "local_file_source_item",
         "local_source_key_root",
+        "manifest_reconciliation_payload",
         "parse_llms_txt_urls",
         "parse_sitemap_urls",
+        "public_remote_document_key",
         "read_zip_member_bytes",
+        "reconcile_entries",
         "remote_source_document",
         "safe_archive_member_path",
         "source_error_message",
@@ -203,7 +423,7 @@ def test_sources_namespace_is_curated() -> None:
     ]
 
 
-def test_integration_root_exports_stable_builders() -> None:
+def test_integration_root_exports_curated_builders() -> None:
     assert integrations.__all__ == (
         "LangChainNotInstalledError",
         "LangChainRetrieverConfig",
@@ -219,12 +439,139 @@ def test_integration_root_exports_stable_builders() -> None:
     assert integrations.build_langchain_retriever is build_langchain_retriever
     assert integrations.build_retrieve_context_tool is build_retrieve_context_tool
     assert integrations.create_langchain_context_tool is create_langchain_context_tool
-    assert integrations.create_langchain_retriever_tool is create_langchain_retriever_tool
+    assert (
+        integrations.create_langchain_retriever_tool is create_langchain_retriever_tool
+    )
 
 
 def test_integration_root_keeps_payload_helpers_in_submodules() -> None:
     assert not hasattr(integrations, "context_pack_to_tool_output")
     assert not hasattr(integrations, "search_result_to_document_kwargs")
+
+
+def test_wheel_smoke_exercises_installed_integration_public_surface() -> None:
+    source = Path("scripts/wheel_smoke.py").read_text(encoding="utf-8")
+
+    assert "import rag_core.integrations as integrations" in source
+    assert "def _integration_import_smoke()" in source
+    assert "integrations.__all__" in source
+    assert "integrations.build_langchain_retriever(" in source
+    assert "integrations.build_retrieve_context_tool(" in source
+    assert "LangChainNotInstalledError" in source
+    assert "openai-agents" in source
+
+
+def test_wheel_smoke_exercises_installed_cli_first_run_surface() -> None:
+    source = Path("scripts/wheel_smoke.py").read_text(encoding="utf-8")
+
+    assert "def _installed_cli_smoke(" in source
+    assert '"doctor", "--json"' in source
+    assert '"local-search"' in source
+    assert '"Local files parsed indexed cited"' in source
+    assert '"installed_cli_local_search_hits"' in source
+
+
+def test_integration_surfaces_type_against_root_rag_core() -> None:
+    for path in (
+        Path("src/rag_core/integrations/__init__.pyi"),
+        Path("src/rag_core/integrations/langchain.py"),
+        Path("src/rag_core/integrations/langchain_retriever.py"),
+    ):
+        source = path.read_text(encoding="utf-8")
+
+        assert "from rag_core import RAGCore" in source
+        assert "from rag_core.core import RAGCore" not in source
+
+
+def test_eval_runner_types_against_root_rag_core() -> None:
+    source = Path("src/rag_core/evals/runner.py").read_text(encoding="utf-8")
+
+    assert "from rag_core import RAGCore" in source
+    assert "from rag_core.search import QueryPlan, RerankBudget, SearchResult" in source
+    assert "from rag_core.core import RAGCore" not in source
+
+
+def test_root_package_exports_search_types_through_curated_search_surface() -> None:
+    root = Path("src/rag_core/__init__.py").read_text(encoding="utf-8")
+    stub = Path("src/rag_core/__init__.pyi").read_text(encoding="utf-8")
+
+    for source in (root, stub):
+        assert "from .search import ContextPack" in source
+        assert "from .search import SearchResult" in source
+        assert ".search.context_pack import" not in source
+        assert ".search.types import SearchResult" not in source
+    assert '"SearchResult": ("rag_core.search", "SearchResult")' in root
+    assert '"ContextPack": ("rag_core.search", "ContextPack")' in root
+    assert '"rag_core.search.types", "SearchResult"' not in root
+
+
+def test_public_extension_modules_type_against_curated_search_surface() -> None:
+    for path in (
+        Path("src/rag_core/evals/runner.py"),
+        Path("src/rag_core/events/export.py"),
+        Path("src/rag_core/integrations/protocols.py"),
+        Path("src/rag_core/integrations/openai_agents.py"),
+        Path("src/rag_core/integrations/langchain_payloads.py"),
+        Path("src/rag_core/integrations/langchain_retriever.py"),
+    ):
+        source = path.read_text(encoding="utf-8")
+
+        assert "rag_core.search.types" not in source
+        assert "rag_core.search.query_plan" not in source
+        assert "rag_core.search.vector_models" not in source
+
+
+def test_user_facing_retrieval_modules_type_against_curated_search_surface() -> None:
+    for path in (
+        Path("src/rag_core/core_retrieval.py"),
+        Path("src/rag_core/facade/retrieval.py"),
+        Path("src/rag_core/cli_search.py"),
+        Path("src/rag_core/local_search_runner.py"),
+    ):
+        source = path.read_text(encoding="utf-8")
+
+        assert "from rag_core.search import" in source
+        assert "from rag_core.search.types import" not in source
+        assert "from rag_core.search.query_plan import" not in source
+        assert "from rag_core.search.context_pack_models import" not in source
+        assert "rag_core.search.vector_models" not in source
+
+
+def test_integration_package_stub_uses_single_retrieve_context_protocol() -> None:
+    source = Path("src/rag_core/integrations/__init__.pyi").read_text(encoding="utf-8")
+
+    assert "class SupportsRetrieveContext" not in source
+    assert "import rag_core.integrations.protocols" in source
+    assert "core: rag_core.integrations.protocols.SupportsRetrieveContext" in source
+
+
+def test_integration_protocols_reuse_tool_contract_context_pack_protocol() -> None:
+    protocols = Path("src/rag_core/integrations/protocols.py").read_text(
+        encoding="utf-8"
+    )
+    context_text = Path(
+        "src/rag_core/integrations/integration_context_text.py"
+    ).read_text(encoding="utf-8")
+    langchain_payloads = Path(
+        "src/rag_core/integrations/langchain_payloads.py"
+    ).read_text(encoding="utf-8")
+    langchain_stub = Path("src/rag_core/integrations/langchain.pyi").read_text(
+        encoding="utf-8"
+    )
+    tool_contracts = Path("src/rag_core/contracts/tool_contracts.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "class ContextPackLike" not in protocols
+    assert "SupportsContextPackPromptPayload" in protocols
+    assert "SupportsContextPackPromptPayload" in context_text
+    assert "SupportsContextPackPromptPayload" in langchain_payloads
+    assert "pack: SupportsContextPackPromptPayload" in langchain_stub
+    assert "class SupportsContextPackPayload" not in tool_contracts
+    assert (
+        "class SupportsContextPackPromptPayload(SupportsContextPackPayload"
+        not in tool_contracts
+    )
 
 
 def test_search_exports_are_curated() -> None:
@@ -238,18 +585,17 @@ def test_search_exports_are_curated() -> None:
         "Geo",
         "In",
         "Mmr",
-        "MetadataFilterCapabilities",
-        "ModelContextPack",
+        "ContextPack",
         "Not",
         "Or",
         "Prefetch",
         "PrefetchFusion",
+        "PRIMARY_DENSE_QUERY_VECTOR",
         "QUERY_PLAN_PRESETS",
         "QueryPlan",
         "Range",
         "RerankBudget",
         "SEARCH_PROFILES",
-        "SearchQuery",
         "SearchResult",
         "SparseChannel",
         "SparseVector",
@@ -259,8 +605,9 @@ def test_search_exports_are_curated() -> None:
         "Term",
         "UnsupportedQueryStage",
         "default_query_plan",
+        "describe_query_plan",
         "describe_query_plan_presets",
-        "describe_retrieval_profiles",
+        "describe_search_profile_catalog",
         "describe_search_profiles",
         "query_plan_preset",
         "search_profile",
@@ -271,8 +618,13 @@ def test_search_exports_are_curated() -> None:
     assert not hasattr(search_exports, "PipelineContext")
     assert not hasattr(search_exports, "ProviderRerankStage")
     assert not hasattr(search_exports, "QdrantIndexer")
+    assert not hasattr(search_exports, "MetadataFilterCapabilities")
+    assert not hasattr(search_exports, "SearchExecutionOptions")
     assert not hasattr(search_exports, "SearchRequest")
-    assert not hasattr(search_exports, "SearchOrchestrator")
+    assert not hasattr(search_exports, "SearchQuery")
+    assert not hasattr(search_exports, "SearchPipelineRunner")
+    assert not hasattr(search_exports, "StoreCapabilities")
+    assert not hasattr(search_exports, "VectorStoreProviderSpec")
     assert not hasattr(search_exports, "SidecarPrefetchTransform")
     assert not hasattr(search_exports, "build_context_pack")
     assert not hasattr(search_exports, "PortableLexicalSidecar")
@@ -280,6 +632,9 @@ def test_search_exports_are_curated() -> None:
 
 
 def test_provider_exports_are_curated() -> None:
+    provider_stub = Path("src/rag_core/search/providers/__init__.pyi").read_text(
+        encoding="utf-8"
+    )
     assert provider_exports.__all__ == (
         "CHUNK_CONTEXT_CACHES",
         "ChunkContextCache",
@@ -289,14 +644,11 @@ def test_provider_exports_are_curated() -> None:
         "EmbedCacheKey",
         "EmbeddingCache",
         "ProviderRegistry",
-        "QueryPlanCapabilities",
         "QdrantVectorStore",
         "RERANKER_PROVIDERS",
         "SEARCH_SIDECARS",
         "SPARSE_EMBEDDERS",
-        "StoreCapabilities",
         "VECTOR_STORES",
-        "VectorStorePolicy",
         "create_chunk_context_cache",
         "create_embedding_cache",
         "create_embedding_provider",
@@ -314,12 +666,29 @@ def test_provider_exports_are_curated() -> None:
         "NoCache",
         "NoChunkContextCache",
         "OpenAIEmbeddingProvider",
+        "QueryPlanCapabilities",
         "RichVectorStore",
         "SqliteCache",
         "SqliteChunkContextCache",
+        "StoreCapabilities",
+        "TurboPufferVectorStore",
+        "VectorStorePolicy",
     ):
         assert hidden not in provider_exports.__all__
         assert not hasattr(provider_exports, hidden)
+        assert f"{hidden} as {hidden}" not in provider_stub
+    for annotation_only_protocol in (
+        "EmbeddingProvider",
+        "RerankerProvider",
+        "SearchSidecar",
+        "SparseEmbedder",
+    ):
+        assert "from rag_core.search.provider_protocols import" in provider_stub
+        assert f"{annotation_only_protocol} as _{annotation_only_protocol}" in (
+            provider_stub
+        )
+        assert annotation_only_protocol not in provider_exports.__all__
+        assert not hasattr(provider_exports, annotation_only_protocol)
     # EmbedCacheKey shape is part of the cache contract — preserve order.
     assert [field.name for field in fields(provider_exports.EmbedCacheKey)] == [
         "provider",
@@ -333,6 +702,41 @@ def test_provider_exports_are_curated() -> None:
     ]
 
 
+def test_provider_cache_contract_exports_use_canonical_modules() -> None:
+    provider_root = Path("src/rag_core/search/providers/__init__.py").read_text(
+        encoding="utf-8"
+    )
+    provider_stub = Path("src/rag_core/search/providers/__init__.pyi").read_text(
+        encoding="utf-8"
+    )
+
+    assert "rag_core.search.providers.chunk_context_cache" in provider_root
+    assert "rag_core.search.providers.embedding_cache_models" in provider_root
+    assert '"create_chunk_context_cache": (' in provider_root
+    assert "from rag_core.search.providers.chunk_context_cache import" in provider_stub
+    assert (
+        "from rag_core.search.providers.embedding_cache_models import" in provider_stub
+    )
+    assert "create_chunk_context_cache" in chunk_context_cache_module.__all__
+    assert "create_chunk_context_cache" not in embedding_cache_module.__all__
+    assert "EmbeddingCache" not in embedding_cache_module.__all__
+    assert "EmbedCacheKey" not in embedding_cache_module.__all__
+    assert "ChunkContextCache" not in embedding_cache_module.__all__
+    assert "ChunkContextKey" not in embedding_cache_module.__all__
+    assert "InMemoryChunkContextCache" not in embedding_cache_module.__all__
+    assert "NoChunkContextCache" not in embedding_cache_module.__all__
+    assert "SqliteChunkContextCache" not in embedding_cache_module.__all__
+    assert "sha256_text" not in embedding_cache_module.__all__
+
+
+def test_stability_docs_do_not_overclaim_provider_root_vector_store_exports() -> None:
+    stability = Path("docs/stability.md").read_text(encoding="utf-8")
+
+    assert "the default Qdrant vector-store adapter" in stability
+    assert "optional/utility vector stores stay in their owning modules" in stability
+    assert "vector store adapters" not in stability
+
+
 def test_converter_exports_are_curated() -> None:
     assert converters_module.__all__ == (
         "BaseConverter",
@@ -344,6 +748,30 @@ def test_converter_exports_are_curated() -> None:
     # Concrete converters stay private; consumers go through get_converter/convert_file.
     assert not hasattr(converters_module, "PdfConverter")
     assert not hasattr(converters_module, "TextConverter")
+
+
+def test_documents_exports_are_curated() -> None:
+    assert documents_module.__all__ == (
+        "AnthropicChunkContextualizer",
+        "CHUNKING_STRATEGIES",
+        "CachingContextualizer",
+        "ChunkContextRequest",
+        "ChunkContextualizer",
+        "CommandOcrProvider",
+        "LocalParseError",
+        "NoOpContextualizer",
+        "OCR_PROVIDERS",
+        "OcrProvider",
+        "OcrRequest",
+        "OcrResult",
+        "build_gemini_ocr_provider",
+        "build_mistral_ocr_provider",
+        "create_chunking_strategy",
+        "create_ocr_provider",
+        "parse_file_bytes",
+    )
+    assert not hasattr(documents_module, "PdfConverter")
+    assert not hasattr(documents_module, "PdfInspectorDetectionResult")
 
 
 def test_lazy_public_modules_do_not_type_unknown_attributes_as_any() -> None:

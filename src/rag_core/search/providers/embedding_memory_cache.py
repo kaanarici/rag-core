@@ -4,11 +4,17 @@ from __future__ import annotations
 
 from collections import OrderedDict
 
+from rag_core.search.providers.cache_provider_names import (
+    IN_MEMORY_CACHE_PROVIDER,
+    NO_CACHE_PROVIDER,
+)
 from rag_core.search.providers.embedding_cache_models import EmbedCacheKey
 
 
 class NoCache:
     """Default cache that always misses."""
+
+    provider_name = NO_CACHE_PROVIDER
 
     async def get(self, key: EmbedCacheKey) -> list[float] | None:
         return None
@@ -19,6 +25,8 @@ class NoCache:
 
 class InMemoryCache:
     """LRU dict-backed embedding cache."""
+
+    provider_name = IN_MEMORY_CACHE_PROVIDER
 
     def __init__(self, *, max_entries: int | None = None) -> None:
         if max_entries is not None and max_entries <= 0:

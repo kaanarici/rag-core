@@ -54,19 +54,25 @@ from rag_core.events.types import (
     SearchStageCompleted,
     StageError,
 )
+from rag_core.events.trace_payload_fields import TRACE_ABSENT_LABEL
 from rag_core.core_prepare import parse_document_bytes
 from rag_core.search.providers.embedding_cache import InMemoryCache
 from rag_core.search.planning import QUERY_PLAN_PRESETS, query_plan_preset
-from rag_core.search.searcher_pipeline import default_search_pipeline
+from rag_core.search.pipeline_runner_defaults import default_search_pipeline
 from rag_core.search.query_plan import (
+    PRIMARY_DENSE_QUERY_VECTOR,
     DenseChannel,
     Prefetch,
     PrefetchFusion,
     QueryPlan,
     SparseChannel,
 )
-from rag_core.search.search_plan_trace import emit_search_planned
-from rag_core.search.searcher import SearchOrchestrator, SearchRequest
+from rag_core.search.query_plan_trace import emit_query_plan_trace_event
+from rag_core.search.pipeline_runner import (
+    SearchExecutionOptions,
+    SearchPipelineRunner,
+    SearchRequest,
+)
 from rag_core.search.types import RerankBudget, SparseVector, Term
 
 from tests.support import (
@@ -80,33 +86,35 @@ from tests.support import (
 )
 
 
+_DENSE_PRIMARY_CHANNEL = f"dense:dense:{PRIMARY_DENSE_QUERY_VECTOR}"
+
 _EXPECTED_PLAN_TRACE_BY_PRESET = {
     "hybrid_rrf": {
-        "channels": ("dense:dense:primary", "sparse:bm25:bm25"),
+        "channels": (_DENSE_PRIMARY_CHANNEL, "sparse:bm25:bm25"),
         "prefetch_limits": (20, 20),
         "fusion": "rrf",
-        "plan_rerank": "none",
+        "plan_rerank": TRACE_ABSENT_LABEL,
     },
     "dense_only": {
-        "channels": ("dense:dense:primary",),
+        "channels": (_DENSE_PRIMARY_CHANNEL,),
         "prefetch_limits": (20,),
-        "fusion": "none",
-        "plan_rerank": "none",
+        "fusion": TRACE_ABSENT_LABEL,
+        "plan_rerank": TRACE_ABSENT_LABEL,
     },
     "sparse_only": {
         "channels": ("sparse:bm25:bm25",),
         "prefetch_limits": (20,),
-        "fusion": "none",
-        "plan_rerank": "none",
+        "fusion": TRACE_ABSENT_LABEL,
+        "plan_rerank": TRACE_ABSENT_LABEL,
     },
     "hybrid_dbsf": {
-        "channels": ("dense:dense:primary", "sparse:bm25:bm25"),
+        "channels": (_DENSE_PRIMARY_CHANNEL, "sparse:bm25:bm25"),
         "prefetch_limits": (20, 20),
         "fusion": "dbsf",
-        "plan_rerank": "none",
+        "plan_rerank": TRACE_ABSENT_LABEL,
     },
     "hybrid_with_mmr": {
-        "channels": ("dense:dense:primary", "sparse:bm25:bm25"),
+        "channels": (_DENSE_PRIMARY_CHANNEL, "sparse:bm25:bm25"),
         "prefetch_limits": (20, 20),
         "fusion": "rrf",
         "plan_rerank": "mmr",
@@ -676,20 +684,20 @@ def test_search_emits_started_and_completed_with_scope() -> None:
     assert started.corpus_ids == ("corp",)
     assert started.limit == 5
     assert completed.result_count == 1
-    assert completed.used_rerank is False
+    assert completed.applied_rerank is False
 
 
 def test_search_completed_distinguishes_requested_attempted_and_applied_rerank() -> None:
     async def scenario() -> SearchCompleted:
         buffer = EventBuffer()
-        orchestrator = SearchOrchestrator(
+        pipeline_runner = SearchPipelineRunner(
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(),
             vector_store=RecordingVectorStore(search_results=[make_search_result(id="hit-1")]),
             reranker=FakeReranker(error=RuntimeError("rerank failed")),
             event_sink=buffer,
         )
-        await orchestrator.search(
+        await pipeline_runner.search(
             SearchRequest(
                 query="fox",
                 namespace="ns",
@@ -705,13 +713,12 @@ def test_search_completed_distinguishes_requested_attempted_and_applied_rerank()
     assert completed.requested_rerank is True
     assert completed.attempted_rerank is True
     assert completed.applied_rerank is False
-    assert completed.used_rerank is False
 
 
 def test_search_completed_reports_unapplied_sidecar_when_scope_rejects_hits() -> None:
     async def scenario() -> SearchCompleted:
         buffer = EventBuffer()
-        orchestrator = SearchOrchestrator(
+        pipeline_runner = SearchPipelineRunner(
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(),
             vector_store=RecordingVectorStore(search_results=[make_search_result(id="vector-hit", namespace="ns")]),
@@ -720,13 +727,13 @@ def test_search_completed_reports_unapplied_sidecar_when_scope_rejects_hits() ->
             ),
             event_sink=buffer,
         )
-        await orchestrator.search(
+        await pipeline_runner.search(
             SearchRequest(
                 query="fox",
                 namespace="ns",
                 corpus_ids=["corp"],
                 limit=5,
-                use_lexical_search=True,
+                execution=SearchExecutionOptions(use_lexical_search=True),
             )
         )
         [completed] = [event for event in buffer.events if isinstance(event, SearchCompleted)]
@@ -736,7 +743,6 @@ def test_search_completed_reports_unapplied_sidecar_when_scope_rejects_hits() ->
     assert completed.requested_sidecar is True
     assert completed.attempted_sidecar is True
     assert completed.applied_sidecar is False
-    assert completed.used_sidecar is False
 
 
 def test_search_dense_embed_completed_reports_cache_bypass() -> None:
@@ -765,21 +771,25 @@ def test_search_with_precomputed_vectors_emits_no_embed_events() -> None:
     async def scenario() -> EventBuffer:
         buffer = EventBuffer()
         store = RecordingVectorStore(search_results=[make_search_result(id="hit-1")])
-        orchestrator = SearchOrchestrator(
+        pipeline_runner = SearchPipelineRunner(
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(),
             vector_store=store,
             event_sink=buffer,
         )
-        await orchestrator.search(
+        await pipeline_runner.search(
             SearchRequest(
                 query="unused",
                 namespace="ns",
                 corpus_ids=["corp"],
                 limit=5,
                 rerank=False,
-                query_vector=[1.0, 2.0, 3.0, 4.0],
-                query_sparse_vectors={"bm25": SparseVector(indices=[1], values=[1.0])},
+                execution=SearchExecutionOptions(
+                    query_vector=[1.0, 2.0, 3.0, 4.0],
+                    query_sparse_vectors={
+                        "bm25": SparseVector(indices=[1], values=[1.0])
+                    },
+                ),
             )
         )
         return buffer
@@ -788,7 +798,7 @@ def test_search_with_precomputed_vectors_emits_no_embed_events() -> None:
     assert not [e for e in buffer.events if isinstance(e, (EmbedRequested, EmbedCompleted))]
 
 
-def test_search_plan_and_stage_trace_strips_query_text_and_records_budget() -> None:
+def test_query_plan_and_stage_trace_strips_query_text_and_records_budget() -> None:
     async def scenario() -> EventBuffer:
         buffer = EventBuffer()
         store = RecordingVectorStore(search_results=[make_search_result(id="hit-1")])
@@ -811,7 +821,7 @@ def test_search_plan_and_stage_trace_strips_query_text_and_records_budget() -> N
 
     buffer = asyncio.run(scenario())
     [planned] = [e for e in buffer.events if isinstance(e, SearchPlanned)]
-    assert planned.channels == ("dense:dense:primary", "sparse:bm25:bm25")
+    assert planned.channels == (_DENSE_PRIMARY_CHANNEL, "sparse:bm25:bm25")
     assert planned.fusion == "rrf"
     assert planned.plan_rerank == "mmr"
     assert planned.metadata_filter == "Term"
@@ -832,7 +842,7 @@ def test_search_plan_and_stage_trace_strips_query_text_and_records_budget() -> N
     assert "sensitive billing question" not in str(stages)
 
 
-def test_search_plan_trace_uses_provider_aware_default_plan() -> None:
+def test_query_plan_trace_uses_provider_aware_default_plan() -> None:
     buffer = EventBuffer()
     class ProviderAwareStore(RecordingVectorStore):
         def default_query_plan(self, *, result_limit: int) -> QueryPlan:
@@ -849,11 +859,12 @@ def test_search_plan_trace_uses_provider_aware_default_plan() -> None:
                 ),
                 fuse=PrefetchFusion(),
                 final_limit=result_limit,
+                search_profile="balanced",
             )
 
     store = ProviderAwareStore()
 
-    emit_search_planned(
+    emit_query_plan_trace_event(
         buffer,
         namespace="ns",
         corpus_ids=["corp"],
@@ -869,7 +880,8 @@ def test_search_plan_trace_uses_provider_aware_default_plan() -> None:
     )
 
     [planned] = [event for event in buffer.events if isinstance(event, SearchPlanned)]
-    assert planned.channels == ("dense:dense:primary", "sparse:splade:splade")
+    assert planned.search_profile == "balanced"
+    assert planned.channels == (_DENSE_PRIMARY_CHANNEL, "sparse:splade:splade")
 
 
 def test_plan_trace_expectations_cover_every_preset() -> None:
@@ -910,7 +922,7 @@ def test_search_planned_event_matches_preset_shape(
     assert planned.fusion == expected["fusion"]
     assert planned.plan_rerank == expected["plan_rerank"]
     assert planned.final_limit == 4
-    assert planned.metadata_filter == "none"
+    assert planned.metadata_filter == TRACE_ABSENT_LABEL
     assert "private preset probe" not in str(planned)
 
 

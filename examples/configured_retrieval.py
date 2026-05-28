@@ -11,7 +11,8 @@ Run from repo root::
 
     uv run python -m examples.configured_retrieval
 
-Not part of default CI (no secrets in GitHub).
+The command is not executed by default CI because it requires credentials, but
+the file is still source-checked and packaged.
 """
 
 from __future__ import annotations
@@ -22,13 +23,12 @@ import sys
 import uuid
 from pathlib import Path
 
-from rag_core import RAGCore
+from rag_core import RAGCore, RAGCoreConfig
 from rag_core.config import EmbeddingConfig, QdrantConfig
-from rag_core.core_models import RAGCoreConfig
 
 EXAMPLES_DIR = Path(__file__).parent
 CORPUS_DIR = EXAMPLES_DIR / "demo_corpus"
-_NAMESPACE = "tenant:acme"
+_NAMESPACE = "acme"
 _CORPUS_ID = "help-center"
 
 
@@ -76,16 +76,10 @@ async def run() -> None:
             max_chars=2_000,
         )
         print("Configured retrieval (semantic embeddings)")
-        print(pack.as_text())
-        print("\nCitations:")
-        for source in pack.citations:
-            title = (
-                source.title
-                or source.document_key
-                or source.document_id
-                or source.result_id
-            )
-            print(f"- {source.source_id}: {title}")
+        print(pack.as_prompt_text())
+        if pack.prompt_citation_summary:
+            print("\nCitations:")
+            print(pack.prompt_citation_summary)
 
 
 def main() -> int:

@@ -17,6 +17,7 @@ from .base import (
     QualityVerdict,
     score_text_quality,
 )
+from .converter_keys import PDF_CONVERTER_KEY
 from .pdf_converter_extraction import extract_pdf
 from .pdf_converter_inspector import (
     _get_inspector_markdown,
@@ -48,7 +49,7 @@ class PdfConverter(HybridConverter):
     ingest pipeline can OCR only the pages that need it.
     """
 
-    format_name = "pdf"
+    format_name = PDF_CONVERTER_KEY
 
     async def convert(
         self,
@@ -67,7 +68,11 @@ class PdfConverter(HybridConverter):
             )
             raise ValueError("PDF parse failed (%s)" % type(root).__name__) from exc
 
-        if result.content and result.quality and result.quality.verdict == QualityVerdict.GOOD:
+        if (
+            result.content
+            and result.quality
+            and result.quality.verdict == QualityVerdict.GOOD
+        ):
             logger.debug(
                 "%s extracted via text layer (%d chars)",
                 self.format_name,
@@ -119,9 +124,9 @@ class PdfConverter(HybridConverter):
                 page_count=page_count,
             )
 
-        if not _inspector_is_text_based(detection) and not _inspector_supports_page_level_routing(
+        if not _inspector_is_text_based(
             detection
-        ):
+        ) and not _inspector_supports_page_level_routing(detection):
             logger.info(
                 "PDF Inspector classified PDF as route=%s; inspector_path=%s page_count=%d fallback_path=%s",
                 route or "unknown",

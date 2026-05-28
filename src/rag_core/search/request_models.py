@@ -1,4 +1,4 @@
-"""Search request, delete, rerank, and stored-record models."""
+"""Provider query, sidecar query, delete, rerank, and stored-record models."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
+from rag_core.retrieval_defaults import DEFAULT_SEARCH_LIMIT
 from rag_core.search.filters import Filter
 from rag_core.search.sparse_channels import merge_sparse_channels
 from rag_core.search.vector_models import SparseVector, _validate_dense_vector
@@ -67,7 +68,7 @@ class RerankBudget:
 
 @dataclass
 class SearchQuery:
-    """Parameters for a search query."""
+    """Vector-store execution query after embedding and pipeline planning."""
 
     dense_vector: list[float]
     sparse_vector: SparseVector
@@ -76,7 +77,7 @@ class SearchQuery:
     sparse_vectors: dict[str, SparseVector] = field(default_factory=dict)
     content_types: Optional[list[str]] = None
     document_ids: Optional[list[str]] = None
-    limit: int = 20
+    limit: int = DEFAULT_SEARCH_LIMIT
     query_plan: "QueryPlan | None" = None
     metadata_filter: Filter | None = None
     lexical_query: str | None = None
@@ -84,6 +85,9 @@ class SearchQuery:
     def __post_init__(self) -> None:
         _validate_dense_vector(self.dense_vector, "SearchQuery.dense_vector")
         _require_non_blank_string(self.namespace, "SearchQuery.namespace")
+        _require_non_blank_string_items(self.corpus_ids, "SearchQuery.corpus_ids")
+        _require_non_blank_string_items(self.content_types, "SearchQuery.content_types")
+        _require_non_blank_string_items(self.document_ids, "SearchQuery.document_ids")
         _require_positive_int(self.limit, "SearchQuery.limit")
         if self.lexical_query is not None and not isinstance(self.lexical_query, str):
             raise ValueError("SearchQuery.lexical_query must be a string")
@@ -102,18 +106,28 @@ class SearchQuery:
 
 @dataclass(frozen=True)
 class SearchSidecarQuery:
-    """Portable search request for optional lexical/exact sidecars."""
+    """Sidecar execution query for optional lexical/exact-match providers."""
 
     query: str
     namespace: str
     corpus_ids: list[str]
-    limit: int = 20
+    limit: int = DEFAULT_SEARCH_LIMIT
     content_types: Optional[list[str]] = None
     document_ids: Optional[list[str]] = None
     metadata_filter: Filter | None = None
 
     def __post_init__(self) -> None:
+        _require_non_blank_string(self.query, "SearchSidecarQuery.query")
         _require_non_blank_string(self.namespace, "SearchSidecarQuery.namespace")
+        _require_non_blank_string_items(
+            self.corpus_ids, "SearchSidecarQuery.corpus_ids"
+        )
+        _require_non_blank_string_items(
+            self.content_types, "SearchSidecarQuery.content_types"
+        )
+        _require_non_blank_string_items(
+            self.document_ids, "SearchSidecarQuery.document_ids"
+        )
         _require_positive_int(self.limit, "SearchSidecarQuery.limit")
 
 
@@ -134,3 +148,16 @@ def _require_positive_int(value: int, field_name: str) -> None:
 def _require_non_blank_string(value: str, field_name: str) -> None:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} must be a non-empty string")
+
+
+def _require_non_blank_string_items(
+    values: list[str] | None,
+    field_name: str,
+) -> None:
+    if values is None:
+        return
+    if not isinstance(values, list):
+        raise ValueError(f"{field_name} must contain non-empty strings")
+    for value in values:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{field_name} must contain non-empty strings")

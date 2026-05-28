@@ -11,7 +11,7 @@ from .core_models import PreparedChunk
 if TYPE_CHECKING:
     from rag_core.documents.contextualizer import ChunkContextualizer
     from rag_core.events.sink import EventSink
-    from rag_core.search.providers.embedding_cache import ChunkContextCache
+    from rag_core.search.providers.chunk_context_cache import ChunkContextCache
 
 
 async def apply_contextualizer(
@@ -31,7 +31,7 @@ async def apply_contextualizer(
     resolved = contextualizer
     if chunk_context_cache is not None:
         from rag_core.documents.contextualizer_adapters import CachingContextualizer
-        from rag_core.search.providers.embedding_cache import sha256_text
+        from rag_core.search.providers.embedding_cache_models import sha256_text
 
         document_sha256 = sha256_text(markdown)
         resolved = CachingContextualizer(

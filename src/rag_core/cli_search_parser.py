@@ -6,6 +6,7 @@ from rag_core.cli_config_parser import add_config_flags
 from rag_core.cli_events_parser import add_events_jsonl_flag
 from rag_core.cli_help_examples import apply_command_examples
 from rag_core.cli_profile_help import query_plan_preset_help, search_profile_help
+from rag_core.retrieval_defaults import DEFAULT_CONTEXT_LIMIT, DEFAULT_SEARCH_LIMIT
 from rag_core.search.planning import QUERY_PLAN_PRESETS, SEARCH_PROFILES
 
 
@@ -19,14 +20,16 @@ def add_search_command(
         context_json_default=False,
         include_context_toggle=False,
         include_context_budget=False,
+        limit_default=DEFAULT_SEARCH_LIMIT,
     )
 
     _add_query_like_command(
         subparsers,
         "retrieve-context",
-        help="Search and emit a model-ready context pack JSON payload.",
+        help="Search and emit context pack JSON with prompt-safe context_text.",
         context_json_default=True,
         include_context_toggle=False,
+        limit_default=DEFAULT_CONTEXT_LIMIT,
     )
 
 
@@ -38,6 +41,7 @@ def _add_query_like_command(
     context_json_default: bool,
     include_context_toggle: bool = True,
     include_context_budget: bool = True,
+    limit_default: int = DEFAULT_SEARCH_LIMIT,
 ) -> argparse.ArgumentParser:
     query = subparsers.add_parser(
         name,
@@ -52,7 +56,19 @@ def _add_query_like_command(
         default=[],
         help="Repeatable. At least one corpus must be specified.",
     )
-    query.add_argument("--limit", type=int, default=10)
+    query.add_argument(
+        "--content-type",
+        action="append",
+        default=[],
+        help="Repeatable. Narrow results to a content type such as document or code.",
+    )
+    query.add_argument(
+        "--document-id",
+        action="append",
+        default=[],
+        help="Repeatable. Narrow results to a document id inside the corpus scope.",
+    )
+    query.add_argument("--limit", type=int, default=limit_default)
     query.add_argument(
         "--rerank",
         action="store_true",
@@ -89,7 +105,10 @@ def _add_query_like_command(
         query.add_argument(
             "--context-json",
             action="store_true",
-            help="Emit a model-ready context pack JSON payload instead of raw search hits.",
+            help=(
+                "Emit context pack JSON with prompt-safe context_text instead of raw "
+                "search hits."
+            ),
         )
     query.set_defaults(max_context_chars=None, max_context_tokens=None)
     if include_context_budget:

@@ -10,13 +10,23 @@ from rag_core.contracts import (
     SEARCH_USER_DOCUMENTS_DEFAULT_MAX_CHARS,
 )
 from rag_core.integrations.openai_agents import build_retrieve_context_tool
+from rag_core.search import DenseChannel, Prefetch, QueryPlan
 
 
 class _Pack:
     def as_text(self) -> str:
-        return "context"
+        return "app context"
+
+    def as_prompt_text(self) -> str:
+        return "safe context"
 
     def to_payload(self) -> dict[str, object]:
+        return {
+            "query": "billing",
+            "snippets": [{"source": {"source_id": "private", "result_id": "hit"}}],
+        }
+
+    def to_prompt_payload(self) -> dict[str, object]:
         return {
             "query": "billing",
             "snippets": [],
@@ -33,6 +43,10 @@ class _Pack:
         }
 
 
+def _sample_query_plan() -> QueryPlan:
+    return QueryPlan(prefetches=(Prefetch(channel=DenseChannel(), limit=5),))
+
+
 class _Core:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
@@ -44,9 +58,11 @@ class _Core:
         namespace: str,
         corpus_ids: list[str],
         limit: int,
+        content_types: list[str] | None,
         document_ids: list[str] | None,
         rerank: bool,
         use_lexical_search: bool,
+        query_plan: QueryPlan | None,
         max_chars: int | None,
         max_tokens: int | None,
     ) -> _Pack:
@@ -56,9 +72,11 @@ class _Core:
                 "namespace": namespace,
                 "corpus_ids": corpus_ids,
                 "limit": limit,
+                "content_types": content_types,
                 "document_ids": document_ids,
                 "rerank": rerank,
                 "use_lexical_search": use_lexical_search,
+                "query_plan": query_plan,
                 "max_chars": max_chars,
                 "max_tokens": max_tokens,
             }
@@ -93,7 +111,11 @@ def test_openai_agents_tool_uses_shared_request_defaults(
 ) -> None:
     _install_fake_agents(monkeypatch)
     core = _Core()
-    tool_fn = build_retrieve_context_tool(core, namespace=" acme ", corpus_ids=["help"])
+    tool_fn = build_retrieve_context_tool(
+        core,
+        namespace=" acme ",
+        corpus_ids=[" help "],
+    )
 
     asyncio.run(tool_fn(query=" billing ", document_ids=[" doc-1 "]))
 
@@ -103,9 +125,11 @@ def test_openai_agents_tool_uses_shared_request_defaults(
             "namespace": "acme",
             "corpus_ids": ["help"],
             "limit": SEARCH_USER_DOCUMENTS_DEFAULT_LIMIT,
+            "content_types": None,
             "document_ids": ["doc-1"],
             "rerank": False,
             "use_lexical_search": True,
+            "query_plan": None,
             "max_chars": SEARCH_USER_DOCUMENTS_DEFAULT_MAX_CHARS,
             "max_tokens": None,
         }
@@ -131,6 +155,24 @@ def test_openai_agents_tool_preserves_explicit_default_budget_config(
     assert core.calls[0]["max_tokens"] == 256
 
 
+def test_openai_agents_tool_binds_query_plan_at_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_agents(monkeypatch)
+    core = _Core()
+    query_plan = _sample_query_plan()
+    tool_fn = build_retrieve_context_tool(
+        core,
+        namespace="acme",
+        corpus_ids=["help"],
+        query_plan=query_plan,
+    )
+
+    asyncio.run(tool_fn(query="billing"))
+
+    assert core.calls[0]["query_plan"] is query_plan
+
+
 def test_openai_agents_tool_rejects_blank_namespace_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -138,6 +180,23 @@ def test_openai_agents_tool_rejects_blank_namespace_config(
 
     with pytest.raises(ValueError, match="namespace must not be empty"):
         build_retrieve_context_tool(_Core(), namespace="   ", corpus_ids=["help"])
+
+
+def test_openai_agents_tool_rejects_blank_bound_scope_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_agents(monkeypatch)
+
+    with pytest.raises(ValueError, match="corpus_ids must contain non-empty strings"):
+        build_retrieve_context_tool(_Core(), namespace="acme", corpus_ids=[" "])
+
+    with pytest.raises(ValueError, match="document_ids must contain non-empty strings"):
+        build_retrieve_context_tool(
+            _Core(),
+            namespace="acme",
+            corpus_ids=["help"],
+            document_ids=[" "],
+        )
 
 
 def test_openai_agents_tool_uses_static_document_scope_by_default(
@@ -149,7 +208,7 @@ def test_openai_agents_tool_uses_static_document_scope_by_default(
         core,
         namespace="acme",
         corpus_ids=["help"],
-        document_ids=["doc-1"],
+        document_ids=[" doc-1 "],
     )
 
     asyncio.run(tool_fn(query="billing"))

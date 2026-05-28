@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import Sequence
 
+from rag_core.config import PRECHUNKED_CHUNKING_STRATEGY
 from rag_core.documents.chunking.router import chunk_text
 
 from .core_models import PreparedChunk
@@ -33,7 +34,7 @@ def prepare_pre_chunked_texts(
     *,
     embedding_texts: Sequence[str] | None = None,
     chunk_metadata: Sequence[Mapping[str, object]] | None = None,
-    chunking_strategy: str = "prechunked",
+    chunking_strategy: str = PRECHUNKED_CHUNKING_STRATEGY,
 ) -> list[PreparedChunk]:
     resolved = resolve_embedding_texts(texts, embedding_texts)
     resolved_metadata = _resolve_chunk_metadata(texts, chunk_metadata)

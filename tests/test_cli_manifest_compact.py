@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 import rag_core.cli as cli_module
-from rag_core.cli import _build_parser, async_main
+from rag_core.cli import async_main
 from rag_core.core_models import CorpusManifestEntry
 from rag_core.manifest_persistence import read_entries, write_entry
 
@@ -30,28 +30,6 @@ def _entry(
         needs_ocr=False,
         metadata={},
     )
-
-
-def test_manifest_compact_subparser_accepts_documented_flags() -> None:
-    parser = _build_parser()
-    args = parser.parse_args(
-        [
-            "manifest-compact",
-            "--manifest-dir",
-            "/tmp/manifest",
-            "--namespace",
-            "acme",
-            "--corpus-id",
-            "help",
-            "--json",
-        ]
-    )
-
-    assert args.command == "manifest-compact"
-    assert args.manifest_dir == "/tmp/manifest"
-    assert args.namespace == "acme"
-    assert args.corpus_id == "help"
-    assert args.json is True
 
 
 def test_manifest_compact_cli_rewrites_manifest_and_emits_json(

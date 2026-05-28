@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from rag_core.core_models import IngestedDocument, RAGCoreConfig
+from rag_core.config.ingest_config import DEFAULT_INGEST_MAX_CONCURRENCY
+from rag_core.core_models import DeleteDocumentResult, IngestedDocument, RAGCoreConfig
 from rag_core.facade.ingest_batches import (
     ingest_archive_from_facade,
     ingest_files_from_facade,
@@ -48,7 +49,7 @@ class _IngestEngine(Protocol):
         document_id: str,
         namespace: str,
         corpus_id: str,
-    ) -> None: ...
+    ) -> DeleteDocumentResult: ...
 
 
 class _RAGCoreIngestMethods:
@@ -115,7 +116,7 @@ class _RAGCoreIngestMethods:
         corpus_id: str,
         metadata: dict[str, str] | None = None,
         force_reindex: bool = False,
-        max_concurrency: int = 1,
+        max_concurrency: int = DEFAULT_INGEST_MAX_CONCURRENCY,
         manifest_dir: str | Path | None = None,
     ) -> "LocalIngestResult":
         return await ingest_files_from_facade(
@@ -139,7 +140,7 @@ class _RAGCoreIngestMethods:
         corpus_id: str,
         metadata: dict[str, str] | None = None,
         force_reindex: bool = False,
-        max_concurrency: int = 1,
+        max_concurrency: int = DEFAULT_INGEST_MAX_CONCURRENCY,
         archive_limits: "ArchiveLimits | None" = None,
         manifest_dir: str | Path | None = None,
     ) -> "LocalIngestResult":
@@ -193,7 +194,7 @@ class _RAGCoreIngestMethods:
         corpus_id: str,
         metadata: dict[str, str] | None = None,
         force_reindex: bool = False,
-        max_concurrency: int = 1,
+        max_concurrency: int = DEFAULT_INGEST_MAX_CONCURRENCY,
         fetch_client: "FetchClient | None" = None,
         fetch_policy: "FetchSecurityPolicy | None" = None,
         fetch_limits: "FetchLimits | None" = None,
@@ -222,8 +223,8 @@ class _RAGCoreIngestMethods:
         document_id: str,
         namespace: str,
         corpus_id: str,
-    ) -> None:
-        await self._ingest.delete_document(
+    ) -> DeleteDocumentResult:
+        return await self._ingest.delete_document(
             document_id=document_id,
             namespace=namespace,
             corpus_id=corpus_id,

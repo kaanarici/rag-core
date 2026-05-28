@@ -8,7 +8,7 @@ from rag_core.core_lifecycle import compute_content_sha256
 from rag_core.local_ingest_models import LocalIngestRequest
 from rag_core.local_ingest_planning import build_local_ingest_plan
 from rag_core.local_search_models import LocalSearchRequest
-from rag_core.local_search_planning import build_local_search_plan
+from rag_core.local_search_planning import build_local_search_run_spec
 from rag_core.sources import (
     LocalFileSourceReader,
     document_key as local_document_key,
@@ -145,7 +145,7 @@ def test_local_file_source_reader_rejects_symlinked_roots(
     assert alias_plan.items == ()
 
 
-def test_local_search_plan_rejects_symlinked_roots(tmp_path: Path) -> None:
+def test_local_search_run_spec_rejects_symlinked_roots(tmp_path: Path) -> None:
     if not hasattr(os, "symlink"):
         pytest.skip("symlinks are unavailable on this platform")
     docs = tmp_path / "docs"
@@ -155,7 +155,7 @@ def test_local_search_plan_rejects_symlinked_roots(tmp_path: Path) -> None:
     alias.symlink_to(docs, target_is_directory=True)
 
     with pytest.raises(ValueError, match="does not allow symlink paths"):
-        build_local_search_plan(LocalSearchRequest(path=alias, query="single"))
+        build_local_search_run_spec(LocalSearchRequest(path=alias, query="single"))
 
 
 def test_local_file_source_reader_single_file_key_does_not_collide_on_basename(
@@ -298,7 +298,9 @@ def test_relative_local_sources_reject_symlinked_logical_cwd(
     assert plan.items == ()
     with pytest.raises(ValueError, match="does not allow symlink paths"):
         build_local_ingest_plan(
-            LocalIngestRequest(path=Path("target.md"), namespace="acme", corpus_id="help")
+            LocalIngestRequest(
+                path=Path("target.md"), namespace="acme", corpus_id="help"
+            )
         )
 
 
@@ -352,7 +354,7 @@ def test_local_file_source_reader_skips_glob_symlink_aliases_inside_requested_ro
     assert [item.path for item in plan.items] == [target]
 
 
-def test_local_search_plan_skips_directory_symlinks_outside_requested_root(
+def test_local_search_run_spec_skips_directory_symlinks_outside_requested_root(
     tmp_path: Path,
 ) -> None:
     docs = tmp_path / "docs"
@@ -366,15 +368,15 @@ def test_local_search_plan_skips_directory_symlinks_outside_requested_root(
     alias = docs / "alias.md"
     alias.symlink_to(target)
 
-    plan = build_local_search_plan(
+    run_spec = build_local_search_run_spec(
         LocalSearchRequest(path=docs, query="hello", max_files=20)
     )
 
-    assert [document.path for document in plan.documents] == [inside_file]
-    assert plan.skipped_unsupported_count == 1
+    assert [document.path for document in run_spec.documents] == [inside_file]
+    assert run_spec.skipped_unsupported_count == 1
 
 
-def test_local_search_plan_skips_directory_symlink_aliases_inside_requested_root(
+def test_local_search_run_spec_skips_directory_symlink_aliases_inside_requested_root(
     tmp_path: Path,
 ) -> None:
     docs = tmp_path / "docs"
@@ -384,18 +386,18 @@ def test_local_search_plan_skips_directory_symlink_aliases_inside_requested_root
     alias = docs / "alias.md"
     alias.symlink_to(target)
 
-    plan = build_local_search_plan(
+    run_spec = build_local_search_run_spec(
         LocalSearchRequest(path=docs, query="hello", max_files=20)
     )
 
-    assert [document.path for document in plan.documents] == [target]
-    assert [document.document_key for document in plan.documents] == [
+    assert [document.path for document in run_spec.documents] == [target]
+    assert [document.document_key for document in run_spec.documents] == [
         local_document_key(docs, target)
     ]
-    assert plan.skipped_unsupported_count == 1
+    assert run_spec.skipped_unsupported_count == 1
 
 
-def test_local_search_plan_dedupes_hardlinked_aliases(tmp_path: Path) -> None:
+def test_local_search_run_spec_dedupes_hardlinked_aliases(tmp_path: Path) -> None:
     if not hasattr(os, "link"):
         pytest.skip("hardlinks are unavailable on this platform")
     docs = tmp_path / "docs"
@@ -405,15 +407,15 @@ def test_local_search_plan_dedupes_hardlinked_aliases(tmp_path: Path) -> None:
     alias = docs / "b.md"
     os.link(target, alias)
 
-    plan = build_local_search_plan(
+    run_spec = build_local_search_run_spec(
         LocalSearchRequest(path=docs, query="target", max_files=20)
     )
 
-    assert [document.path for document in plan.documents] == [target]
-    assert plan.skipped_unsupported_count == 1
+    assert [document.path for document in run_spec.documents] == [target]
+    assert run_spec.skipped_unsupported_count == 1
 
 
-def test_local_search_plan_ignores_unreadable_empty_package_marker(
+def test_local_search_run_spec_ignores_unreadable_empty_package_marker(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -432,15 +434,15 @@ def test_local_search_plan_ignores_unreadable_empty_package_marker(
 
     monkeypatch.setattr(Path, "read_text", fail_marker_read)
 
-    plan = build_local_search_plan(
+    run_spec = build_local_search_run_spec(
         LocalSearchRequest(path=docs, query="note", max_files=20)
     )
 
-    assert [document.path for document in plan.documents] == [note]
-    assert plan.skipped_empty_count == 0
+    assert [document.path for document in run_spec.documents] == [note]
+    assert run_spec.skipped_empty_count == 0
 
 
-def test_local_search_plan_keeps_unreadable_substantive_package_file(
+def test_local_search_run_spec_keeps_unreadable_substantive_package_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -457,8 +459,8 @@ def test_local_search_plan_keeps_unreadable_substantive_package_file(
 
     monkeypatch.setattr(Path, "read_text", fail_marker_read)
 
-    plan = build_local_search_plan(
+    run_spec = build_local_search_run_spec(
         LocalSearchRequest(path=docs, query="value", max_files=20)
     )
 
-    assert [document.path for document in plan.documents] == [marker]
+    assert [document.path for document in run_spec.documents] == [marker]

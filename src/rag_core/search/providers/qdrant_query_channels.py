@@ -11,7 +11,7 @@ from rag_core.search.query_plan import (
     SparseChannel,
     UnsupportedQueryStage,
 )
-from rag_core.search.types import SearchQuery
+from rag_core.search.request_models import SearchQuery
 
 from .qdrant_shared import _DENSE_VECTOR_NAME
 

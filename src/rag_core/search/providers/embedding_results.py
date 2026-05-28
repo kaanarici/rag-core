@@ -7,25 +7,7 @@ from collections.abc import Sequence
 from numbers import Real
 from typing import TypeGuard
 
-
-def _safe_value_type(value: object) -> str:
-    if isinstance(value, bool):
-        return "bool"
-    if isinstance(value, int):
-        return "int"
-    if isinstance(value, float):
-        return "float"
-    if isinstance(value, str):
-        return "str"
-    if value is None:
-        return "none"
-    if isinstance(value, list):
-        return "list"
-    if isinstance(value, tuple):
-        return "tuple"
-    if isinstance(value, Sequence):
-        return "sequence"
-    return "object"
+from rag_core.search.providers.provider_result_values import safe_provider_value_type
 
 
 def _is_int_index(value: object) -> TypeGuard[int]:
@@ -58,7 +40,7 @@ def safe_indexed_embedding_vectors(
             raise ValueError(
                 "%s returned invalid embedding index at result index %d "
                 "(value_type=%s)"
-                % (provider_name, result_index, _safe_value_type(raw_index))
+                % (provider_name, result_index, safe_provider_value_type(raw_index))
             )
         if vectors[raw_index] is not None:
             raise ValueError(
@@ -144,7 +126,7 @@ def _validate_embedding_vector(
         raise ValueError(
             "%s returned invalid embedding vector at result index %d "
             "(reason=invalid_type value_type=%s)"
-            % (provider_name, result_index, _safe_value_type(raw_vector))
+            % (provider_name, result_index, safe_provider_value_type(raw_vector))
         )
     if expected_dimensions is not None and len(raw_vector) != expected_dimensions:
         raise ValueError(
@@ -167,7 +149,7 @@ def _validate_embedding_vector(
                     provider_name,
                     result_index,
                     value_index,
-                    _safe_value_type(raw_value),
+                    safe_provider_value_type(raw_value),
                 )
             )
         value = float(raw_value)
@@ -179,7 +161,7 @@ def _validate_embedding_vector(
                     provider_name,
                     result_index,
                     value_index,
-                    _safe_value_type(raw_value),
+                    safe_provider_value_type(raw_value),
                 )
             )
         vector.append(value)

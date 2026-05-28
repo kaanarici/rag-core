@@ -8,7 +8,7 @@ from typing import Protocol, cast
 
 from rag_core.search.policy import VectorStorePolicy
 from rag_core.search.stored_payload import payload_to_result
-from rag_core.search.types import SearchResult
+from rag_core.search.vector_models import SearchResult
 
 _MISSING = object()
 

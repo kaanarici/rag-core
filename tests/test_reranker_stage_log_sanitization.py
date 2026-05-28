@@ -14,6 +14,7 @@ from tests.support import (
     FakeReranker,
     FakeSparseEmbedder,
     RecordingVectorStore,
+    assert_caplog_omits_private,
     make_search_result,
 )
 
@@ -65,7 +66,4 @@ def test_rerank_fallback_warning_is_sanitized(
     assert applied[0].fallback_reason == "RuntimeError"
     assert "fake-reranker" in caplog.text
     assert "RuntimeError" in caplog.text
-    assert "raw provider detail" not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(caplog, "raw provider detail")

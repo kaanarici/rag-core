@@ -5,15 +5,27 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
+from rag_core.config import DEFAULT_RERANKER_PROVIDER
 from rag_core.config.env_access import get_env_bool
-from rag_core.search.providers.cohere import CohereReranker
+from rag_core.retrieval_defaults import DEFAULT_SEARCH_LIMIT
+from rag_core.search.providers.cohere import (
+    COHERE_RERANKER_PROVIDER,
+    DEFAULT_COHERE_RERANKER_MODEL,
+    CohereReranker,
+)
 from rag_core.search.providers.reranker_resolution import (
     _SanitizedRerankerInitError,
     attach_runtime_metadata as _attach_runtime_metadata,
     resolve_reranker_provider,
 )
+from rag_core.search.provider_protocols import RerankerProvider
 from rag_core.search.providers.registry import RERANKER_PROVIDERS
-from rag_core.search.types import RerankResult, RerankerProvider
+from rag_core.search.request_models import RerankResult
+from rag_core.search.providers.voyage import DEFAULT_VOYAGE_RERANKER_MODEL, VOYAGE_PROVIDER
+from rag_core.search.providers.zeroentropy import (
+    DEFAULT_ZEROENTROPY_RERANKER_MODEL,
+    ZEROENTROPY_PROVIDER,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,17 +35,17 @@ class NoOpReranker:
 
     @property
     def provider_name(self) -> str:
-        return "none"
+        return DEFAULT_RERANKER_PROVIDER
 
     @property
     def model_name(self) -> str:
-        return "none"
+        return DEFAULT_RERANKER_PROVIDER
 
     async def rerank(
         self,
         query: str,
         documents: list[str],
-        top_k: int = 10,
+        top_k: int = DEFAULT_SEARCH_LIMIT,
     ) -> list[RerankResult]:
         return [
             RerankResult(index=i, score=1.0 - (i * 0.01), text=doc)
@@ -63,7 +75,10 @@ def _build_cohere_reranker(
     api_key: str | None = None,
     **_: Any,
 ) -> CohereReranker:
-    return CohereReranker(model=model or "rerank-v3.5", api_key=api_key)
+    return CohereReranker(
+        model=model or DEFAULT_COHERE_RERANKER_MODEL,
+        api_key=api_key,
+    )
 
 
 def _build_voyage_reranker(
@@ -75,7 +90,7 @@ def _build_voyage_reranker(
     voyage_cls = _import_voyage_reranker()
     return cast(
         RerankerProvider,
-        voyage_cls(model=model or "rerank-2.5-lite", api_key=api_key),
+        voyage_cls(model=model or DEFAULT_VOYAGE_RERANKER_MODEL, api_key=api_key),
     )
 
 
@@ -88,12 +103,15 @@ def _build_zeroentropy_reranker(
     zeroentropy_cls = _import_zeroentropy_reranker()
     return cast(
         RerankerProvider,
-        zeroentropy_cls(model=model or "zerank-2", api_key=api_key),
+        zeroentropy_cls(
+            model=model or DEFAULT_ZEROENTROPY_RERANKER_MODEL,
+            api_key=api_key,
+        ),
     )
 
 
 def create_reranker(
-    provider: str = "none",
+    provider: str = DEFAULT_RERANKER_PROVIDER,
     model: str | None = None,
     api_key: str | None = None,
 ) -> RerankerProvider:
@@ -103,7 +121,7 @@ def create_reranker(
     missing-API-key fallback) and lookup (the registry instantiates).
     """
 
-    requested = (provider or "none").strip().lower()
+    requested = (provider or DEFAULT_RERANKER_PROVIDER).strip().lower()
     strict = get_env_bool("RERANKER_STRICT_PROVIDER", False)
     effective, fallback_reason = resolve_reranker_provider(requested, api_key=api_key)
     if effective == "invalid":
@@ -138,7 +156,7 @@ def create_reranker(
     )
 
 
-RERANKER_PROVIDERS.register("none", _build_noop_reranker)
-RERANKER_PROVIDERS.register("cohere", _build_cohere_reranker)
-RERANKER_PROVIDERS.register("voyage", _build_voyage_reranker)
-RERANKER_PROVIDERS.register("zeroentropy", _build_zeroentropy_reranker)
+RERANKER_PROVIDERS.register(DEFAULT_RERANKER_PROVIDER, _build_noop_reranker)
+RERANKER_PROVIDERS.register(COHERE_RERANKER_PROVIDER, _build_cohere_reranker)
+RERANKER_PROVIDERS.register(VOYAGE_PROVIDER, _build_voyage_reranker)
+RERANKER_PROVIDERS.register(ZEROENTROPY_PROVIDER, _build_zeroentropy_reranker)

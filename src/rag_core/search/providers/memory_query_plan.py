@@ -9,10 +9,11 @@ from rag_core.search.query_plan import (
     SparseChannel,
     UnsupportedQueryStage,
 )
+from rag_core.search.request_models import SearchQuery
 from rag_core.search.sparse_channels import (
     KNOWN_SPARSE_CHANNELS,
 )
-from rag_core.search.types import SearchQuery, SparseVector
+from rag_core.search.vector_models import SparseVector
 
 from .memory_query_scoring import MemoryPoint
 from .memory_query_scoring import rank_dense_points

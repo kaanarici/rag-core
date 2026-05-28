@@ -6,13 +6,21 @@ from pathlib import Path
 from typing import Sequence
 
 from rag_core.config import (
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_EMBEDDING_PROVIDER,
+    DEFAULT_INGEST_SOURCE_TYPE,
+    DEFAULT_QDRANT_COLLECTION,
+    DEFAULT_QDRANT_DIMENSION_AWARE_COLLECTION,
+    DEFAULT_RERANKER_PROVIDER,
+    DEFAULT_VECTOR_STORE_PROVIDER,
     EmbeddingConfig,
     IngestConfig,
     QdrantConfig,
     RerankerConfig,
     VectorStoreConfig,
 )
-from rag_core.core_models import RAGCoreConfig
+from rag_core.core_models import DEFAULT_PROCESSING_VERSION, RAGCoreConfig
+from rag_core.retrieval_defaults import DEFAULT_SEARCH_LIMIT
 from rag_core.search.sparse_channels import (
     SECONDARY_SPARSE_CHANNEL,
     single_sparse_channel,
@@ -36,19 +44,19 @@ def make_test_config(
     qdrant_location: str = ":memory:",
     qdrant_url: str | None = None,
     qdrant_api_key: str = "",
-    qdrant_collection: str = "rag_core_chunks",
-    qdrant_dimension_aware_collection: bool = True,
-    vector_store_provider: str = "qdrant",
-    embedding_provider: str = "openai",
-    embedding_model: str = "text-embedding-3-large",
+    qdrant_collection: str = DEFAULT_QDRANT_COLLECTION,
+    qdrant_dimension_aware_collection: bool = DEFAULT_QDRANT_DIMENSION_AWARE_COLLECTION,
+    vector_store_provider: str = DEFAULT_VECTOR_STORE_PROVIDER,
+    embedding_provider: str = DEFAULT_EMBEDDING_PROVIDER,
+    embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     embedding_dimensions: int | None = None,
     embedding_api_key: str | None = None,
     embedding_base_url: str | None = None,
-    reranker_provider: str = "none",
+    reranker_provider: str = DEFAULT_RERANKER_PROVIDER,
     reranker_model: str | None = None,
     reranker_api_key: str | None = None,
-    processing_version: str = "rag_core_processing_v1",
-    source_type: str = "file",
+    processing_version: str = DEFAULT_PROCESSING_VERSION,
+    source_type: str = DEFAULT_INGEST_SOURCE_TYPE,
     enable_lexical_search: bool = False,
     manifest_directory: object | None = None,
 ) -> RAGCoreConfig:
@@ -329,7 +337,7 @@ class FakeReranker:
         self,
         query: str,
         documents: list[str],
-        top_k: int = 10,
+        top_k: int = DEFAULT_SEARCH_LIMIT,
     ) -> list[RerankResult]:
         self.calls.append((query, list(documents), top_k))
         if self._delay_seconds:
@@ -377,7 +385,7 @@ def make_search_result(
     text: str = "fox query context",
     score: float = 0.9,
     content_type: str = "document",
-    source_type: str = "file",
+    source_type: str = DEFAULT_INGEST_SOURCE_TYPE,
     namespace: str | None = "space-1",
     document_id: str | None = "doc-1",
     corpus_id: str | None = "corpus-1",

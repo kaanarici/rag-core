@@ -24,6 +24,14 @@ from rag_core.local_sources import (
     local_source_key_root,
     source_error_message,
 )
+from rag_core.manifest_reconciliation import (
+    ManifestReconciliation,
+    ManifestReconciliationItem,
+    ManifestReconciliationStatus,
+    ManifestSource,
+    manifest_reconciliation_payload,
+    reconcile_entries,
+)
 from rag_core.remote_discovery import (
     RemoteDiscoveredUrl,
     RemoteDiscovery,
@@ -39,6 +47,7 @@ from rag_core.remote_sources import (
     RemoteUrlSourceReader,
     remote_source_document,
 )
+from rag_core.remote_document_keys import public_remote_document_key
 
 
 class LocalFileSourceReader:
@@ -64,6 +73,10 @@ __all__ = [
     "LocalFileSourceReader",
     "LocalSourceItem",
     "LocalSourcePlan",
+    "ManifestReconciliation",
+    "ManifestReconciliationItem",
+    "ManifestReconciliationStatus",
+    "ManifestSource",
     "RemoteDiscoveredUrl",
     "RemoteDiscovery",
     "RemoteDiscoveryKind",
@@ -81,9 +94,12 @@ __all__ = [
     "is_supported_local_file",
     "local_file_source_item",
     "local_source_key_root",
+    "manifest_reconciliation_payload",
     "parse_llms_txt_urls",
     "parse_sitemap_urls",
+    "public_remote_document_key",
     "read_zip_member_bytes",
+    "reconcile_entries",
     "remote_source_document",
     "safe_archive_member_path",
     "source_error_message",

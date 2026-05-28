@@ -4,25 +4,28 @@ import argparse
 import base64
 import json
 import mimetypes
-import os
 from pathlib import Path
-from urllib import error, request
 from typing import cast
+from urllib import error, request
 
 from rag_core.documents.converters.registry_maps import is_registered_image_document
+from rag_core.documents.http_errors import safe_http_status
+from rag_core.documents.ocr_provider_names import (
+    DEFAULT_GEMINI_OCR_MODEL,
+    GEMINI_OCR_PROVIDER,
+)
+from rag_core.documents.page_indices import normalize_page_indices
+from rag_core.provider_api_keys import GEMINI_API_KEY_ENVS, first_configured_api_key
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="gemini-2.5-flash")
+    parser.add_argument("--model", default=DEFAULT_GEMINI_OCR_MODEL)
     args = parser.parse_args()
 
-    api_key = (
-        os.environ.get("GOOGLE_API_KEY", "").strip()
-        or os.environ.get("GEMINI_API_KEY", "").strip()
-    )
+    api_key = first_configured_api_key(GEMINI_API_KEY_ENVS)
     if not api_key:
-        raise SystemExit("GOOGLE_API_KEY or GEMINI_API_KEY is required")
+        raise SystemExit(f"{' or '.join(GEMINI_API_KEY_ENVS)} is required")
 
     payload = json.load(__import__("sys").stdin)
     file_path = Path(str(payload["file_path"]))
@@ -80,7 +83,7 @@ def main() -> int:
     result = {
         "markdown": markdown,
         "merge_mode": "replace",
-        "provider_name": "gemini",
+        "provider_name": GEMINI_OCR_PROVIDER,
         "model_name": args.model,
         "pages_processed": whole_document_page_indices,
         "metadata": metadata,
@@ -107,15 +110,8 @@ def _load_json(req: request.Request) -> dict[str, object]:
         with request.urlopen(req) as response:
             return cast(dict[str, object], json.loads(response.read().decode("utf-8")))
     except error.HTTPError as exc:
-        http_status = _safe_http_status(exc)
+        http_status = safe_http_status(exc)
     raise RuntimeError(f"Gemini OCR request failed ({http_status})")
-
-
-def _safe_http_status(exc: error.HTTPError) -> int | str:
-    code = getattr(exc, "code", None)
-    if isinstance(code, bool) or not isinstance(code, int):
-        return "unknown"
-    return code
 
 
 def _extract_text(payload: dict[str, object]) -> str:
@@ -156,22 +152,7 @@ def _whole_document_page_count(
 
 
 def _normalize_page_indices(raw_indices: object) -> list[int]:
-    if not isinstance(raw_indices, list):
-        return []
-    normalized: list[int] = []
-    seen: set[int] = set()
-    for raw_index in raw_indices:
-        if (
-            isinstance(raw_index, bool)
-            or not isinstance(raw_index, int)
-            or raw_index < 0
-            or raw_index in seen
-        ):
-            continue
-        seen.add(raw_index)
-        normalized.append(raw_index)
-    return normalized
-
+    return normalize_page_indices(raw_indices)
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -2,8 +2,13 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from dataclasses import dataclass
-from typing import Iterable, Literal, Mapping, cast
+from typing import Iterable, Mapping
 
+from rag_core.events.event_types import (
+    EMBED_COMPLETED_EVENT,
+    EMBED_REQUESTED_EVENT,
+    EmbeddingTraceEventType,
+)
 from rag_core.events.types import Event
 from rag_core.events.trace_payload_fields import (
     float_field,
@@ -11,17 +16,21 @@ from rag_core.events.trace_payload_fields import (
     safe_optional_label_field,
     str_field,
 )
-
-EmbeddingRole = Literal["dense", "sparse"]
+from rag_core.retrieval_channels import (
+    DENSE_RETRIEVAL_CHANNEL,
+    RETRIEVAL_CHANNELS,
+    SPARSE_RETRIEVAL_CHANNEL,
+    RetrievalChannel,
+)
 
 
 @dataclass(frozen=True)
 class EmbeddingTraceEvent:
-    event_type: Literal["embed.requested", "embed.completed"]
+    event_type: EmbeddingTraceEventType
     provider: str = ""
     model: str = ""
     text_count: int = 0
-    role: EmbeddingRole = "dense"
+    role: RetrievalChannel = DENSE_RETRIEVAL_CHANNEL
     duration_ms: float = 0.0
     cache_hits: int = 0
     cache_misses: int = 0
@@ -82,26 +91,32 @@ def summarize_embedding_trace_payloads(
         _append_unique(models, event.model)
     return EmbeddingTraceSummary(
         requested_event_count=sum(
-            1 for event in events if event.event_type == "embed.requested"
+            1 for event in events if event.event_type == EMBED_REQUESTED_EVENT
         ),
         completed_event_count=sum(
-            1 for event in events if event.event_type == "embed.completed"
+            1 for event in events if event.event_type == EMBED_COMPLETED_EVENT
         ),
         requested_text_count=sum(
-            event.text_count for event in events if event.event_type == "embed.requested"
+            event.text_count
+            for event in events
+            if event.event_type == EMBED_REQUESTED_EVENT
         ),
         completed_text_count=sum(
-            event.text_count for event in events if event.event_type == "embed.completed"
+            event.text_count
+            for event in events
+            if event.event_type == EMBED_COMPLETED_EVENT
         ),
         dense_completed_text_count=sum(
             event.text_count
             for event in events
-            if event.event_type == "embed.completed" and event.role == "dense"
+            if event.event_type == EMBED_COMPLETED_EVENT
+            and event.role == DENSE_RETRIEVAL_CHANNEL
         ),
         sparse_completed_text_count=sum(
             event.text_count
             for event in events
-            if event.event_type == "embed.completed" and event.role == "sparse"
+            if event.event_type == EMBED_COMPLETED_EVENT
+            and event.role == SPARSE_RETRIEVAL_CHANNEL
         ),
         cache_hits=sum(event.cache_hits for event in events),
         cache_misses=sum(event.cache_misses for event in events),
@@ -121,17 +136,17 @@ def embedding_trace_event_from_payload(
     payload: Mapping[str, object],
 ) -> EmbeddingTraceEvent | None:
     event_type = payload.get("event_type")
-    if event_type == "embed.requested":
+    if event_type == EMBED_REQUESTED_EVENT:
         return EmbeddingTraceEvent(
-            event_type="embed.requested",
+            event_type=EMBED_REQUESTED_EVENT,
             provider=safe_optional_label_field(payload, "provider"),
             model=safe_optional_label_field(payload, "model"),
             text_count=int_field(payload, "text_count"),
             role=_embedding_role_field(payload),
         )
-    if event_type == "embed.completed":
+    if event_type == EMBED_COMPLETED_EVENT:
         return EmbeddingTraceEvent(
-            event_type="embed.completed",
+            event_type=EMBED_COMPLETED_EVENT,
             provider=safe_optional_label_field(payload, "provider"),
             model=safe_optional_label_field(payload, "model"),
             text_count=int_field(payload, "text_count"),
@@ -145,11 +160,12 @@ def embedding_trace_event_from_payload(
     return None
 
 
-def _embedding_role_field(payload: Mapping[str, object]) -> EmbeddingRole:
+def _embedding_role_field(payload: Mapping[str, object]) -> RetrievalChannel:
     value = str_field(payload, "role")
-    if value not in {"dense", "sparse"}:
-        raise ValueError("trace field role must be dense or sparse")
-    return cast(EmbeddingRole, value)
+    if value not in RETRIEVAL_CHANNELS:
+        expected = " or ".join(RETRIEVAL_CHANNELS)
+        raise ValueError(f"trace field role must be {expected}")
+    return value
 
 
 def _append_unique(values: list[str], value: str) -> None:

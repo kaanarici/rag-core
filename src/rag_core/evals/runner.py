@@ -16,11 +16,11 @@ from typing import TYPE_CHECKING
 
 from rag_core.evals.cases import EvalCase, load_cases
 from rag_core.evals.metrics import mrr, ndcg_at_k, recall_at_k
+from rag_core.retrieval_defaults import DEFAULT_RERANK, DEFAULT_SEARCH_LIMIT
 
 if TYPE_CHECKING:
-    from rag_core.core import RAGCore
-    from rag_core.search.query_plan import QueryPlan
-    from rag_core.search.types import RerankBudget, SearchResult
+    from rag_core import RAGCore
+    from rag_core.search import QueryPlan, RerankBudget, SearchResult
 
 @dataclass(frozen=True)
 class EvalResult:
@@ -48,13 +48,17 @@ def _result_id(
         result.document_id in expected_ids or result.document_id in grade_ids
     ):
         return result.document_id
+    if result.document_key and (
+        result.document_key in expected_ids or result.document_key in grade_ids
+    ):
+        return result.document_key
     return result.document_id or result.id
 
 
 def _grades_for(case: EvalCase) -> Mapping[str, int]:
     if case.expected_grades is not None:
         return case.expected_grades
-    return {chunk_id: 1 for chunk_id in case.expected_chunk_ids}
+    return {expected_id: 1 for expected_id in case.expected_ids}
 
 
 _SAFE_ERROR_TYPE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,79}")
@@ -72,7 +76,7 @@ async def run_eval(
     cases: Sequence[EvalCase],
     k_values: Sequence[int] = (5, 10),
     *,
-    rerank: bool = False,
+    rerank: bool = DEFAULT_RERANK,
     rerank_budget: RerankBudget | None = None,
     query_plan: QueryPlan | None = None,
 ) -> list[EvalResult]:
@@ -86,7 +90,7 @@ async def run_eval(
     """
     if not cases:
         return []
-    limit = max(*k_values, 10) if k_values else 10
+    limit = max(*k_values, DEFAULT_SEARCH_LIMIT) if k_values else DEFAULT_SEARCH_LIMIT
     results: list[EvalResult] = []
     for case in cases:
         started = perf_counter()
@@ -116,13 +120,13 @@ async def run_eval(
             )
             continue
         latency_ms = (perf_counter() - started) * 1000.0
-        expected_ids = set(case.expected_chunk_ids)
+        expected_ids = set(case.expected_ids)
         grade_ids = set(case.expected_grades or {})
         retrieved_ids = tuple(
             _result_id(hit, expected_ids=expected_ids, grade_ids=grade_ids)
             for hit in hits
         )
-        relevant = case.expected_chunk_ids
+        relevant = case.expected_ids
         grades = _grades_for(case)
         results.append(
             EvalResult(

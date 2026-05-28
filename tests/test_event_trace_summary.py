@@ -9,6 +9,7 @@ from rag_core.events import (
     summarize_search_trace_payload_runs,
     summarize_search_trace_runs,
 )
+from rag_core.events.trace_payload_fields import TRACE_ABSENT_LABEL
 from rag_core.events.types import (
     RerankApplied,
     SearchCompleted,
@@ -18,6 +19,9 @@ from rag_core.events.types import (
     SidecarApplied,
     StageError,
 )
+from rag_core.search.query_plan import PRIMARY_DENSE_QUERY_VECTOR
+
+_DENSE_PRIMARY_CHANNEL = f"dense:dense:{PRIMARY_DENSE_QUERY_VECTOR}"
 
 
 def test_summarize_search_trace_exports_safe_app_facing_shape() -> None:
@@ -37,8 +41,9 @@ def test_summarize_search_trace_exports_safe_app_facing_shape() -> None:
                 corpus_ids=("corpus-secret",),
                 limit=5,
                 final_limit=4,
-                channels=("dense:dense:primary", "sparse:bm25:bm25"),
+                channels=(_DENSE_PRIMARY_CHANNEL, "sparse:bm25:bm25"),
                 prefetch_limits=(10, 20),
+                search_profile="balanced",
                 fusion="rrf",
                 plan_rerank="provider",
                 metadata_filter="Term",
@@ -116,8 +121,6 @@ def test_summarize_search_trace_exports_safe_app_facing_shape() -> None:
             SearchCompleted(
                 namespace="tenant-secret",
                 result_count=2,
-                used_rerank=True,
-                used_sidecar=True,
                 duration_ms=12.0,
             ),
         ]
@@ -127,10 +130,11 @@ def test_summarize_search_trace_exports_safe_app_facing_shape() -> None:
 
     assert payload["query_length"] == len("private billing query")
     assert payload["corpus_count"] == 1
-    assert payload["channels"] == ["dense:dense:primary", "sparse:bm25:bm25"]
+    assert payload["channels"] == [_DENSE_PRIMARY_CHANNEL, "sparse:bm25:bm25"]
+    assert payload["search_profile"] == "balanced"
     assert payload["rerank_fallback_on_error"] is False
-    assert payload["rerank_attempted"] is True
-    assert payload["rerank_applied"] is False
+    assert payload["attempted_rerank"] is True
+    assert payload["applied_rerank"] is False
     assert payload["rerank_provider"] == "cohere"
     assert payload["rerank_model"] == "rerank-v3.5"
     assert payload["rerank_applied_candidate_count"] == 8
@@ -151,8 +155,8 @@ def test_summarize_search_trace_exports_safe_app_facing_shape() -> None:
     assert payload["rerank_fallback_reason"] == "TimeoutError"
     assert payload["rerank_truncation_reason"] == "candidate_budget"
     assert payload["rerank_succeeded"] is False
-    assert payload["sidecar_applied"] is True
-    assert payload["sidecar_attempted"] is True
+    assert payload["applied_sidecar"] is True
+    assert payload["attempted_sidecar"] is True
     assert payload["sidecar_provider"] == "bm25"
     assert payload["sidecar_input_count"] == 5
     assert payload["sidecar_provider_result_count"] == 7
@@ -202,14 +206,12 @@ def test_rerank_summary_applied_requires_accepted_results() -> None:
                 requested_rerank=True,
                 attempted_rerank=True,
                 applied_rerank=False,
-                used_rerank=False,
             ),
         ]
     )
 
     payload = summary.to_payload()
     assert payload["rerank_succeeded"] is True
-    assert payload["rerank_applied"] is False
     assert payload["applied_rerank"] is False
 
 
@@ -234,7 +236,7 @@ def test_summarize_search_trace_payloads_preserves_unknown_rerank_scores() -> No
     assert payload["rerank_search_score_max"] is None
 
 
-def test_search_completed_rerank_and_sidecar_aliases_match_completion_fields() -> None:
+def test_search_completed_rerank_and_sidecar_status_uses_completion_fields() -> None:
     summary = summarize_search_trace(
         [
             SearchCompleted(
@@ -245,17 +247,43 @@ def test_search_completed_rerank_and_sidecar_aliases_match_completion_fields() -
                 attempted_sidecar=True,
                 applied_rerank=True,
                 applied_sidecar=True,
-                used_rerank=True,
-                used_sidecar=True,
             )
         ]
     )
 
     payload = summary.to_payload()
-    assert payload["rerank_attempted"] is True
-    assert payload["sidecar_attempted"] is True
-    assert payload["rerank_applied"] is True
-    assert payload["sidecar_applied"] is True
+    assert payload["attempted_rerank"] is True
+    assert payload["attempted_sidecar"] is True
+    assert payload["applied_rerank"] is True
+    assert payload["applied_sidecar"] is True
+    assert "used_rerank" not in payload
+    assert "used_sidecar" not in payload
+    assert "rerank_attempted" not in payload
+    assert "sidecar_attempted" not in payload
+
+
+def test_trace_payload_summary_ignores_removed_legacy_keys() -> None:
+    summary = summarize_search_trace_payloads(
+        [
+            {
+                "event_type": "search.planned",
+                "use_sidecar": True,
+            },
+            {
+                "event_type": "search.completed",
+                "result_count": 1,
+                "rerank_attempted": True,
+                "sidecar_attempted": True,
+            },
+        ]
+    )
+
+    payload = summary.to_payload()
+    assert payload["use_lexical_search"] is False
+    assert payload["attempted_rerank"] is False
+    assert payload["attempted_sidecar"] is False
+    assert "rerank_attempted" not in payload
+    assert "sidecar_attempted" not in payload
 
 
 def test_failed_search_completion_is_terminal_but_not_successful() -> None:
@@ -293,7 +321,8 @@ def test_summarize_search_trace_sanitizes_direct_event_labels() -> None:
     summary = summarize_search_trace(
         [
             SearchPlanned(
-                channels=("dense:dense:primary", "private channel token"),
+                channels=(_DENSE_PRIMARY_CHANNEL, "private channel token"),
+                search_profile="private_profile_secret",
                 fusion="rrf",
                 plan_rerank="sk-secret-plan",
                 metadata_filter="private_filter_secret",
@@ -328,7 +357,8 @@ def test_summarize_search_trace_sanitizes_direct_event_labels() -> None:
     assert "sk-proj-" not in rendered
     assert "sk-ant-api03-" not in rendered
     assert "xoxc-" not in rendered
-    assert payload["channels"] == ["dense:dense:primary", "unknown"]
+    assert payload["channels"] == [_DENSE_PRIMARY_CHANNEL, "unknown"]
+    assert payload["search_profile"] == "unknown"
     assert payload["plan_rerank"] == "unknown"
     assert payload["metadata_filter"] == "unknown"
     assert payload["retrieve_stage"] == "unknown"
@@ -357,10 +387,11 @@ def test_summarize_search_trace_payloads_accepts_jsonl_event_shapes() -> None:
                 "corpus_ids": ["corpus-secret"],
                 "limit": 3,
                 "final_limit": 3,
-                "channels": ["dense:dense:primary"],
+                "channels": [_DENSE_PRIMARY_CHANNEL],
                 "prefetch_limits": [6],
+                "search_profile": "fast",
                 "fusion": "identity",
-                "plan_rerank": "none",
+                "plan_rerank": TRACE_ABSENT_LABEL,
                 "rerank_fallback_on_error": False,
             },
             {
@@ -412,8 +443,6 @@ def test_summarize_search_trace_payloads_accepts_jsonl_event_shapes() -> None:
                 "event_type": "search.completed",
                 "namespace": "tenant-secret",
                 "result_count": 2,
-                "used_rerank": False,
-                "used_sidecar": False,
                 "duration_ms": 4.0,
             },
         ]
@@ -422,10 +451,11 @@ def test_summarize_search_trace_payloads_accepts_jsonl_event_shapes() -> None:
     payload = summary.to_payload()
     assert payload["completed"] is True
     assert payload["limit"] == 3
-    assert payload["channels"] == ["dense:dense:primary"]
+    assert payload["channels"] == [_DENSE_PRIMARY_CHANNEL]
+    assert payload["search_profile"] == "fast"
     assert payload["rerank_fallback_on_error"] is False
-    assert payload["rerank_attempted"] is True
-    assert payload["rerank_applied"] is False
+    assert payload["attempted_rerank"] is True
+    assert payload["applied_rerank"] is False
     assert payload["rerank_provider_result_count"] == 4
     assert payload["rerank_accepted_count"] == 2
     assert payload["rerank_dropped_count"] == 2
@@ -440,7 +470,7 @@ def test_summarize_search_trace_payloads_accepts_jsonl_event_shapes() -> None:
     assert payload["rerank_search_score_max"] == 0.81
     assert payload["rerank_fallback_reason"] == "TimeoutError"
     assert payload["rerank_truncation_reason"] == "candidate_count,max_output"
-    assert payload["sidecar_applied"] is True
+    assert payload["applied_sidecar"] is True
     assert payload["sidecar_provider_result_count"] == 5
     assert payload["sidecar_accepted_count"] == 4
     assert payload["sidecar_dropped_count"] == 1

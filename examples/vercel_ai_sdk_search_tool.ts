@@ -16,11 +16,9 @@ type SearchUserDocumentsInput = {
   max_tokens?: number;
 };
 
-type SourceReference = {
-  source_id: string;
-  result_id: string;
+type PromptSourceReference = {
+  citation_id: string;
   title?: string;
-  section_id?: string;
   section_title?: string;
   section_path?: string;
   chunk_index?: number;
@@ -28,15 +26,25 @@ type SourceReference = {
   result_type?: string;
 };
 
-type SourceLocator = {
+type PromptSourcePreview = {
+  citation_id: string;
+  title: string;
+  locator_label: string | null;
+  source_type: string | null;
+  result_type: string | null;
+  truncated: boolean;
+};
+
+type PromptSourceLocator = {
   chunk_index: number | null;
   section_path: string | null;
-  source_hash: string | null;
   page_number: number | null;
   page_index: number | null;
   slide_number: number | null;
   sheet_name: string | null;
   row_range: string | null;
+  line_start: number | null;
+  line_end: number | null;
   bbox: [number, number, number, number] | null;
   figure_id: string | null;
   figure_caption: string | null;
@@ -52,11 +60,20 @@ type SearchUserDocumentsResult = {
     rank: number;
     text: string;
     score: number;
-    source: SourceReference;
-    locator: SourceLocator;
+    source: PromptSourceReference;
+    locator: PromptSourceLocator;
     token_estimate: number;
     char_count: number;
     retrieval_metadata?: {
+      quality?: {
+        verdict?: string;
+        details?: string;
+        char_count?: number;
+        page_count?: number;
+        meaningful_ratio?: number;
+        mojibake_ratio?: number;
+        text_to_page_ratio?: number;
+      };
       rerank?: {
         provider?: string;
         model?: string;
@@ -69,15 +86,8 @@ type SearchUserDocumentsResult = {
     };
     truncated: boolean;
   }>;
-  citations: SourceReference[];
-  source_previews: Array<{
-    citation_id: string;
-    title: string;
-    locator_label: string | null;
-    source_type: string | null;
-    result_type: string | null;
-    truncated: boolean;
-  }>;
+  citations: PromptSourceReference[];
+  source_previews: PromptSourcePreview[];
   citation_summary: string;
   dropped_count: number;
   max_snippets: number;
@@ -98,8 +108,13 @@ const searchUserDocumentsInputSchema = jsonSchema<SearchUserDocumentsInput>({
       type: "array",
       items: { type: "string", minLength: 1, pattern: "\\S" },
     },
-    rerank: { type: "boolean", default: true },
-    use_lexical_search: { type: "boolean", default: true },
+    rerank: { type: "boolean", default: false },
+    use_lexical_search: {
+      type: "boolean",
+      default: true,
+      description:
+        "Controls configured lexical/exact-match expansion only; query-plan defaults remain provider capability-aware.",
+    },
     max_chars: { type: "integer", minimum: 256, maximum: 12000, default: 3000 },
     max_tokens: { type: "integer", minimum: 64, maximum: 4000 },
   },
@@ -130,8 +145,8 @@ function assertSearchUserDocumentsResult(
     !isInteger(payload.char_count) ||
     typeof payload.truncated !== "boolean" ||
     !payload.snippets.every(isSearchSnippet) ||
-    !payload.citations.every(isSourceReference) ||
-    !payload.source_previews.every(isSourcePreview)
+    !payload.citations.every(isPromptSourceReference) ||
+    !payload.source_previews.every(isPromptSourcePreview)
   ) {
     throw new Error("search_user_documents returned an invalid payload");
   }
@@ -162,16 +177,14 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
   return Object.keys(value).every((key) => allowed.has(key));
 }
 
-function isSourceReference(value: unknown): value is SourceReference {
+function isPromptSourceReference(value: unknown): value is PromptSourceReference {
   if (!isRecord(value)) {
     return false;
   }
   if (
     !hasExactKeys(value, [
-      "source_id",
-      "result_id",
+      "citation_id",
       "title",
-      "section_id",
       "section_title",
       "section_path",
       "chunk_index",
@@ -182,10 +195,8 @@ function isSourceReference(value: unknown): value is SourceReference {
     return false;
   }
   return (
-    typeof value.source_id === "string" &&
-    typeof value.result_id === "string" &&
+    typeof value.citation_id === "string" &&
     isOptionalString(value.title) &&
-    isOptionalString(value.section_id) &&
     isOptionalString(value.section_title) &&
     isOptionalString(value.section_path) &&
     (value.chunk_index === undefined || isInteger(value.chunk_index)) &&
@@ -194,7 +205,7 @@ function isSourceReference(value: unknown): value is SourceReference {
   );
 }
 
-function isSourceLocator(value: unknown): value is SourceLocator {
+function isPromptSourceLocator(value: unknown): value is PromptSourceLocator {
   if (!isRecord(value)) {
     return false;
   }
@@ -202,12 +213,13 @@ function isSourceLocator(value: unknown): value is SourceLocator {
     !hasExactKeys(value, [
       "chunk_index",
       "section_path",
-      "source_hash",
       "page_number",
       "page_index",
       "slide_number",
       "sheet_name",
       "row_range",
+      "line_start",
+      "line_end",
       "bbox",
       "figure_id",
       "figure_caption",
@@ -219,12 +231,13 @@ function isSourceLocator(value: unknown): value is SourceLocator {
   return (
     (isInteger(value.chunk_index) || value.chunk_index === null) &&
     (typeof value.section_path === "string" || value.section_path === null) &&
-    (typeof value.source_hash === "string" || value.source_hash === null) &&
     (isInteger(value.page_number) || value.page_number === null) &&
     (isInteger(value.page_index) || value.page_index === null) &&
     (isInteger(value.slide_number) || value.slide_number === null) &&
     (typeof value.sheet_name === "string" || value.sheet_name === null) &&
     (typeof value.row_range === "string" || value.row_range === null) &&
+    (isInteger(value.line_start) || value.line_start === null) &&
+    (isInteger(value.line_end) || value.line_end === null) &&
     (Array.isArray(value.bbox)
       ? value.bbox.length === 4 && value.bbox.every(isFiniteNumber)
       : value.bbox === null) &&
@@ -262,8 +275,8 @@ function isSearchSnippet(
     isInteger(value.rank) &&
     typeof value.text === "string" &&
     isFiniteNumber(value.score) &&
-    isSourceReference(value.source) &&
-    isSourceLocator(value.locator) &&
+    isPromptSourceReference(value.source) &&
+    isPromptSourceLocator(value.locator) &&
     isInteger(value.token_estimate) &&
     isInteger(value.char_count) &&
     (value.retrieval_metadata === undefined ||
@@ -276,13 +289,49 @@ function isSnippetRetrievalMetadata(value: unknown): boolean {
   if (!isRecord(value)) {
     return false;
   }
-  if (!hasExactKeys(value, ["rerank"])) {
+  if (!hasExactKeys(value, ["quality", "rerank"])) {
+    return false;
+  }
+  if (
+    value.quality !== undefined &&
+    !isSnippetQualityMetadata(value.quality)
+  ) {
     return false;
   }
   if (value.rerank === undefined) {
     return true;
   }
   return isSnippetRerankMetadata(value.rerank);
+}
+
+function isSnippetQualityMetadata(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (
+    !hasExactKeys(value, [
+      "verdict",
+      "details",
+      "char_count",
+      "page_count",
+      "meaningful_ratio",
+      "mojibake_ratio",
+      "text_to_page_ratio",
+    ])
+  ) {
+    return false;
+  }
+  return (
+    isOptionalString(value.verdict) &&
+    isOptionalString(value.details) &&
+    (value.char_count === undefined || isInteger(value.char_count)) &&
+    (value.page_count === undefined || isInteger(value.page_count)) &&
+    (value.meaningful_ratio === undefined ||
+      isFiniteNumber(value.meaningful_ratio)) &&
+    (value.mojibake_ratio === undefined || isFiniteNumber(value.mojibake_ratio)) &&
+    (value.text_to_page_ratio === undefined ||
+      isFiniteNumber(value.text_to_page_ratio))
+  );
 }
 
 function isSnippetRerankMetadata(value: unknown): boolean {
@@ -313,7 +362,7 @@ function isSnippetRerankMetadata(value: unknown): boolean {
   );
 }
 
-function isSourcePreview(
+function isPromptSourcePreview(
   value: unknown,
 ): value is SearchUserDocumentsResult["source_previews"][number] {
   if (!isRecord(value)) {
@@ -364,6 +413,10 @@ const searchUserDocuments = tool({
     assertSearchUserDocumentsResult(payload);
     return payload;
   },
+  toModelOutput: ({ output }) => ({
+    type: "text",
+    value: formatSearchResultForModel(output),
+  }),
 });
 
 function summarizeSearchResult(value: SearchUserDocumentsResult): Record<string, unknown> {
@@ -374,6 +427,20 @@ function summarizeSearchResult(value: SearchUserDocumentsResult): Record<string,
     dropped_count: value.dropped_count,
     truncated: value.truncated,
   };
+}
+
+function formatSearchResultForModel(value: SearchUserDocumentsResult): string {
+  const lines = [`Query: ${value.query}`, "", "Context:", value.context_text];
+  if (value.citation_summary.trim()) {
+    lines.push("", "Citations:", value.citation_summary);
+  }
+  if (value.truncated) {
+    lines.push(
+      "",
+      `Note: search output was truncated to ${value.max_snippets} snippets.`,
+    );
+  }
+  return lines.join("\n");
 }
 
 function summarizeToolOutput(value: unknown): unknown {
@@ -392,9 +459,16 @@ function summarizeToolOutput(value: unknown): unknown {
   return value;
 }
 
+function summarizeUnknownError(value: unknown): string {
+  if (value instanceof Error) {
+    return value.message;
+  }
+  return String(value);
+}
+
 export async function runSingleStepToolCall(prompt: string): Promise<void> {
   const result = await generateText({
-    model: "anthropic/claude-sonnet-4.5",
+    model: "anthropic/claude-sonnet-4.6",
     prompt,
     tools: {
       search_user_documents: searchUserDocuments,
@@ -408,7 +482,7 @@ export async function runSingleStepToolCall(prompt: string): Promise<void> {
 
 export async function runStreamingToolCall(prompt: string): Promise<void> {
   const result = streamText({
-    model: "anthropic/claude-sonnet-4.5",
+    model: "anthropic/claude-sonnet-4.6",
     prompt,
     tools: {
       search_user_documents: searchUserDocuments,
@@ -432,6 +506,16 @@ export async function runStreamingToolCall(prompt: string): Promise<void> {
       const output = part.output;
       assertSearchUserDocumentsResult(output);
       console.log("\n[tool-result]", summarizeSearchResult(output));
+    }
+    if (part.type === "tool-error" && part.toolName === "search_user_documents") {
+      console.error("\n[tool-error]", {
+        toolName: part.toolName,
+        input: part.input,
+        error: summarizeUnknownError(part.error),
+      });
+    }
+    if (part.type === "error") {
+      console.error("\n[stream-error]", summarizeUnknownError(part.error));
     }
   }
 }

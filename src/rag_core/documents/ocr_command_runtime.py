@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -11,33 +10,21 @@ import subprocess
 import tempfile
 from typing import Any
 
-_RUNTIME_ENV_KEYS = (
-    "PATH",
-    "HOME",
-    "SYSTEMROOT",
-    "TMPDIR",
-    "TEMP",
-    "TMP",
-    "LANG",
-    "LC_ALL",
-    "LC_CTYPE",
-    "PYTHONPATH",
-    "PYTHONHOME",
-    "PYTHONUTF8",
-    "VIRTUAL_ENV",
+from rag_core.documents.exception_names import exception_type
+from rag_core.documents.ocr_provider_names import (
+    GEMINI_OCR_PROVIDER,
+    MISTRAL_OCR_PROVIDER,
 )
-_TRANSPORT_ENV_KEYS = (
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "NO_PROXY",
-    "SSL_CERT_FILE",
-    "SSL_CERT_DIR",
-    "REQUESTS_CA_BUNDLE",
-    "CURL_CA_BUNDLE",
+from rag_core.documents.page_indices import normalize_page_indices
+from rag_core.documents.subprocess_env import (
+    PYTHON_SUBPROCESS_ENV_KEYS,
+    allowlisted_subprocess_env,
 )
+from rag_core.provider_api_keys import GEMINI_API_KEY_ENVS, MISTRAL_API_KEY_ENVS
+
 _OCR_PROVIDER_ENV_KEYS: dict[str, tuple[str, ...]] = {
-    "mistral": ("MISTRAL_API_KEY",),
-    "gemini": ("GOOGLE_API_KEY", "GEMINI_API_KEY"),
+    MISTRAL_OCR_PROVIDER: MISTRAL_API_KEY_ENVS,
+    GEMINI_OCR_PROVIDER: GEMINI_API_KEY_ENVS,
 }
 
 
@@ -106,7 +93,7 @@ def run_command_ocr(
         except OSError as exc:
             raise RuntimeError(
                 f"OCR provider {provider_name} failed to start "
-                f"(error_type={_exception_type(exc)})"
+                f"(error_type={exception_type(exc)})"
             ) from None
     finally:
         if temp_path is not None:
@@ -146,21 +133,7 @@ def run_command_ocr(
 
 
 def normalize_ocr_page_indices(raw_indices: object) -> list[int]:
-    if not isinstance(raw_indices, list):
-        return []
-    normalized: list[int] = []
-    seen: set[int] = set()
-    for raw_index in raw_indices:
-        if (
-            isinstance(raw_index, bool)
-            or not isinstance(raw_index, int)
-            or raw_index < 0
-            or raw_index in seen
-        ):
-            continue
-        seen.add(raw_index)
-        normalized.append(raw_index)
-    return sorted(normalized)
+    return normalize_page_indices(raw_indices, sort=True)
 
 
 def _subprocess_env(
@@ -168,28 +141,16 @@ def _subprocess_env(
     provider_name: str,
     extra_env: dict[str, str],
 ) -> dict[str, str]:
-    merged: dict[str, str] = {}
-    for key in (*_RUNTIME_ENV_KEYS, *_TRANSPORT_ENV_KEYS):
-        value = os.environ.get(key)
-        if value:
-            merged[key] = value
-    for key in _OCR_PROVIDER_ENV_KEYS.get(provider_name.lower(), ()):
-        value = os.environ.get(key)
-        if value:
-            merged[key] = value
-    for key, value in extra_env.items():
-        if value:
-            merged[key] = value
-    return merged
+    return allowlisted_subprocess_env(
+        runtime_env_keys=PYTHON_SUBPROCESS_ENV_KEYS,
+        provider_env_keys=_OCR_PROVIDER_ENV_KEYS.get(provider_name.lower(), ()),
+        extra_env=extra_env,
+    )
 
 
 def _suffix_for_filename(filename: str) -> str:
     suffix = Path(filename).suffix.strip()
     return suffix if suffix else ".bin"
-
-
-def _exception_type(exc: Exception) -> str:
-    return type(exc).__name__
 
 
 def _safe_returncode(value: object) -> int | str:

@@ -6,8 +6,9 @@ from rag_core.search.embedding_cache_diagnostics import EmbeddingCacheCounters
 from rag_core.search.embedding_cache_diagnostics import (
     embed_texts_with_cache_observation,
 )
+from rag_core.search.provider_protocols import EmbeddingProvider, SparseEmbedder
 from rag_core.search.sparse_channels import single_sparse_channel
-from rag_core.search.types import EmbeddingProvider, SparseEmbedder, SparseVector
+from rag_core.search.vector_models import SparseVector
 
 logger = logging.getLogger(__name__)
 

@@ -4,13 +4,19 @@ The basic ``VectorStore.search`` contract continues to accept a ``SearchQuery``;
 ``QueryPlan`` is the optional, richer expression of "do these prefetches, fuse,
 then maybe rerank, then maybe rescore." Adapters translate as much of the plan
 as they support and raise :class:`UnsupportedQueryStage` for stages they cannot
-honor. Callers can either downgrade the plan or pick a different backend.
+honor. Callers can either downgrade the plan or pick a different vector store.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field as dataclass_field
-from typing import Literal, Optional, Union
+from typing import Final, Literal, Optional, Union
+
+from rag_core.retrieval_defaults import DEFAULT_SEARCH_LIMIT
+from rag_core.search.sparse_channels import PRIMARY_SPARSE_CHANNEL
+
+DEFAULT_RRF_K = 60
+PRIMARY_DENSE_QUERY_VECTOR: Final[str] = "primary"
 
 
 @dataclass(frozen=True)
@@ -18,15 +24,15 @@ class DenseChannel:
     """Dense vector retrieval against the dense channel."""
 
     vector_field: str = ""
-    using_query_vector: str = "primary"
+    using_query_vector: str = PRIMARY_DENSE_QUERY_VECTOR
 
 
 @dataclass(frozen=True)
 class SparseChannel:
     """Sparse vector retrieval against a named sparse channel."""
 
-    vector_field: str = "bm25"
-    using_query_vector: str = "bm25"
+    vector_field: str = PRIMARY_SPARSE_CHANNEL
+    using_query_vector: str = PRIMARY_SPARSE_CHANNEL
 
 
 Channel = Union[DenseChannel, SparseChannel]
@@ -49,26 +55,35 @@ class Prefetch:
 
 
 FusionKind = Literal["rrf", "dbsf", "weighted_rrf"]
+FUSION_KIND_RRF: Final[FusionKind] = "rrf"
+FUSION_KIND_DBSF: Final[FusionKind] = "dbsf"
+FUSION_KIND_WEIGHTED_RRF: Final[FusionKind] = "weighted_rrf"
+
+BoostKind = Literal["linear_decay", "exp_decay", "gauss_decay", "raw"]
+BOOST_KIND_LINEAR_DECAY: Final[BoostKind] = "linear_decay"
+BOOST_KIND_EXP_DECAY: Final[BoostKind] = "exp_decay"
+BOOST_KIND_GAUSS_DECAY: Final[BoostKind] = "gauss_decay"
+BOOST_KIND_RAW: Final[BoostKind] = "raw"
 
 
 @dataclass(frozen=True)
 class PrefetchFusion:
     """Combine multiple prefetch results using a named fusion strategy.
 
-    ``weights`` is meaningful only when ``kind == 'weighted_rrf'``.
-    ``rrf_k`` is meaningful only when ``kind in ('rrf', 'weighted_rrf')``;
-    default 60 matches the textbook RRF constant.
+    ``weights`` is meaningful only for weighted RRF.
+    ``rrf_k`` is meaningful only for RRF fusion kinds;
+    default ``DEFAULT_RRF_K`` matches the textbook RRF constant.
     """
 
-    kind: FusionKind = "rrf"
+    kind: FusionKind = FUSION_KIND_RRF
     weights: tuple[float, ...] = ()
-    rrf_k: int = 60
+    rrf_k: int = DEFAULT_RRF_K
 
     def __post_init__(self) -> None:
         _require_int(self.rrf_k, "PrefetchFusion.rrf_k")
-        if self.kind == "weighted_rrf" and not self.weights:
+        if self.kind == FUSION_KIND_WEIGHTED_RRF and not self.weights:
             raise ValueError("PrefetchFusion(kind='weighted_rrf') requires weights")
-        if self.kind != "weighted_rrf" and self.weights:
+        if self.kind != FUSION_KIND_WEIGHTED_RRF and self.weights:
             raise ValueError(
                 f"PrefetchFusion(kind={self.kind!r}) does not support weights"
             )
@@ -96,12 +111,12 @@ class Boost:
     ``params``.
     """
 
-    kind: Literal["linear_decay", "exp_decay", "gauss_decay", "raw"]
+    kind: BoostKind
     field: str = ""
     params: dict[str, object] = dataclass_field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.kind != "raw" and not self.field:
+        if self.kind != BOOST_KIND_RAW and not self.field:
             raise ValueError(f"Boost(kind={self.kind!r}) requires a field")
 
 
@@ -122,7 +137,7 @@ class QueryPlan:
     fuse: Optional[PrefetchFusion] = None
     rerank: Optional[Mmr] = None
     boost: Optional[Boost] = None
-    final_limit: int = 20
+    final_limit: int = DEFAULT_SEARCH_LIMIT
     search_profile: Optional[str] = None
 
     def __post_init__(self) -> None:

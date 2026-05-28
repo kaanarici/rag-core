@@ -8,18 +8,25 @@ import re
 from pathlib import Path
 
 from rag_core.documents.ocr_commands.mistral_runtime import run_ocr, upload_file
+from rag_core.documents.ocr_provider_names import (
+    DEFAULT_MISTRAL_OCR_MODEL,
+    MISTRAL_OCR_PROVIDER,
+)
+from rag_core.documents.page_indices import normalize_page_indices
+from rag_core.provider_api_keys import MISTRAL_API_KEY_ENVS
 
 _PAGE_HEADING_RE = re.compile(r"^#{1,6}\s+Page\s+([1-9]\d*)\s*$", re.IGNORECASE)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="mistral-ocr-latest")
+    parser.add_argument("--model", default=DEFAULT_MISTRAL_OCR_MODEL)
     args = parser.parse_args()
 
-    api_key = os.environ.get("MISTRAL_API_KEY", "").strip()
+    api_key_env = MISTRAL_API_KEY_ENVS[0]
+    api_key = os.environ.get(api_key_env, "").strip()
     if not api_key:
-        raise SystemExit("MISTRAL_API_KEY is required")
+        raise SystemExit(f"{api_key_env} is required")
 
     payload = json.load(__import__("sys").stdin)
     file_path = Path(str(payload["file_path"]))
@@ -50,7 +57,7 @@ def main() -> int:
     result = {
         "markdown": markdown,
         "merge_mode": "append" if page_indices else "replace",
-        "provider_name": "mistral",
+        "provider_name": MISTRAL_OCR_PROVIDER,
         "model_name": args.model,
         "pages_processed": pages_processed,
         "metadata": {
@@ -146,21 +153,7 @@ def _has_markdown(value: object) -> bool:
 
 
 def _normalize_page_indices(raw_indices: object) -> list[int]:
-    if not isinstance(raw_indices, list):
-        return []
-    normalized: list[int] = []
-    seen: set[int] = set()
-    for raw_index in raw_indices:
-        if (
-            isinstance(raw_index, bool)
-            or not isinstance(raw_index, int)
-            or raw_index < 0
-            or raw_index in seen
-        ):
-            continue
-        seen.add(raw_index)
-        normalized.append(raw_index)
-    return normalized
+    return normalize_page_indices(raw_indices)
 
 
 if __name__ == "__main__":

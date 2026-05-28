@@ -3,28 +3,43 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
+from typing import Final, Optional
 
 from rag_core.search.policy import VectorStorePolicy
+
+SEARCH_RESULT_STORED_METADATA_FIELDS: Final[tuple[str, ...]] = (
+    "section_id",
+    "section_title",
+    "section_path",
+    "document_path",
+    "chunk_word_count",
+    "chunk_token_estimate",
+    "embedding_model",
+    "chunker_strategy",
+    "result_type",
+    "figure_id",
+    "figure_thumbnail_url",
+)
+
+SEARCH_RESULT_FILTER_FIELDS: Final[tuple[str, ...]] = (
+    "namespace",
+    "content_type",
+    "source_type",
+    "document_id",
+    "corpus_id",
+    "document_key",
+    "content_sha256",
+    "title",
+    *SEARCH_RESULT_STORED_METADATA_FIELDS,
+)
+
+SEARCH_RESULT_LEGACY_THUMBNAIL_FIELD: Final[str] = "thumbnail_url"
 
 # Keys consumed into top-level ``SearchResult`` fields and excluded from
 # metadata. Policy-specific keys are added at runtime so renamed fields are
 # still excluded.
 _FIXED_RESULT_KEYS = frozenset(
-    {
-        "section_id",
-        "section_title",
-        "section_path",
-        "document_path",
-        "chunk_word_count",
-        "chunk_token_estimate",
-        "embedding_model",
-        "chunker_strategy",
-        "result_type",
-        "figure_id",
-        "thumbnail_url",
-        "figure_thumbnail_url",
-    }
+    (*SEARCH_RESULT_STORED_METADATA_FIELDS, SEARCH_RESULT_LEGACY_THUMBNAIL_FIELD)
 )
 
 

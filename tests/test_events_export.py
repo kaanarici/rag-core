@@ -1,7 +1,22 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from rag_core.events.export import to_retrieval_hits
-from rag_core.search.vector_models import SearchResult
+from rag_core.events.retrieval_hit_fields import (
+    RETRIEVAL_HIT_CONTENT_FIELD,
+    RETRIEVAL_HIT_CORPUS_ID_FIELD,
+    RETRIEVAL_HIT_DOCUMENT_ID_FIELD,
+    RETRIEVAL_HIT_DOCUMENT_KEY_FIELD,
+    RETRIEVAL_HIT_ID_FIELD,
+    RETRIEVAL_HIT_METADATA_FIELD,
+    RETRIEVAL_HIT_NAMESPACE_FIELD,
+    RETRIEVAL_HIT_SCORE_FIELD,
+    RETRIEVAL_HIT_SECTION_PATH_FIELD,
+    RETRIEVAL_HIT_CHUNK_INDEX_FIELD,
+    RETRIEVAL_HIT_TITLE_FIELD,
+)
+from rag_core.search import SearchResult
 from tests.support import make_search_result
 
 
@@ -22,17 +37,17 @@ def test_to_retrieval_hits_maps_search_result_fields() -> None:
 
     assert exported == [
         {
-            "id": hit.id,
-            "content": hit.text,
-            "score": 0.91,
-            "document_id": "doc-1",
-            "document_key": "docs/guide.md",
-            "corpus_id": "help",
-            "namespace": "acme",
-            "title": "Guide",
-            "chunk_index": 2,
-            "section_path": "Guide > Billing",
-            "metadata": {"team": "support"},
+            RETRIEVAL_HIT_ID_FIELD: hit.id,
+            RETRIEVAL_HIT_CONTENT_FIELD: hit.text,
+            RETRIEVAL_HIT_SCORE_FIELD: 0.91,
+            RETRIEVAL_HIT_DOCUMENT_ID_FIELD: "doc-1",
+            RETRIEVAL_HIT_DOCUMENT_KEY_FIELD: "docs/guide.md",
+            RETRIEVAL_HIT_CORPUS_ID_FIELD: "help",
+            RETRIEVAL_HIT_NAMESPACE_FIELD: "acme",
+            RETRIEVAL_HIT_TITLE_FIELD: "Guide",
+            RETRIEVAL_HIT_CHUNK_INDEX_FIELD: 2,
+            RETRIEVAL_HIT_SECTION_PATH_FIELD: "Guide > Billing",
+            RETRIEVAL_HIT_METADATA_FIELD: {"team": "support"},
         }
     ]
 
@@ -49,9 +64,16 @@ def test_to_retrieval_hits_omits_empty_optional_fields() -> None:
 
     exported = to_retrieval_hits([hit])
 
-    assert exported[0]["id"] == hit.id
-    assert exported[0]["content"] == hit.text
-    assert "metadata" not in exported[0]
-    assert "namespace" not in exported[0]
-    assert "corpus_id" not in exported[0]
-    assert "title" not in exported[0]
+    assert exported[0][RETRIEVAL_HIT_ID_FIELD] == hit.id
+    assert exported[0][RETRIEVAL_HIT_CONTENT_FIELD] == hit.text
+    assert RETRIEVAL_HIT_METADATA_FIELD not in exported[0]
+    assert RETRIEVAL_HIT_NAMESPACE_FIELD not in exported[0]
+    assert RETRIEVAL_HIT_CORPUS_ID_FIELD not in exported[0]
+    assert RETRIEVAL_HIT_TITLE_FIELD not in exported[0]
+
+
+def test_events_export_uses_curated_search_result_import() -> None:
+    source = Path("src/rag_core/events/export.py").read_text(encoding="utf-8")
+
+    assert "from rag_core.search import SearchResult" in source
+    assert "rag_core.search.vector_models" not in source

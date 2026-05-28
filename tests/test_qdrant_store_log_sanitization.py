@@ -10,7 +10,7 @@ import pytest
 
 from rag_core.search.providers.qdrant_lifecycle import create_qdrant_collection
 from rag_core.search.providers.qdrant_store import QdrantVectorStore
-from tests.support import TEST_API_SECRET
+from tests.support import TEST_API_SECRET, assert_caplog_omits_private
 
 LOGGER_NAME = "rag_core.search.providers.qdrant_store"
 
@@ -74,18 +74,6 @@ def _fingerprint(collection_name: str) -> str:
     return hashlib.sha256(collection_name.encode("utf-8")).hexdigest()[:12]
 
 
-def _assert_private_context_omitted(
-    caplog: pytest.LogCaptureFixture,
-    message: str,
-) -> None:
-    assert PRIVATE_COLLECTION not in message
-    assert OTHER_PRIVATE_COLLECTION not in message
-    assert SECRET not in message
-    assert "connection failed for" not in message
-    assert "Traceback" not in message
-    assert all(record.exc_info is None for record in caplog.records)
-
-
 def test_qdrant_store_init_log_omits_collection_name(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -94,14 +82,20 @@ def test_qdrant_store_init_log_omits_collection_name(
 
     message = _messages(caplog)
     assert "QdrantVectorStore initialized" in message
-    assert "backend=qdrant" in message
+    assert "provider=qdrant" in message
+    assert "backend=qdrant" not in message
     assert "dense_dimensions=3" in message
     assert "max_concurrent=" in message
     assert "max_batch_size=" in message
     assert "quantization=True" in message
     assert "local=True" in message
     assert f"collection_fingerprint={_fingerprint(PRIVATE_COLLECTION)}" in message
-    _assert_private_context_omitted(caplog, message)
+    assert_caplog_omits_private(
+        caplog,
+        PRIVATE_COLLECTION,
+        OTHER_PRIVATE_COLLECTION,
+        "connection failed for",
+    )
 
 
 def test_collection_fingerprint_distinguishes_store_logs(
@@ -114,7 +108,12 @@ def test_collection_fingerprint_distinguishes_store_logs(
     message = _messages(caplog)
     assert f"collection_fingerprint={_fingerprint(PRIVATE_COLLECTION)}" in message
     assert f"collection_fingerprint={_fingerprint(OTHER_PRIVATE_COLLECTION)}" in message
-    _assert_private_context_omitted(caplog, message)
+    assert_caplog_omits_private(
+        caplog,
+        PRIVATE_COLLECTION,
+        OTHER_PRIVATE_COLLECTION,
+        "connection failed for",
+    )
 
 
 def test_existing_collection_log_omits_collection_name(
@@ -131,11 +130,17 @@ def test_existing_collection_log_omits_collection_name(
 
     message = _messages(caplog)
     assert "Qdrant collection already exists" in message
-    assert "backend=qdrant" in message
+    assert "provider=qdrant" in message
+    assert "backend=qdrant" not in message
     assert "dense_dimensions=3" in message
     assert "sparse_channels=2" in message
     assert f"collection_fingerprint={_fingerprint(PRIVATE_COLLECTION)}" in message
-    _assert_private_context_omitted(caplog, message)
+    assert_caplog_omits_private(
+        caplog,
+        PRIVATE_COLLECTION,
+        OTHER_PRIVATE_COLLECTION,
+        "connection failed for",
+    )
 
 
 def test_created_collection_log_omits_collection_name(
@@ -159,12 +164,18 @@ def test_created_collection_log_omits_collection_name(
 
     message = _messages(caplog)
     assert "Created Qdrant collection" in message
-    assert "backend=qdrant" in message
+    assert "provider=qdrant" in message
+    assert "backend=qdrant" not in message
     assert "dense_dimensions=3" in message
     assert "quantization=INT8" in message
     assert "hnsw_ef=100" in message
     assert f"collection_fingerprint={_fingerprint(PRIVATE_COLLECTION)}" in message
-    _assert_private_context_omitted(caplog, message)
+    assert_caplog_omits_private(
+        caplog,
+        PRIVATE_COLLECTION,
+        OTHER_PRIVATE_COLLECTION,
+        "connection failed for",
+    )
 
 
 def test_health_failure_log_omits_collection_and_raw_exception(
@@ -183,7 +194,13 @@ def test_health_failure_log_omits_collection_and_raw_exception(
     assert health["error"] == "RuntimeError"
     message = _messages(caplog)
     assert "Qdrant health check failed" in message
-    assert "backend=qdrant" in message
+    assert "provider=qdrant" in message
+    assert "backend=qdrant" not in message
     assert "error_type=RuntimeError" in message
     assert f"collection_fingerprint={_fingerprint(PRIVATE_COLLECTION)}" in message
-    _assert_private_context_omitted(caplog, message)
+    assert_caplog_omits_private(
+        caplog,
+        PRIVATE_COLLECTION,
+        OTHER_PRIVATE_COLLECTION,
+        "connection failed for",
+    )

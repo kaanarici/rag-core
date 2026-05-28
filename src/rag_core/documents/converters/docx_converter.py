@@ -17,6 +17,7 @@ from .base import (
     render_markdown_table,
     score_text_quality,
 )
+from .converter_keys import DOCX_CONVERTER_KEY
 from .quality import QualityVerdict, is_char_count_only_quality_failure
 
 logger = logging.getLogger(__name__)
@@ -85,9 +86,7 @@ def _extract_docx_figure_items(doc: Any) -> List[Dict[str, Any]]:
         try:
             doc_pr = shape._inline.docPr
             alt_text = (
-                _doc_pr_attr(doc_pr, "descr")
-                or _doc_pr_attr(doc_pr, "title")
-                or ""
+                _doc_pr_attr(doc_pr, "descr") or _doc_pr_attr(doc_pr, "title") or ""
             )
             if alt_text:
                 description = str(alt_text).strip()
@@ -141,7 +140,7 @@ def _attach_single_docx_figure_locator(
 class DocxConverter(HybridConverter):
     """Converts DOCX files to markdown with heading style detection."""
 
-    format_name = "docx"
+    format_name = DOCX_CONVERTER_KEY
 
     async def convert(
         self,

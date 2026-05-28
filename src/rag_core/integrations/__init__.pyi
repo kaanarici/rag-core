@@ -2,32 +2,28 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from types import ModuleType
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 
-from rag_core.core import RAGCore
+import rag_core.integrations.protocols
+from rag_core import RAGCore
 from rag_core.integrations.langchain import (
     LangChainNotInstalledError as LangChainNotInstalledError,
     LangChainRetrieverConfig as LangChainRetrieverConfig,
 )
+from rag_core.search import QueryPlan
 
-__all__: tuple[str, ...]
+__all__: tuple[str, ...] = (
+    "LangChainNotInstalledError",
+    "LangChainRetrieverConfig",
+    "build_langchain_retriever",
+    "build_retrieve_context_tool",
+    "create_langchain_context_tool",
+    "create_langchain_retriever_tool",
+    "langchain",
+    "openai_agents",
+)
 langchain: ModuleType
 openai_agents: ModuleType
-
-class SupportsRetrieveContext(Protocol):
-    async def retrieve_context(
-        self,
-        *,
-        query: str,
-        namespace: str,
-        corpus_ids: list[str],
-        limit: int,
-        document_ids: list[str] | None,
-        rerank: bool,
-        use_lexical_search: bool,
-        max_chars: int | None,
-        max_tokens: int | None,
-    ) -> Any: ...
 
 def build_langchain_retriever(
     core: RAGCore,
@@ -35,16 +31,18 @@ def build_langchain_retriever(
     namespace: str,
     corpus_ids: Sequence[str],
     limit: int = ...,
+    content_types: Sequence[str] | None = ...,
     document_ids: Sequence[str] | None = ...,
     rerank: bool = ...,
     use_lexical_search: bool = ...,
-    query_plan: object | None = ...,
+    query_plan: QueryPlan | None = ...,
 ) -> Any: ...
 def build_retrieve_context_tool(
-    core: SupportsRetrieveContext,
+    core: rag_core.integrations.protocols.SupportsRetrieveContext,
     *,
     namespace: str,
     corpus_ids: Sequence[str],
+    content_types: Sequence[str] | None = ...,
     document_ids: Sequence[str] | None = ...,
     tool_name: str = ...,
     tool_description: str | None = ...,
@@ -53,6 +51,7 @@ def build_retrieve_context_tool(
     default_use_lexical_search: bool = ...,
     default_max_chars: int | None = ...,
     default_max_tokens: int | None = ...,
+    query_plan: QueryPlan | None = ...,
     return_payload: bool = ...,
     timeout: float | None = ...,
 ) -> Any: ...
@@ -64,12 +63,13 @@ def create_langchain_context_tool(
     name: str = ...,
     description: str = ...,
     limit: int = ...,
+    content_types: Sequence[str] | None = ...,
     document_ids: Sequence[str] | None = ...,
     rerank: bool = ...,
     use_lexical_search: bool = ...,
     max_chars: int | None = ...,
     max_tokens: int | None = ...,
-    query_plan: object | None = ...,
+    query_plan: QueryPlan | None = ...,
 ) -> Any: ...
 def create_langchain_retriever_tool(
     retriever: Any,

@@ -15,6 +15,10 @@ from rag_core.remote_discovery_documents import (
     parse_sitemap_urls as parse_sitemap_urls,
 )
 from rag_core.remote_discovery_models import (
+    DEFAULT_REMOTE_LLMS_TXT_MAX_URLS as DEFAULT_REMOTE_LLMS_TXT_MAX_URLS,
+    DEFAULT_REMOTE_SITEMAP_INDEX_MAX_FETCHES as DEFAULT_REMOTE_SITEMAP_INDEX_MAX_FETCHES,
+    DEFAULT_REMOTE_SITEMAP_MAX_URLS as DEFAULT_REMOTE_SITEMAP_MAX_URLS,
+    REMOTE_DISCOVERY_KIND_SITEMAP_INDEX,
     RemoteDiscoveredUrl as RemoteDiscoveredUrl,
     RemoteDiscovery as RemoteDiscovery,
     RemoteDiscoveryKind as RemoteDiscoveryKind,
@@ -47,8 +51,8 @@ class RemoteDiscoveryReader:
         self,
         url: str,
         *,
-        max_urls: int = 50_000,
-        max_sitemap_fetches: int = 128,
+        max_urls: int = DEFAULT_REMOTE_SITEMAP_MAX_URLS,
+        max_sitemap_fetches: int = DEFAULT_REMOTE_SITEMAP_INDEX_MAX_FETCHES,
     ) -> RemoteDiscovery:
         response = self._fetch(url)
         discovery = parse_sitemap_urls(
@@ -56,7 +60,7 @@ class RemoteDiscoveryReader:
             policy=self._policy,
             max_urls=max_urls,
         )
-        if discovery.source_kind != "sitemap_index":
+        if discovery.source_kind != REMOTE_DISCOVERY_KIND_SITEMAP_INDEX:
             return discovery
         return self._expand_sitemap_index(
             discovery,
@@ -64,7 +68,12 @@ class RemoteDiscoveryReader:
             max_sitemap_fetches=max_sitemap_fetches,
         )
 
-    def read_llms_txt(self, url: str, *, max_urls: int = 1_000) -> RemoteDiscovery:
+    def read_llms_txt(
+        self,
+        url: str,
+        *,
+        max_urls: int = DEFAULT_REMOTE_LLMS_TXT_MAX_URLS,
+    ) -> RemoteDiscovery:
         response = self._fetch(url)
         return parse_llms_txt_urls(
             response.body,

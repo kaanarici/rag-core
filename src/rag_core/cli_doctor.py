@@ -20,10 +20,13 @@ from rag_core.search.providers.model_provider_diagnostics import (
     describe_model_provider_diagnostics,
 )
 from rag_core.search.providers.reranker import resolve_reranker_provider
+from rag_core.search.providers.sparse import DEFAULT_SPARSE_EMBEDDER_PROVIDER
 from rag_core.search.providers.vector_store_diagnostics import (
+    VECTOR_STORE_RUNTIME_FAILED,
+    VECTOR_STORE_RUNTIME_HEALTHY,
     describe_vector_store_diagnostics,
 )
-from rag_core.search.query_plan_presets import describe_retrieval_profiles
+from rag_core.search.planning import describe_search_profile_catalog
 
 if TYPE_CHECKING:
     from rag_core.core import RAGCore
@@ -35,7 +38,7 @@ async def run_doctor_command(
     core_factory: Callable[..., "RAGCore"],
 ) -> int:
     config = RAGCoreConfig.from_cli(args)
-    payload = _planned_runtime_payload(config)
+    payload = _planned_core_payload(config)
     exit_code = 0
     if args.check_store or args.fix:
         store_outcome = await exercise_doctor_store(
@@ -75,10 +78,12 @@ def _mark_vector_store_runtime_validation(
     if not isinstance(provider_payload, dict):
         return
     provider_payload["runtime_validated"] = healthy
-    provider_payload["runtime_validation"] = "healthy" if healthy else "failed"
+    provider_payload["runtime_validation"] = (
+        VECTOR_STORE_RUNTIME_HEALTHY if healthy else VECTOR_STORE_RUNTIME_FAILED
+    )
 
 
-def _planned_runtime_payload(config: RAGCoreConfig) -> dict[str, object]:
+def _planned_core_payload(config: RAGCoreConfig) -> dict[str, object]:
     dimensions = resolve_embedding_dimensions(
         provider=config.embedding.provider,
         model=config.embedding.model,
@@ -111,7 +116,7 @@ def _planned_runtime_payload(config: RAGCoreConfig) -> dict[str, object]:
             "batch_size": config.embedding.batch_size,
         },
         "sparse": {
-            "provider": "fastembed",
+            "provider": DEFAULT_SPARSE_EMBEDDER_PROVIDER,
         },
         "reranker": {
             "provider": config.reranker.provider,
@@ -128,7 +133,7 @@ def _planned_runtime_payload(config: RAGCoreConfig) -> dict[str, object]:
             config=config,
             collection_name=collection_name,
         ),
-        "retrieval": describe_retrieval_profiles(),
+        "search": describe_search_profile_catalog(),
         "providers": describe_model_provider_diagnostics(
             config=config,
             embedding_dimensions=dimensions,

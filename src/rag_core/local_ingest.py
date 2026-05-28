@@ -9,6 +9,7 @@ from rag_core.cli_provider_errors import (
     is_provider_bootstrap_error,
     provider_runtime_message,
 )
+from rag_core.config import INGEST_SOURCE_TYPE_FILE
 from rag_core.core_file_io import detect_local_mime_type, read_file_bytes
 from rag_core.core_lifecycle import compute_content_sha256
 from rag_core.core_models import IngestedDocument
@@ -56,8 +57,8 @@ from rag_core.local_search_runner import (
     LocalSearchCoreFactory,
     default_corpus_id,
     discover_local_files,
+    local_search_hit_payload,
     run_local_search,
-    search_hit_payload,
 )
 
 if TYPE_CHECKING:
@@ -120,7 +121,7 @@ class _BytesIngestAdapter:
             path=str(file_path),
             metadata=metadata,
             force_reindex=force_reindex,
-            source_type="file",
+            source_type=INGEST_SOURCE_TYPE_FILE,
         )
 
     async def close(self) -> None:
@@ -223,7 +224,9 @@ async def _run_local_ingest(
         cause = exc.cause
         if ready and is_provider_bootstrap_error(cause):
             batch_failed = True
-            cli_error = ProviderCliError(provider_runtime_message(cause, action="ingest"))
+            cli_error = ProviderCliError(
+                provider_runtime_message(cause, action="ingest")
+            )
             succeeded_count, failed_count = _local_ingest_record_counts(records)
             emit_event(
                 event_sink,
@@ -352,11 +355,11 @@ __all__ = [
     "build_local_ingest_plan",
     "default_corpus_id",
     "discover_local_files",
+    "local_search_hit_payload",
     "preview_manifest",
     "reconcile_local_ingest_plan",
     "run_local_ingest",
     "run_local_ingest_with_core",
     "run_local_search",
-    "search_hit_payload",
     "validate_supported_local_file",
 ]

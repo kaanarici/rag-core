@@ -22,6 +22,7 @@ from rag_core.search.query_plan import (
     Mmr,
     SparseChannel,
 )
+from rag_core.search.sparse_channels import PRIMARY_SPARSE_CHANNEL
 
 
 def test_hybrid_rrf_preset_has_dense_plus_sparse_with_rrf() -> None:
@@ -46,13 +47,13 @@ def test_dense_only_preset_drops_sparse_and_fusion() -> None:
     assert plan.final_limit == 5
 
 
-def test_sparse_only_preset_targets_bm25_channel() -> None:
+def test_sparse_only_preset_targets_primary_sparse_channel() -> None:
     plan = query_plan_preset("sparse_only", limit=8)
 
     assert len(plan.prefetches) == 1
     sparse_channel = plan.prefetches[0].channel
     assert isinstance(sparse_channel, SparseChannel)
-    assert sparse_channel.vector_field == "bm25"
+    assert sparse_channel.vector_field == PRIMARY_SPARSE_CHANNEL
     assert plan.fuse is None
     assert plan.rerank is None
 

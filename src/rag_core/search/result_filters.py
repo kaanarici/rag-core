@@ -1,35 +1,14 @@
 from __future__ import annotations
 
 from rag_core.search.filter_eval import eval_filter
-from rag_core.search.types import SearchResult, SearchSidecarQuery
-
-_RESULT_FILTER_FIELDS = (
-    "namespace",
-    "content_type",
-    "source_type",
-    "document_id",
-    "corpus_id",
-    "document_key",
-    "content_sha256",
-    "title",
-    "section_id",
-    "section_title",
-    "section_path",
-    "document_path",
-    "chunk_index",
-    "chunk_word_count",
-    "chunk_token_estimate",
-    "embedding_model",
-    "chunker_strategy",
-    "result_type",
-    "figure_id",
-    "figure_thumbnail_url",
-)
+from rag_core.search.stored_payload_fields import SEARCH_RESULT_FILTER_FIELDS
+from rag_core.search.request_models import SearchSidecarQuery
+from rag_core.search.vector_models import SearchResult
 
 
 def search_result_payload(result: SearchResult) -> dict[str, object]:
     payload = dict(result.metadata)
-    for key in _RESULT_FILTER_FIELDS:
+    for key in SEARCH_RESULT_FILTER_FIELDS:
         value = getattr(result, key)
         if value is not None:
             payload[key] = value

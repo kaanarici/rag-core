@@ -7,6 +7,7 @@ import logging
 import os
 
 from .base import BaseConverter, ConversionResult, score_text_quality
+from .converter_keys import CODE_CONVERTER_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,7 @@ def detect_language(filename: str) -> str:
 class CodeConverter(BaseConverter):
     """Converts code files to text with language metadata for chunking."""
 
-    format_name = "code"
+    format_name = CODE_CONVERTER_KEY
 
     async def convert(
         self,

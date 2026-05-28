@@ -6,7 +6,22 @@ from rag_core.manifest_persistence import (
     ManifestReconciliation,
     ManifestReconciliationItem,
 )
-from rag_core.remote_ingest_results import RemoteManifestStatus
+from rag_core.manifest_reconciliation_reasons import (
+    MANIFEST_REASON_CANONICAL_URL_UNKNOWN_UNTIL_FETCH,
+    MANIFEST_REASON_CONTENT_SHA256_CHANGED,
+    MANIFEST_REASON_CONTENT_SHA256_MATCH,
+    MANIFEST_REASON_NOT_CHECKED,
+)
+from rag_core.manifest_reconciliation_statuses import (
+    MANIFEST_RECONCILIATION_STATUSES,
+    MANIFEST_STATUS_CHANGED,
+    MANIFEST_STATUS_DUPLICATE,
+    MANIFEST_STATUS_MISSING,
+    MANIFEST_STATUS_UNKNOWN,
+    MANIFEST_STATUS_UNKNOWN_UNTIL_FETCH,
+    MANIFEST_STATUS_UNCHANGED,
+    RemoteManifestStatus,
+)
 
 if TYPE_CHECKING:
     from rag_core.remote_ingest_models import RemoteUrlSourceItem
@@ -35,11 +50,10 @@ def remote_source_reconciliation_by_key(
 ) -> dict[str, ManifestReconciliationItem]:
     if reconciliation is None:
         return {}
-    source_statuses = {"changed", "duplicate", "missing", "orphaned", "unchanged"}
     return {
         item.document_key: item
         for item in reconciliation.items
-        if item.status in source_statuses
+        if item.status in MANIFEST_RECONCILIATION_STATUSES
     }
 
 
@@ -51,13 +65,16 @@ def remote_manifest_status_for_content(
 ) -> tuple[RemoteManifestStatus, str]:
     item = reconciliation_by_key.get(document_key)
     if item is None:
-        return "unknown", "manifest_not_checked"
-    if item.status == "missing" and content_sha256 is None:
-        return "unknown_until_fetch", "canonical_url_unknown_until_fetch"
-    if item.status == "duplicate":
-        return "duplicate", item.reason
+        return MANIFEST_STATUS_UNKNOWN, MANIFEST_REASON_NOT_CHECKED
+    if item.status == MANIFEST_STATUS_MISSING and content_sha256 is None:
+        return (
+            MANIFEST_STATUS_UNKNOWN_UNTIL_FETCH,
+            MANIFEST_REASON_CANONICAL_URL_UNKNOWN_UNTIL_FETCH,
+        )
+    if item.status == MANIFEST_STATUS_DUPLICATE:
+        return MANIFEST_STATUS_DUPLICATE, item.reason
     if content_sha256 is not None and item.manifest_content_sha256 is not None:
         if content_sha256 == item.manifest_content_sha256:
-            return "unchanged", "content_sha256_match"
-        return "changed", "content_sha256_changed"
+            return MANIFEST_STATUS_UNCHANGED, MANIFEST_REASON_CONTENT_SHA256_MATCH
+        return MANIFEST_STATUS_CHANGED, MANIFEST_REASON_CONTENT_SHA256_CHANGED
     return item.status, item.reason

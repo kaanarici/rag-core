@@ -7,9 +7,21 @@ import sqlite3
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Final, Literal
 
 JobStatus = Literal["pending", "running", "completed", "failed"]
+
+INGEST_JOB_STATUS_PENDING: Final[JobStatus] = "pending"
+INGEST_JOB_STATUS_RUNNING: Final[JobStatus] = "running"
+INGEST_JOB_STATUS_COMPLETED: Final[JobStatus] = "completed"
+INGEST_JOB_STATUS_FAILED: Final[JobStatus] = "failed"
+
+INGEST_JOB_STATUSES: Final[tuple[JobStatus, ...]] = (
+    INGEST_JOB_STATUS_PENDING,
+    INGEST_JOB_STATUS_RUNNING,
+    INGEST_JOB_STATUS_COMPLETED,
+    INGEST_JOB_STATUS_FAILED,
+)
 
 
 @dataclass(frozen=True)
@@ -56,13 +68,13 @@ class IngestJobStore:
             connection.execute(
                 """
                 INSERT INTO ingest_jobs (job_id, status, path, namespace, corpus_id)
-                VALUES (?, 'pending', ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (job_id, path, namespace, corpus_id),
+                (job_id, INGEST_JOB_STATUS_PENDING, path, namespace, corpus_id),
             )
         return IngestJobRecord(
             job_id=job_id,
-            status="pending",
+            status=INGEST_JOB_STATUS_PENDING,
             path=path,
             namespace=namespace,
             corpus_id=corpus_id,
@@ -101,9 +113,7 @@ class IngestJobStore:
             return None
         result_json = row["result_json"]
         result = json.loads(result_json) if isinstance(result_json, str) else None
-        status = row["status"]
-        if status not in {"pending", "running", "completed", "failed"}:
-            raise ValueError(f"unexpected ingest job status: {status}")
+        status = parse_job_status(str(row["status"]))
         return IngestJobRecord(
             job_id=str(row["job_id"]),
             status=status,
@@ -113,3 +123,9 @@ class IngestJobStore:
             result=result if isinstance(result, dict) else None,
             error=row["error"],
         )
+
+
+def parse_job_status(value: str) -> JobStatus:
+    if value not in INGEST_JOB_STATUSES:
+        raise ValueError(f"unexpected ingest job status: {value}")
+    return value

@@ -5,23 +5,14 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import cast
 
 from rag_core.events.emit import now_ms
 from rag_core.search.pipeline.stages.sidecar_application import build_sidecar_query
-from rag_core.search.pipeline.types import PipelineQuery
-from rag_core.search.types import SearchResult, SearchSidecar
+from rag_core.search.pipeline.types import PipelineQuery, PipelineSidecarPrefetch
+from rag_core.search.provider_protocols import SearchSidecar
+from rag_core.search.vector_models import SearchResult
 
 logger = logging.getLogger("rag_core.search.pipeline.stages.sidecar_postprocess")
-
-_SIDECAR_FUTURE_KEY = "__sidecar_future"
-
-
-@dataclass(frozen=True)
-class _SidecarPrefetch:
-    task: asyncio.Task[list[SearchResult]]
-    started_ms: float
-
 
 @dataclass(frozen=True)
 class SidecarResolution:
@@ -37,7 +28,7 @@ async def start_prefetched_sidecar(
     await cancel_prefetched_sidecar(query)
     sidecar_query = build_sidecar_query(query)
     # asyncio.create_task starts the coroutine so its I/O can overlap with Retrieve.
-    query.extra[_SIDECAR_FUTURE_KEY] = _SidecarPrefetch(
+    query.state.sidecar_prefetch = PipelineSidecarPrefetch(
         task=asyncio.create_task(sidecar.search(sidecar_query)),
         started_ms=now_ms(),
     )
@@ -47,11 +38,11 @@ async def resolve_sidecar_results(
     query: PipelineQuery,
     sidecar: SearchSidecar | None,
 ) -> SidecarResolution:
-    prefetched = query.extra.pop(_SIDECAR_FUTURE_KEY, None)
+    prefetched = query.state.sidecar_prefetch
+    query.state.sidecar_prefetch = None
     if prefetched is not None:
-        prefetch = cast(_SidecarPrefetch, prefetched)
         try:
-            sidecar_results = await prefetch.task
+            sidecar_results = await prefetched.task
         except asyncio.CancelledError:
             if _is_current_task_cancelling():
                 raise
@@ -59,7 +50,7 @@ async def resolve_sidecar_results(
             _log_sidecar_failure(error_type)
             return SidecarResolution(
                 results=[],
-                duration_ms=now_ms() - prefetch.started_ms,
+                duration_ms=now_ms() - prefetched.started_ms,
                 error_type=error_type,
             )
         except Exception as exc:
@@ -67,12 +58,12 @@ async def resolve_sidecar_results(
             _log_sidecar_failure(error_type)
             return SidecarResolution(
                 results=[],
-                duration_ms=now_ms() - prefetch.started_ms,
+                duration_ms=now_ms() - prefetched.started_ms,
                 error_type=error_type,
             )
         return SidecarResolution(
             results=sidecar_results,
-            duration_ms=now_ms() - prefetch.started_ms,
+            duration_ms=now_ms() - prefetched.started_ms,
         )
 
     if sidecar is None:
@@ -106,14 +97,14 @@ async def resolve_sidecar_results(
 
 
 async def cancel_prefetched_sidecar(query: PipelineQuery) -> None:
-    prefetched = query.extra.pop(_SIDECAR_FUTURE_KEY, None)
+    prefetched = query.state.sidecar_prefetch
+    query.state.sidecar_prefetch = None
     if prefetched is None:
         return
-    prefetch = cast(_SidecarPrefetch, prefetched)
-    if not prefetch.task.done():
-        prefetch.task.cancel()
+    if not prefetched.task.done():
+        prefetched.task.cancel()
     try:
-        await prefetch.task
+        await prefetched.task
     except asyncio.CancelledError:
         return
     except Exception as exc:

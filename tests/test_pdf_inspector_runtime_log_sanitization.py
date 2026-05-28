@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 import rag_core.documents.pdf_inspector_runtime as pdf_inspector_runtime
+from tests.support import assert_caplog_omits_private, assert_log_record_contains
 
 LOGGER_NAME = "rag_core.documents.pdf_inspector"
 PRIVATE_BINARY_PATH = "/tmp/private/pdf-inspector-sk-test-secret/bin"
@@ -15,13 +16,13 @@ PRIVATE_STDOUT = "private stdout body with api key sk-test-secret"
 
 
 def _assert_private_runtime_data_absent(caplog: pytest.LogCaptureFixture) -> None:
-    assert PRIVATE_STDERR not in caplog.text
-    assert PRIVATE_STDOUT not in caplog.text
-    assert PRIVATE_BINARY_PATH not in caplog.text
-    assert "PDF_INSPECTOR_BINARY_PATH" not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(
+        caplog,
+        PRIVATE_STDERR,
+        PRIVATE_STDOUT,
+        PRIVATE_BINARY_PATH,
+        "PDF_INSPECTOR_BINARY_PATH",
+    )
 
 
 def test_nonzero_exit_log_omits_process_output(
@@ -48,10 +49,14 @@ def test_nonzero_exit_log_omits_process_output(
         result = pdf_inspector_runtime.run_pdf_inspector(
             ["detect-pdf", "--analyze", "--json"],
             b"%PDF-1.7",
-        )
+    )
 
     assert result is None
-    assert "pdf-inspector detect-pdf exited with code 13" in caplog.text
+    assert_log_record_contains(
+        caplog,
+        "pdf-inspector detect-pdf exited with code 13",
+        logger_name=LOGGER_NAME,
+    )
     _assert_private_runtime_data_absent(caplog)
 
 
@@ -83,8 +88,12 @@ def test_missing_binary_log_omits_configured_path(
         )
 
     assert result is None
-    assert "pdf-inspector binary detect-pdf was not found" in caplog.text
-    assert f"configured_path={expected_configured}" in caplog.text
+    assert_log_record_contains(
+        caplog,
+        "pdf-inspector binary detect-pdf was not found",
+        f"configured_path={expected_configured}",
+        logger_name=LOGGER_NAME,
+    )
     _assert_private_runtime_data_absent(caplog)
 
 

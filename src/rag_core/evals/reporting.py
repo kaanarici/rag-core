@@ -16,6 +16,7 @@ def eval_result_payload(result: EvalResult) -> EvalReport:
         "query": case.query,
         "namespace": case.namespace,
         "corpus_ids": list(case.corpus_ids),
+        "expected_ids": list(case.expected_ids),
         "expected_chunk_ids": list(case.expected_chunk_ids),
         "ok": result.error_type is None,
         "retrieved_ids": list(result.retrieved_ids),
@@ -79,6 +80,7 @@ def _redacted_case_payload(payload: object) -> EvalReport:
         redacted["case_label"] = f"case-{case_ordinal}"
     redacted.pop("case_id", None)
     redacted.pop("query", None)
+    redacted.pop("expected_ids", None)
     redacted.pop("expected_chunk_ids", None)
     redacted.pop("expected_grades", None)
     return redacted

@@ -7,43 +7,45 @@ from rag_core.core_builders import (
     build_index_request,
 )
 from rag_core.core_ingest_decision import resolve_ingest_decision
+from rag_core.core_ingest_delete import (
+    delete_ingested_document,
+    delete_vector_index_and_sidecar,
+)
 from rag_core.core_ingest_events import (
-    emit_index_deleted,
     emit_ingest_completed,
     emit_ingest_skipped,
     emit_ingest_started,
 )
 from rag_core.core_ingest_identity import resolve_ingest_identity
 from rag_core.core_ingest_recovery import (
-    delete_indexed_document,
     latest_manifest_entry,
     manifest_entry_from_existing_record,
-    manifest_parser,
+    restore_manifest_from_vector_store,
     refreshed_manifest_entry,
-    restored_manifest_entry_from_existing_record,
+    retry_final_manifest_write,
     sync_sidecar_or_emit_error,
+    write_final_manifest,
 )
 from rag_core.core_ingest_results import (
     build_indexed_ingested_document,
     build_skipped_ingested_document,
 )
-from rag_core.core_manifest_builders import build_manifest_entry
+from rag_core.core_manifest_builders import build_staged_manifest_entry
 from rag_core.core_models import (
-    CorpusManifestEntry,
+    DeleteDocumentResult,
     IngestedDocument,
     PreparedDocument,
     ProcessingFingerprint,
 )
 from rag_core.events.emit import now_ms, stage_guard
 from rag_core.manifest_persistence import (
-    delete_entry,
     manifest_path,
     write_entry,
     write_entry_if_stale,
 )
 from rag_core.search.indexer import DocumentIndexer
 from rag_core.search.policy import DEFAULT_POLICY, VectorStorePolicy
-from rag_core.search.types import SearchSidecar, VectorStore
+from rag_core.search.provider_protocols import SearchSidecar, VectorStore
 
 if TYPE_CHECKING:
     from rag_core.events.sink import EventSink
@@ -219,7 +221,8 @@ class CoreIngestor:
                 with stage_guard(sink, stage="manifest"):
                     write_entry(
                         self._manifest_directory,
-                        CorpusManifestEntry(
+                        build_staged_manifest_entry(
+                            prepared=prepared,
                             document_id=identity.document_id,
                             namespace=namespace,
                             corpus_id=corpus_id,
@@ -227,10 +230,7 @@ class CoreIngestor:
                             content_sha256=identity.content_sha256,
                             filename=filename,
                             mime_type=mime_type,
-                            chunk_count=len(prepared.chunks),
-                            parser=manifest_parser(prepared.metadata.get("parser")),
-                            needs_ocr=bool(prepared.metadata.get("needs_ocr", False)),
-                            metadata=dict(metadata or {}),
+                            metadata=metadata,
                         ),
                     )
 
@@ -255,7 +255,9 @@ class CoreIngestor:
                 manifest_directory = self._manifest_directory
                 if manifest_directory is not None and decision.existing is not None:
                     try:
-                        await self._repair_manifest_after_failed_reindex(
+                        await restore_manifest_from_vector_store(
+                            store=self._store,
+                            event_sink=sink,
                             manifest_directory=manifest_directory,
                             namespace=namespace,
                             corpus_id=corpus_id,
@@ -267,7 +269,7 @@ class CoreIngestor:
                         )
                     except Exception as repair_exc:
                         raise ExceptionGroup(
-                            "index failed and manifest repair failed",
+                            "index failed and manifest restore failed",
                             [index_exc, repair_exc],
                         ) from None
                 raise
@@ -296,7 +298,8 @@ class CoreIngestor:
             if decision.existing is not None:
                 if self._manifest_directory is not None:
                     try:
-                        self._write_final_manifest(
+                        write_final_manifest(
+                            event_sink=sink,
                             manifest_directory=self._manifest_directory,
                             ingested=ingested,
                         )
@@ -307,7 +310,7 @@ class CoreIngestor:
                         ) from None
                 raise
             try:
-                await delete_indexed_document(
+                await delete_vector_index_and_sidecar(
                     indexer=self._indexer,
                     sidecar=self._sidecar,
                     namespace=namespace,
@@ -322,25 +325,27 @@ class CoreIngestor:
             raise
         if self._manifest_directory is not None:
             try:
-                self._write_final_manifest(
+                write_final_manifest(
+                    event_sink=sink,
                     manifest_directory=self._manifest_directory,
                     ingested=ingested,
                 )
             except Exception as manifest_exc:
                 if decision.existing is not None:
                     try:
-                        self._write_final_manifest(
+                        retry_final_manifest_write(
+                            event_sink=sink,
                             manifest_directory=self._manifest_directory,
                             ingested=ingested,
                         )
                     except Exception as repair_exc:
                         raise ExceptionGroup(
-                            "manifest write failed and manifest repair failed",
+                            "manifest write failed and manifest retry failed",
                             [manifest_exc, repair_exc],
                         ) from None
                 else:
                     try:
-                        await delete_indexed_document(
+                        await delete_vector_index_and_sidecar(
                             indexer=self._indexer,
                             sidecar=self._sidecar,
                             namespace=namespace,
@@ -369,80 +374,13 @@ class CoreIngestor:
         document_id: str,
         namespace: str,
         corpus_id: str,
-    ) -> None:
-        with stage_guard(self._event_sink, stage="delete"):
-            await delete_indexed_document(
-                indexer=self._indexer,
-                sidecar=self._sidecar,
-                namespace=namespace,
-                corpus_id=corpus_id,
-                document_id=document_id,
-            )
-        if self._manifest_directory is not None:
-            with stage_guard(self._event_sink, stage="manifest"):
-                delete_entry(
-                    self._manifest_directory,
-                    namespace=namespace,
-                    corpus_id=corpus_id,
-                    document_id=document_id,
-                )
-        emit_index_deleted(
-            self._event_sink,
+    ) -> DeleteDocumentResult:
+        return await delete_ingested_document(
+            indexer=self._indexer,
+            sidecar=self._sidecar,
+            event_sink=self._event_sink,
+            manifest_directory=self._manifest_directory,
+            document_id=document_id,
             namespace=namespace,
             corpus_id=corpus_id,
-            document_id=document_id,
         )
-
-    async def _repair_manifest_after_failed_reindex(
-        self,
-        *,
-        manifest_directory: Path,
-        namespace: str,
-        corpus_id: str,
-        document_id: str,
-        filename: str,
-        mime_type: str,
-        document_key: str,
-        fallback_entry: CorpusManifestEntry | None,
-    ) -> None:
-        if self._store.capabilities.document_record_lookup:
-            record = await self._store.get_document_record(
-                namespace=namespace,
-                corpus_id=corpus_id,
-                document_id=document_id,
-            )
-            with stage_guard(self._event_sink, stage="manifest"):
-                if record is None:
-                    delete_entry(
-                        manifest_directory,
-                        namespace=namespace,
-                        corpus_id=corpus_id,
-                        document_id=document_id,
-                    )
-                    return
-                write_entry(
-                    manifest_directory,
-                    restored_manifest_entry_from_existing_record(
-                        record,
-                        previous=fallback_entry,
-                        filename=filename,
-                        mime_type=mime_type,
-                        document_key=document_key,
-                    ),
-                )
-            return
-        if fallback_entry is not None:
-            with stage_guard(self._event_sink, stage="manifest"):
-                write_entry(manifest_directory, fallback_entry)
-
-    def _write_final_manifest(
-        self,
-        *,
-        manifest_directory: Path,
-        ingested: IngestedDocument,
-    ) -> None:
-        with stage_guard(self._event_sink, stage="manifest"):
-            write_entry(
-                manifest_directory,
-                build_manifest_entry(ingested),
-            )

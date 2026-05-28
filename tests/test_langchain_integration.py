@@ -10,13 +10,13 @@ from rag_core import RAGCore
 from rag_core.integrations.langchain import (
     LangChainNotInstalledError,
     LangChainRetrieverConfig,
-    _search,
     build_langchain_retriever,
     context_pack_to_tool_output,
     create_langchain_context_tool,
     create_langchain_retriever_tool,
     search_result_to_document_kwargs,
 )
+from rag_core.integrations.langchain_retriever import search_langchain_documents
 from rag_core.integrations.langchain_runtime import require_langchain_symbol
 from tests.support import (
     FakeEmbeddingProvider,
@@ -108,22 +108,22 @@ def test_context_pack_to_tool_output_returns_text_and_payload() -> None:
     content, artifact = context_pack_to_tool_output(pack)
     snippets = cast(list[dict[str, object]], artifact["snippets"])
 
-    assert content == pack.as_model_text()
+    assert content == pack.as_prompt_text()
     assert artifact["ok"] is True
-    assert artifact["context_text"] == pack.as_model_text()
+    assert artifact["context_text"] == pack.as_prompt_text()
     assert artifact["query"] == "what happened?"
-    assert snippets[0]["citation_id"] == "space-1:corpus-1:doc-1#chunk-0"
+    assert snippets[0]["citation_id"] == "S1"
 
 
 def test_context_pack_to_tool_output_omits_document_key_from_content() -> None:
     from rag_core.search.context_pack_models import (
         ContextSnippet,
-        ModelContextPack,
+        ContextPack,
         SourceLocator,
         SourceReference,
     )
 
-    pack = ModelContextPack(
+    pack = ContextPack(
         query="billing",
         snippets=(
             ContextSnippet(
@@ -153,8 +153,8 @@ def test_context_pack_to_tool_output_omits_document_key_from_content() -> None:
 
     assert "private/billing.md" not in content
     assert "private/billing.md" not in str(artifact["context_text"])
-    assert content == pack.as_model_text()
-    assert artifact["context_text"] == pack.as_model_text()
+    assert content == pack.as_prompt_text()
+    assert artifact["context_text"] == pack.as_prompt_text()
 
 
 def test_build_langchain_retriever_raises_when_langchain_missing(
@@ -199,7 +199,7 @@ def test_langchain_adapters_reject_blank_namespace_at_construction() -> None:
         )
 
 
-def test_langchain_retriever_normalizes_namespace_before_search() -> None:
+def test_langchain_retriever_normalizes_bound_scope_before_search() -> None:
     pytest.importorskip("langchain_core")
 
     async def scenario() -> RecordingVectorStore:
@@ -211,7 +211,7 @@ def test_langchain_retriever_normalizes_namespace_before_search() -> None:
             retriever = build_langchain_retriever(
                 core,
                 namespace=" acme ",
-                corpus_ids=["help"],
+                corpus_ids=[" help "],
                 rerank=False,
             )
             await retriever.ainvoke("billing")
@@ -221,6 +221,24 @@ def test_langchain_retriever_normalizes_namespace_before_search() -> None:
 
     store = asyncio.run(scenario())
     assert store.search_calls[0].namespace == "acme"
+    assert store.search_calls[0].corpus_ids == ["help"]
+
+
+def test_langchain_adapters_reject_blank_bound_scope_values() -> None:
+    with pytest.raises(ValueError, match="corpus_ids must contain non-empty strings"):
+        build_langchain_retriever(
+            cast(RAGCore, object()),
+            namespace="acme",
+            corpus_ids=[" "],
+        )
+
+    with pytest.raises(ValueError, match="document_ids must contain non-empty strings"):
+        create_langchain_context_tool(
+            cast(RAGCore, object()),
+            namespace="acme",
+            corpus_ids=["help"],
+            document_ids=[" "],
+        )
 
 
 def test_require_langchain_symbol_wraps_missing_symbol_attribute_error() -> None:
@@ -317,13 +335,14 @@ def test_search_helper_forwards_scope_options_to_vector_store() -> None:
         )
         core = _make_core("rag_core_langchain_search_helper", store)
         try:
-            await _search(
+            await search_langchain_documents(
                 core=core,
                 query="billing",
                 config=LangChainRetrieverConfig(
                     namespace="acme",
                     corpus_ids=("help",),
                     limit=2,
+                    content_types=("document",),
                     document_ids=("doc-1",),
                     rerank=False,
                     use_lexical_search=False,
@@ -337,5 +356,6 @@ def test_search_helper_forwards_scope_options_to_vector_store() -> None:
     call = store.search_calls[0]
     assert call.namespace == "acme"
     assert call.corpus_ids == ["help"]
+    assert call.content_types == ["document"]
     assert call.document_ids == ["doc-1"]
     assert call.limit == 2

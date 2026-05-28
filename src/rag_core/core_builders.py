@@ -6,6 +6,7 @@ Single owner for the shallow transformations between ``PreparedDocument``,
 
 from __future__ import annotations
 
+from rag_core.config import INGEST_SOURCE_TYPE_ARCHIVE, INGEST_SOURCE_TYPE_FILE
 from rag_core.core_lifecycle import (
     compute_content_sha256,
     resolve_document_id,
@@ -16,6 +17,7 @@ from rag_core.core_models import (
     PreparedDocument,
     ProcessingFingerprint,
 )
+from rag_core.ingest_states import INGEST_STATE_PREVIEW
 from rag_core.core_ocr_metadata import (
     OCR_METADATA_KEY as OCR_METADATA_KEY,
     read_ocr_metadata as read_ocr_metadata,
@@ -23,7 +25,7 @@ from rag_core.core_ocr_metadata import (
 )
 from rag_core.search.indexer_models import IndexRequest
 from rag_core.search.policy import DEFAULT_POLICY, VectorStorePolicy
-from rag_core.search.types import StoredDocumentRecord
+from rag_core.search.request_models import StoredDocumentRecord
 
 def build_preview_document(
     *,
@@ -58,7 +60,7 @@ def build_preview_document(
         mime_type=prepared.mime_type,
         document_key=resolved_document_key,
         content_sha256=compute_content_sha256(file_bytes),
-        ingest_state="preview",
+        ingest_state=INGEST_STATE_PREVIEW,
         replaced_existing=False,
         collection_name=collection_name,
         embedding_model=embedding_model,
@@ -102,6 +104,7 @@ def build_index_request(
             source_type=source_type,
             path=prepared.path,
         ),
+        document_metadata=dict(prepared.metadata) or None,
         extra_fields=dict(metadata or {}) or None,
         embedding_model=embedding_model,
         pre_chunked_texts=[chunk.text for chunk in prepared.chunks],
@@ -116,7 +119,7 @@ def _display_path_for_index(
     path: str | None,
     document_key: str | None,
 ) -> str | None:
-    if source_type in {"file", "archive"} and document_key:
+    if source_type in {INGEST_SOURCE_TYPE_FILE, INGEST_SOURCE_TYPE_ARCHIVE} and document_key:
         return document_key
     return path
 
@@ -126,7 +129,7 @@ def _stored_document_path(
     source_type: str,
     path: str | None,
 ) -> str | None:
-    if source_type in {"file", "archive"}:
+    if source_type in {INGEST_SOURCE_TYPE_FILE, INGEST_SOURCE_TYPE_ARCHIVE}:
         return None
     return path
 

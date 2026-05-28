@@ -15,7 +15,7 @@ from .code_language_support import (
 from .code_runtime import (
     ast_boundaries_for_language,
     detect_language_with_magika,
-    tree_sitter_backend_available,
+    tree_sitter_runtime_available,
 )
 from .code_segments import (
     assemble_code_chunks,
@@ -86,7 +86,7 @@ class CodeChunker:
             ast_boundaries is None
             and resolved_language
             and self._skip_unsupported_language
-            and tree_sitter_backend_available()
+            and tree_sitter_runtime_available()
         ):
             logger.info(
                 "Skipping code chunking for unsupported tree-sitter language '%s'",

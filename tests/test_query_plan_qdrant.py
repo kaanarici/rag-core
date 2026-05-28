@@ -11,9 +11,13 @@ import pytest
 from qdrant_client import models as rest
 
 from rag_core.search.providers.qdrant_query_plan import translate_query_plan
+from rag_core.search.providers.qdrant_search import (
+    _default_query_plan_for_available_sparse_channels,
+)
 from rag_core.search.providers.qdrant_store import QdrantVectorStore
 from rag_core.search.query_plan import (
     Boost,
+    DEFAULT_RRF_K,
     DenseChannel,
     Mmr,
     Prefetch,
@@ -144,7 +148,7 @@ def test_default_plan_translates_to_two_prefetches_and_rrf_fusion() -> None:
                 limit=80,
             ),
         ),
-        fuse=PrefetchFusion(kind="rrf", rrf_k=60),
+        fuse=PrefetchFusion(kind="rrf", rrf_k=DEFAULT_RRF_K),
         final_limit=20,
     )
     translated = translate_query_plan(
@@ -542,6 +546,42 @@ def test_adapter_search_uses_capability_aware_default_query_plan() -> None:
     assert call["limit"] == 5
 
 
+def test_direct_qdrant_default_plan_uses_balanced_profile_for_primary_sparse() -> None:
+    query = _make_query(query_plan=None, limit=5)
+
+    plan = _default_query_plan_for_available_sparse_channels(
+        query=query,
+        result_limit=query.limit,
+        available_sparse_vector_names={"bm25", "splade"},
+    )
+
+    assert plan.search_profile == "balanced"
+    assert [
+        getattr(prefetch.channel, "vector_field", "")
+        for prefetch in plan.prefetches
+    ] == ["", "bm25"]
+
+
+def test_direct_qdrant_default_plan_keeps_custom_sparse_shape_anonymous() -> None:
+    query = _make_query(
+        query_plan=None,
+        limit=5,
+        sparse_vector=SparseVector(indices=[], values=[]),
+    )
+
+    plan = _default_query_plan_for_available_sparse_channels(
+        query=query,
+        result_limit=query.limit,
+        available_sparse_vector_names={"splade"},
+    )
+
+    assert plan.search_profile is None
+    assert [
+        getattr(prefetch.channel, "vector_field", "")
+        for prefetch in plan.prefetches
+    ] == ["", "splade"]
+
+
 def test_adapter_default_query_plan_prefers_primary_sparse_channel() -> None:
     store = _store_with_fake_client(
         _FakeQdrantClient(existing_names=["docs"], sparse_names=["bm25", "splade"]),
@@ -555,6 +595,7 @@ def test_adapter_default_query_plan_prefers_primary_sparse_channel() -> None:
         getattr(prefetch.channel, "vector_field", "")
         for prefetch in plan.prefetches
     ] == ["", "bm25"]
+    assert plan.search_profile == "balanced"
 
 
 def test_adapter_default_query_plan_uses_available_sparse_channels() -> None:
@@ -570,3 +611,4 @@ def test_adapter_default_query_plan_uses_available_sparse_channels() -> None:
         getattr(prefetch.channel, "vector_field", "")
         for prefetch in plan.prefetches
     ] == ["", "splade"]
+    assert plan.search_profile is None

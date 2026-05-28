@@ -7,7 +7,7 @@ Qdrant + embedding provider). Smoke proves the pipeline; configured proves your 
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
-- Repo root
+- A local checkout
 
 ```bash
 uv sync
@@ -15,18 +15,21 @@ uv sync
 
 ## Smoke (no API keys)
 
-### One command (agents and CI)
+### One command (CI and local smoke)
 
 ```bash
 ./scripts/dx_smoke.sh
 ```
 
-### After editable install
+### After package install
 
 ```bash
 uv pip install -e .
 python -m rag_core.quickstart
 ```
+
+Wheel installs run the same module; `scripts/wheel_smoke.py` verifies this from a
+fresh consumer venv after `uv build`.
 
 ### Step 1 — Shortest smoke (`demo`)
 
@@ -48,6 +51,9 @@ uv run rag-core local-search examples/demo_corpus \
 
 Expect `indexed_count` ≥ 1 and payment-related hits. Raw hits only — use Step 5 for
 context packs.
+
+Prefer `--json` for scripts. Without it, `local-search` prints an indexed/skipped
+breakdown and a truncation hint for real folders.
 
 ### Step 3 — Trace evidence
 
@@ -76,11 +82,29 @@ uv run rag-core doctor \
   --json
 ```
 
-### Step 5 — Model context
+Drop `--json` when you want human next-step hints. Default doctor output points
+unconfigured first runs toward either the no-key `local-search` smoke or the
+provider/store flags needed for configured retrieval.
+
+### Step 5 — Prompt-safe context
 
 ```bash
 uv run python -m examples.minimal_app
 ```
+
+### Step 6 — Folder eval (`local-eval`)
+
+```bash
+uv run rag-core local-eval examples/demo_corpus examples/eval_cases.jsonl \
+  --min-recall-at-5 1 \
+  --min-mrr 1 \
+  --json
+```
+
+Expect `case_count`, aggregate metrics, and a passing `quality_gate`. The command
+uses the `namespace` and `corpus_ids` from the JSONL cases, then indexes local
+documents and resolves relative-path `expected_ids` such as `billing.md` to the
+indexed local document keys.
 
 ## Configured (your stack)
 
@@ -93,7 +117,9 @@ uv run rag-core ingest examples/demo_corpus --namespace acme --corpus-id help \
   --qdrant-url http://127.0.0.1:6333 \
   --embedding-provider openai --embedding-model text-embedding-3-small --embedding-dimensions 1536
 uv run rag-core retrieve-context "How can invoices be paid?" \
-  --namespace acme --corpus-id help --json
+  --namespace acme --corpus-id help \
+  --qdrant-url http://127.0.0.1:6333 \
+  --embedding-provider openai --embedding-model text-embedding-3-small --embedding-dimensions 1536
 ```
 
 Add `--rerank` when a reranker extra is installed and configured. See [embed.md](embed.md).
@@ -104,8 +130,14 @@ Add `--rerank` when a reranker extra is installed and configured. See [embed.md]
 uv run python -m examples.retrieval_eval
 ```
 
-Uses `rag_core.evals` in the repo — not the CI fixture corpus. Exit code `0` means
-bundled example thresholds passed.
+Uses `rag_core.evals` in the repo — not the CI fixture corpus. Cases use
+`expected_ids` for relevant chunk or document ids:
+
+```json
+{"query": "billing policy", "namespace": "acme", "corpus_ids": ["help"], "expected_ids": ["billing.md"]}
+```
+
+Exit code `0` means bundled example thresholds passed.
 
 ## Next steps
 

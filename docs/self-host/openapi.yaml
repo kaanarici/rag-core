@@ -10,7 +10,7 @@ info:
   version: 0.1.0
 servers:
   - url: http://127.0.0.1:8787
-    description: Local ``rag-core serve`` default
+    description: "Local ``rag-core serve`` default"
 tags:
   - name: health
   - name: runtime
@@ -21,7 +21,7 @@ paths:
     get:
       tags: [health]
       summary: Liveness
-      description: Process is up. Does not initialize ``RAGCore`` or touch dependencies.
+      description: "Process is up. Does not initialize ``RAGCore`` or touch dependencies."
       operationId: getHealth
       responses:
         "200":
@@ -58,7 +58,7 @@ paths:
       operationId: getRuntime
       responses:
         "200":
-          description: ``describe_runtime()`` payload
+          description: "``describe_runtime()`` payload"
           content:
             application/json:
               schema:
@@ -114,7 +114,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SearchRequest"
+              $ref: "#/components/schemas/SearchEndpointRequest"
       responses:
         "200":
           description: Hit list
@@ -129,17 +129,17 @@ paths:
   /v1/retrieve-context:
     post:
       tags: [retrieval]
-      summary: Model-ready context pack
+      summary: Context pack with prompt-safe text
       operationId: retrieveContext
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SearchRequest"
+              $ref: "#/components/schemas/ContextRetrievalRequest"
       responses:
         "200":
-          description: Context pack plus ``context_text``
+          description: "App-facing context pack plus prompt-safe ``context_text``"
           content:
             application/json:
               schema:
@@ -198,18 +198,22 @@ components:
           additionalProperties: true
     IngestRequest:
       type: object
+      additionalProperties: false
       required: [path, namespace, corpus_id]
       properties:
         path:
           type: string
-          description: Absolute path on the server host
+          minLength: 1
+          pattern: "\\S"
+          description: Existing absolute or relative path under a configured server ingest root
         namespace:
           type: string
+          minLength: 1
+          pattern: "\\S"
         corpus_id:
           type: string
-        corpusId:
-          type: string
-          description: CamelCase alias for ``corpus_id``
+          minLength: 1
+          pattern: "\\S"
     IngestJobCreated:
       type: object
       required: [job_id, status]
@@ -218,6 +222,7 @@ components:
           type: string
         status:
           type: string
+          enum: [pending, running, completed, failed]
     IngestJobStatus:
       type: object
       required: [job_id, status, path, namespace, corpus_id]
@@ -226,6 +231,7 @@ components:
           type: string
         status:
           type: string
+          enum: [pending, running, completed, failed]
         path:
           type: string
         namespace:
@@ -237,29 +243,103 @@ components:
           additionalProperties: true
         error:
           type: string
-          description: Present when ``status`` is ``failed`` (exception type name)
-    SearchRequest:
+          description: "Present when ``status`` is ``failed`` (exception type name)"
+    SearchEndpointRequest:
       type: object
+      additionalProperties: false
       required: [query, namespace, corpus_ids]
       properties:
         query:
           type: string
+          minLength: 1
+          pattern: "\\S"
         namespace:
           type: string
+          minLength: 1
+          pattern: "\\S"
         corpus_ids:
           type: array
           items:
             type: string
-        corpusIds:
-          type: array
-          items:
-            type: string
+            minLength: 1
+            pattern: "\\S"
         limit:
           type: integer
+          minimum: 1
           default: 10
+        content_types:
+          type: array
+          description: Optional content types inside the app-bound namespace and corpus scope
+          items:
+            type: string
+            minLength: 1
+            pattern: "\\S"
+        document_ids:
+          type: array
+          description: Optional document IDs inside the app-bound namespace and corpus scope
+          items:
+            type: string
+            minLength: 1
+            pattern: "\\S"
         rerank:
           type: boolean
           default: false
+        use_lexical_search:
+          type: boolean
+          default: true
+          description: Controls configured lexical/exact-match expansion only; query-plan defaults remain provider capability-aware.
+    ContextRetrievalRequest:
+      type: object
+      additionalProperties: false
+      required: [query, namespace, corpus_ids]
+      properties:
+        query:
+          type: string
+          minLength: 1
+          pattern: "\\S"
+        namespace:
+          type: string
+          minLength: 1
+          pattern: "\\S"
+        corpus_ids:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            pattern: "\\S"
+        limit:
+          type: integer
+          minimum: 1
+          default: 8
+        content_types:
+          type: array
+          description: Optional content types inside the app-bound namespace and corpus scope
+          items:
+            type: string
+            minLength: 1
+            pattern: "\\S"
+        document_ids:
+          type: array
+          description: Optional document IDs inside the app-bound namespace and corpus scope
+          items:
+            type: string
+            minLength: 1
+            pattern: "\\S"
+        rerank:
+          type: boolean
+          default: false
+        use_lexical_search:
+          type: boolean
+          default: true
+          description: Controls configured lexical/exact-match expansion only; query-plan defaults remain provider capability-aware.
+        max_chars:
+          type: integer
+          minimum: 1
+          description: Optional character budget for prompt-safe context text
+        max_tokens:
+          type: integer
+          minimum: 1
+          description: Optional token budget for prompt-safe context text
     SearchHit:
       type: object
       required: [id, text, score, content_type, source_type]
@@ -290,10 +370,68 @@ components:
       additionalProperties: true
     ContextPackResponse:
       type: object
-      required: [context_text]
+      required:
+        - query
+        - context_text
+        - snippets
+        - citations
+        - source_previews
+        - citation_summary
+        - dropped_count
+        - max_snippets
+        - max_chars
+        - max_tokens
+        - token_estimate
+        - char_count
+        - truncated
       properties:
+        query:
+          type: string
         context_text:
           type: string
+          description: "Prompt-safe text from ``ContextPack.as_prompt_text()``"
+        snippets:
+          type: array
+          description: App-facing context snippets from ``ContextPack.to_payload()``
+          items:
+            type: object
+            additionalProperties: true
+        citations:
+          type: array
+          description: App-facing source references from ``ContextPack.to_payload()``
+          items:
+            type: object
+            additionalProperties: true
+        source_previews:
+          type: array
+          description: App-facing source previews from ``ContextPack.to_payload()``
+          items:
+            type: object
+            additionalProperties: true
+        citation_summary:
+          type: string
+          description: App-facing citation summary from ``ContextPack.to_payload()``
+        dropped_count:
+          type: integer
+          minimum: 0
+        max_snippets:
+          type: integer
+          minimum: 1
+        max_chars:
+          type: integer
+          nullable: true
+        max_tokens:
+          type: integer
+          nullable: true
+        token_estimate:
+          type: integer
+          minimum: 0
+        char_count:
+          type: integer
+          minimum: 0
+          description: App-facing rendered context length from ``ContextPack.to_payload()``, not the length of ``context_text``
+        truncated:
+          type: boolean
       additionalProperties: true
   responses:
     BadRequest:

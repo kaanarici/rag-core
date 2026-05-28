@@ -1,14 +1,18 @@
 include LICENSE
 include README.md
 include pyproject.toml
+include compose.yaml
+include Dockerfile
+include .env.example
 
-recursive-include docs *.md
-recursive-include docs/self-host *.yaml
-exclude docs/AGENTS.md
-exclude docs/CONTEXT.md
-prune docs/plans
-prune docs/research
-prune docs/templates
+include docs/embed.md
+include docs/expectations.md
+include docs/parsing/formats.md
+include docs/providers.md
+include docs/quickstart.md
+include docs/self-host.md
+include docs/self-host/openapi.yaml
+include docs/stability.md
 recursive-include examples *.jsonl *.md *.py *.ts
-recursive-include scripts *.py
+recursive-include scripts *.py *.sh
 prune tests

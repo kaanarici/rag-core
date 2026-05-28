@@ -9,6 +9,7 @@ from typing import Any, Dict, List
 from rag_core.config.env_access import get_env_int
 
 from .base import BaseConverter, ConversionResult, score_text_quality
+from .converter_keys import XLSX_CONVERTER_KEY
 from .xlsx_rendering import build_xlsx_sheet_sections
 from .xlsx_rows import extract_xlsx_sheet_rows
 from .xlsx_workbooks import close_xlsx_workbooks, load_xlsx_workbooks
@@ -22,7 +23,7 @@ class XlsxConverter(BaseConverter):
     Uses computed values for indexing and can include formulas when configured.
     """
 
-    format_name = "xlsx"
+    format_name = XLSX_CONVERTER_KEY
 
     def __init__(
         self,
@@ -31,9 +32,15 @@ class XlsxConverter(BaseConverter):
         max_cols: int = 0,
         include_formulas: bool = False,
     ) -> None:
-        self._rows_per_chunk = max(1, max_rows or get_env_int("LOCAL_PARSE_XLSX_MAX_ROWS", 500))
-        self._max_total_rows = max(1, get_env_int("LOCAL_PARSE_XLSX_MAX_TOTAL_ROWS", 5000))
-        self._max_cols = max(1, max_cols or get_env_int("LOCAL_PARSE_XLSX_MAX_COLS", 50))
+        self._rows_per_chunk = max(
+            1, max_rows or get_env_int("LOCAL_PARSE_XLSX_MAX_ROWS", 500)
+        )
+        self._max_total_rows = max(
+            1, get_env_int("LOCAL_PARSE_XLSX_MAX_TOTAL_ROWS", 5000)
+        )
+        self._max_cols = max(
+            1, max_cols or get_env_int("LOCAL_PARSE_XLSX_MAX_COLS", 50)
+        )
         self._include_formulas = include_formulas
 
     async def convert(

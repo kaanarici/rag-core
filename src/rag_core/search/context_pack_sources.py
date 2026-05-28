@@ -8,7 +8,7 @@ from rag_core.search.context_pack_helpers import (
     unique_source_id as _unique_source_id,
 )
 from rag_core.search.context_pack_models import SourceLocator, SourceReference
-from rag_core.search.types import SearchResult
+from rag_core.search.vector_models import SearchResult
 
 
 def source_reference_from_result(
@@ -50,6 +50,8 @@ def source_locator_from_result(result: SearchResult) -> SourceLocator:
         slide_number=_metadata_int(result.metadata, "slide_number"),
         sheet_name=_metadata_str(result.metadata, "sheet_name"),
         row_range=_metadata_str(result.metadata, "row_range"),
+        line_start=_metadata_int(result.metadata, "line_start"),
+        line_end=_metadata_int(result.metadata, "line_end"),
         bbox=_metadata_bbox(result.metadata.get("bbox") or result.metadata.get("figure_bbox")),
         figure_id=result.figure_id,
         figure_caption=_metadata_str(result.metadata, "figure_caption"),

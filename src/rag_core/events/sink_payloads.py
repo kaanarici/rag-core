@@ -6,6 +6,15 @@ from dataclasses import asdict
 import math
 from typing import Any, TypeAlias
 
+from rag_core.events.event_types import SEARCH_COMPLETED_EVENT
+from rag_core.events.sink_field_policy import (
+    EVENT_SINK_SAFE_LABEL_FIELDS,
+    EVENT_SINK_SAFE_LOG_VALUE_ALLOWLISTS,
+    EVENT_SINK_SAFE_STAGE_LABEL_FIELDS,
+    EVENT_SINK_SAFE_STAGE_LABEL_SEQUENCE_FIELDS,
+    EVENT_SINK_SENSITIVE_LOG_FIELDS,
+    EVENT_SINK_SENSITIVE_OTEL_ATTRIBUTE_FIELDS,
+)
 from rag_core.events.trace_payload_fields import (
     safe_trace_label,
     safe_trace_label_sequence,
@@ -14,70 +23,6 @@ from rag_core.events.trace_summary_models import safe_search_id
 from rag_core.events.types import Event
 
 _OTEL_PRIMITIVE_TYPES = (str, bool, int, float)
-_SENSITIVE_OTEL_ATTRIBUTE_FIELDS = frozenset(
-    {
-        "content_sha256",
-        "corpus_id",
-        "corpus_ids",
-        "document_id",
-        "document_key",
-        "error",
-        "filename",
-        "message",
-        "namespace",
-        "ocr_page_indices",
-        "quality_details",
-        "redacted_url",
-        "search_id",
-    }
-)
-_SAFE_LABEL_FIELDS = frozenset(
-    {
-        "boost",
-        "error_type",
-        "fallback_reason",
-        "fusion",
-        "metadata_filter",
-        "model",
-        "parser",
-        "plan_rerank",
-        "provider",
-        "reason",
-        "role",
-        "truncation_reason",
-    }
-)
-_SAFE_STAGE_LABEL_FIELDS = frozenset(
-    {
-        "fuse_stage",
-        "rerank_stage",
-        "retrieve_stage",
-        "stage",
-        "stage_name",
-    }
-)
-_SAFE_STAGE_LABEL_SEQUENCE_FIELDS = frozenset({"postprocesses", "query_transforms"})
-_SENSITIVE_LOG_FIELDS = _SENSITIVE_OTEL_ATTRIBUTE_FIELDS | frozenset(
-    {
-        "boost",
-        "corpus_id",
-        "corpus_ids",
-        "document_key",
-        "metadata_filter",
-        "namespace",
-        "reason",
-        "redacted_url",
-    }
-)
-_SAFE_LOG_VALUE_ALLOWLISTS = {
-    ("ingest.skipped", "reason"): frozenset({"content_unchanged"}),
-    ("search.planned", "boost"): frozenset(
-        {"none", "linear_decay", "exp_decay", "gauss_decay", "raw"}
-    ),
-    ("search.planned", "metadata_filter"): frozenset(
-        {"none", "Term", "In", "Range", "Geo", "And", "Or", "Not"}
-    ),
-}
 OtelAttributeValue: TypeAlias = (
     str | bool | int | float | list[str | bool | int | float]
 )
@@ -125,7 +70,10 @@ def event_to_otel_attributes(
             continue
         if key == "search_id" and _safe_search_id(value) == "":
             continue
-        if not include_sensitive_attributes and key in _SENSITIVE_OTEL_ATTRIBUTE_FIELDS:
+        if (
+            not include_sensitive_attributes
+            and key in EVENT_SINK_SENSITIVE_OTEL_ATTRIBUTE_FIELDS
+        ):
             continue
         normalized = _to_otel_attribute_value(_sanitize_visible_value(key, value))
         if normalized is not None:
@@ -158,15 +106,18 @@ def _empty_summary_value(value: Any) -> bool:
 
 
 def _log_field_is_visible(*, event_type: str, key: str, value: Any) -> bool:
-    if event_type == "search.completed" and key == "succeeded" and value is True:
+    if event_type == SEARCH_COMPLETED_EVENT and key == "succeeded" and value is True:
         return False
     if _empty_summary_value(value):
         return False
-    if key not in _SENSITIVE_LOG_FIELDS:
+    if key not in EVENT_SINK_SENSITIVE_LOG_FIELDS:
         return True
     if not isinstance(value, str):
         return False
-    return value in _SAFE_LOG_VALUE_ALLOWLISTS.get((event_type, key), frozenset())
+    return value in EVENT_SINK_SAFE_LOG_VALUE_ALLOWLISTS.get(
+        (event_type, key),
+        frozenset(),
+    )
 
 
 def _jsonl_field_is_visible(*, event_type: str, key: str, value: Any) -> bool:
@@ -174,7 +125,7 @@ def _jsonl_field_is_visible(*, event_type: str, key: str, value: Any) -> bool:
         return True
     if key == "search_id":
         return _safe_search_id(value) != ""
-    if event_type == "search.completed" and key == "succeeded" and value is True:
+    if event_type == SEARCH_COMPLETED_EVENT and key == "succeeded" and value is True:
         return False
     return _log_field_is_visible(event_type=event_type, key=key, value=value)
 
@@ -182,11 +133,11 @@ def _jsonl_field_is_visible(*, event_type: str, key: str, value: Any) -> bool:
 def _sanitize_visible_value(key: str, value: Any) -> Any:
     if key == "search_id":
         return _safe_search_id(value)
-    if key in _SAFE_STAGE_LABEL_FIELDS:
+    if key in EVENT_SINK_SAFE_STAGE_LABEL_FIELDS:
         return safe_trace_label(value, stage=True)
-    if key in _SAFE_LABEL_FIELDS:
+    if key in EVENT_SINK_SAFE_LABEL_FIELDS:
         return safe_trace_label(value, stage=False)
-    if key in _SAFE_STAGE_LABEL_SEQUENCE_FIELDS:
+    if key in EVENT_SINK_SAFE_STAGE_LABEL_SEQUENCE_FIELDS:
         return safe_trace_label_sequence(value, stage=True)
     if key == "channels":
         return safe_trace_label_sequence(value, stage=False)

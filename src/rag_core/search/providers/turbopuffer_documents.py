@@ -6,7 +6,7 @@ import math
 from collections.abc import Mapping
 
 from rag_core.search.policy import VectorStorePolicy
-from rag_core.search.types import StoredDocumentRecord
+from rag_core.search.request_models import StoredDocumentRecord
 
 from .turbopuffer_client import TurboPufferNamespace
 from .turbopuffer_filters import _document_lookup_filter

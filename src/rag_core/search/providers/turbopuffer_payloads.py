@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from enum import Enum
 
 from rag_core.search.policy import VectorStorePolicy
-from rag_core.search.types import SparseVector, VectorPoint
+from rag_core.search.vector_models import SparseVector, VectorPoint
 
 _MAX_TURBOPUFFER_ID_BYTES = 64
 

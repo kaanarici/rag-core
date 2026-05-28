@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from rag_core.archive_sources import ArchiveLimits, ArchiveSourceItem
 from rag_core.cli_inputs import cli_safe_error_message
+from rag_core.config import INGEST_SOURCE_TYPE_ARCHIVE
 from rag_core.core_models import IngestedDocument
 from rag_core.events.emit import emit_event
 from rag_core.events.types import IngestBatchProgress
+from rag_core.ingest_progress_statuses import (
+    INGEST_PROGRESS_FAILED,
+    INGEST_PROGRESS_SUCCEEDED,
+    IngestProgressStatus,
+)
 from rag_core.local_ingest_models import (
     LocalIngestFailure,
     LocalIngestSuccess,
@@ -82,7 +88,7 @@ async def ingest_archive_items(
                 path=item.display_path,
                 metadata=metadata,
                 force_reindex=force_reindex,
-                source_type="archive",
+                source_type=INGEST_SOURCE_TYPE_ARCHIVE,
             )
         except Exception as exc:  # noqa: BLE001 - record failure and continue.
             error_message = cli_safe_error_message(exc, action="ingest")
@@ -94,7 +100,7 @@ async def ingest_archive_items(
                 manifest_status=manifest_status,
                 manifest_reason=manifest_reason,
             )
-            status: Literal["succeeded", "failed"] = "failed"
+            status: IngestProgressStatus = INGEST_PROGRESS_FAILED
             ingest_state = ""
             content_sha256 = item.content_sha256
             error = type(exc).__name__
@@ -117,7 +123,7 @@ async def ingest_archive_items(
                 manifest_status=manifest_status,
                 manifest_reason=manifest_reason,
             )
-            status = "succeeded"
+            status = INGEST_PROGRESS_SUCCEEDED
             ingest_state = ingested.ingest_state
             error = ""
 

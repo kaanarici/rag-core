@@ -2,19 +2,23 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Literal
 
+from rag_core.config.ingest_config import DEFAULT_INGEST_MAX_CONCURRENCY
 from rag_core.local_ingest_manifest import (
     manifest_status_for_document,
     source_reconciliation_by_key,
 )
+from rag_core.manifest_reconciliation_reasons import MANIFEST_REASON_NOT_CHECKED
 from rag_core.manifest_persistence import (
     ManifestReconciliation,
-    ManifestReconciliationStatus,
     ManifestSource,
     manifest_reconciliation_payload,
 )
-from rag_core.local_ingest_result_payloads import (
+from rag_core.manifest_reconciliation_statuses import (
+    LocalManifestStatus,
+    MANIFEST_STATUS_UNKNOWN,
+)
+from rag_core.ingest_result_payloads import (
     failure_records,
     ingest_result_payload,
     skipped_records,
@@ -22,8 +26,6 @@ from rag_core.local_ingest_result_payloads import (
     written_records,
 )
 from rag_core.sources import LocalSourceItem
-
-LocalManifestStatus = ManifestReconciliationStatus | Literal["unknown"]
 
 
 @dataclass(frozen=True)
@@ -33,7 +35,7 @@ class LocalIngestRequest:
     corpus_id: str
     metadata: dict[str, str] | None = None
     force_reindex: bool = False
-    max_concurrency: int = 1
+    max_concurrency: int = DEFAULT_INGEST_MAX_CONCURRENCY
 
 
 @dataclass(frozen=True)
@@ -105,8 +107,8 @@ class LocalIngestSuccess:
     chunk_count: int
     ingest_state: str
     replaced_existing: bool
-    manifest_status: LocalManifestStatus = "unknown"
-    manifest_reason: str = "manifest_not_checked"
+    manifest_status: LocalManifestStatus = MANIFEST_STATUS_UNKNOWN
+    manifest_reason: str = MANIFEST_REASON_NOT_CHECKED
 
     def to_payload(self, *, include_private: bool = False) -> dict[str, object]:
         if include_private:
@@ -130,8 +132,8 @@ class LocalIngestFailure:
     document_key: str
     content_sha256: str | None
     error: str
-    manifest_status: LocalManifestStatus = "unknown"
-    manifest_reason: str = "manifest_not_checked"
+    manifest_status: LocalManifestStatus = MANIFEST_STATUS_UNKNOWN
+    manifest_reason: str = MANIFEST_REASON_NOT_CHECKED
 
     def to_payload(self, *, include_private: bool = False) -> dict[str, object]:
         if include_private:

@@ -49,7 +49,7 @@ def _private_unexpected_response() -> UnexpectedResponse:
     )
 
 
-def test_log_upsert_error_omits_backend_details(
+def test_log_upsert_error_omits_provider_details(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     exc = _private_unexpected_response()
@@ -65,6 +65,8 @@ def test_log_upsert_error_omits_backend_details(
         )
 
     message = "\n".join(record.getMessage() for record in caplog.records)
+    assert "provider=qdrant" in message
+    assert "backend=qdrant" not in message
     assert "error_type=UnexpectedResponse" in message
     assert "http_status=429" in message
     assert "batch_size=1" in message
@@ -110,7 +112,8 @@ def test_slow_qdrant_write_log_omits_collection_name(
 
     message = "\n".join(record.getMessage() for record in caplog.records)
     assert "Slow Qdrant write" in message
-    assert "backend=qdrant" in message
+    assert "provider=qdrant" in message
+    assert "backend=qdrant" not in message
     assert "point_count=1" in message
     assert "dense_dimensions=3" in message
     assert "split_depth=1" in message
@@ -147,7 +150,8 @@ def test_debug_qdrant_write_log_omits_collection_name(
 
     message = "\n".join(record.getMessage() for record in caplog.records)
     assert "Qdrant write completed" in message
-    assert "backend=qdrant" in message
+    assert "provider=qdrant" in message
+    assert "backend=qdrant" not in message
     assert "point_count=1" in message
     assert "dense_dimensions=3" in message
     assert "split_depth=0" in message

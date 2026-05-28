@@ -10,9 +10,8 @@ from statistics import mean
 
 import pytest
 
-from rag_core import RAGCore
+from rag_core import RAGCore, RAGCoreConfig
 from rag_core.config import EmbeddingConfig, QdrantConfig
-from rag_core.core_models import RAGCoreConfig
 from rag_core.evals import EvalResult, load_cases, run_eval
 from rag_core.search import search_profile
 from tests.support import FixtureEmbeddingProvider

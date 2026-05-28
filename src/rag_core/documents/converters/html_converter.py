@@ -6,16 +6,23 @@ import asyncio
 import re
 
 from .base import BaseConverter, ConversionResult, safe_decode, score_text_quality
+from .converter_keys import HTML_CONVERTER_KEY
 
 
 def _strip_non_content_html(html: str) -> str:
     """Remove scripts, styles, nav, footer, and other non-content elements."""
-    html = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(
+        r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE
+    )
     html = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
-    html = re.sub(r"<noscript[^>]*>.*?</noscript>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(
+        r"<noscript[^>]*>.*?</noscript>", "", html, flags=re.DOTALL | re.IGNORECASE
+    )
 
     for tag in ("nav", "footer", "aside"):
-        html = re.sub(r"<%s[^>]*>.*?</%s>" % (tag, tag), "", html, flags=re.DOTALL | re.IGNORECASE)
+        html = re.sub(
+            r"<%s[^>]*>.*?</%s>" % (tag, tag), "", html, flags=re.DOTALL | re.IGNORECASE
+        )
 
     html = re.sub(r"<!--.*?-->", "", html, flags=re.DOTALL)
 
@@ -89,7 +96,7 @@ class HtmlConverter(BaseConverter):
     4. Regex strip (last resort)
     """
 
-    format_name = "html"
+    format_name = HTML_CONVERTER_KEY
 
     async def convert(
         self,

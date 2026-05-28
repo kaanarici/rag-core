@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Protocol
 
+from rag_core.config.chunking_config import CHUNKING_STRATEGY_AUTO
 from rag_core.core_models import PreparedChunk
 
 
@@ -14,7 +15,7 @@ class ChunkConfig:
 
     max_chars: int = 2000
     overlap: int = 200
-    strategy: str = "auto"  # "auto", "markdown", "semantic", "code"
+    strategy: str = CHUNKING_STRATEGY_AUTO
 
 
 class ChunkingStrategy(Protocol):

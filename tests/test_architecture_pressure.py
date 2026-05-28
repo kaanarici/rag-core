@@ -63,3 +63,12 @@ ignore_missing_imports = true
             ),
         }
     ]
+
+
+def test_current_checkout_has_no_architecture_pressure_warnings() -> None:
+    root = Path(__file__).resolve().parents[1]
+    summary = build_report(root)["summary"]
+
+    assert summary["large_file_count"] == 0
+    assert summary["mypy_ignore_errors_count"] == 0
+    assert summary["duplicate_boundary_warning_count"] == 0

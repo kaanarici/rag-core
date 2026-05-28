@@ -3,12 +3,11 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from rag_core.config.vector_store_config import SUPPORTED_TURBOPUFFER_DISTANCE_METRICS
 from rag_core.search.policy import DEFAULT_POLICY, VectorStorePolicy
 
-_SUPPORTED_DISTANCE_METRICS = frozenset({"cosine_distance", "euclidean_squared"})
 _NAMESPACE_RE = re.compile(r"^[A-Za-z0-9\-_.]{1,128}$")
 DEFAULT_TURBOPUFFER_WRITE_BATCH_SIZE = 1_000
-DEFAULT_TURBOPUFFER_DELETE_CONTINUATION_LIMIT = 1_000
 
 
 @dataclass(frozen=True)
@@ -43,8 +42,8 @@ def build_turbopuffer_config(
         )
     if dense_dimensions <= 0:
         raise ValueError("dense_dimensions must be positive")
-    if distance_metric not in _SUPPORTED_DISTANCE_METRICS:
-        supported = ", ".join(sorted(_SUPPORTED_DISTANCE_METRICS))
+    if distance_metric not in SUPPORTED_TURBOPUFFER_DISTANCE_METRICS:
+        supported = ", ".join(sorted(SUPPORTED_TURBOPUFFER_DISTANCE_METRICS))
         raise ValueError(
             f"unsupported TurboPuffer distance_metric {distance_metric!r}; "
             f"choose one of: {supported}"

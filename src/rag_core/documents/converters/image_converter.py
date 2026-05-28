@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 
 from .base import BaseConverter, ConversionResult, QualityScore, QualityVerdict
+from .converter_keys import IMAGE_CONVERTER_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ class ImageConverter(BaseConverter):
     so the ingest pipeline can route to an OCR provider.
     """
 
-    format_name = "image"
+    format_name = IMAGE_CONVERTER_KEY
 
     async def convert(
         self,

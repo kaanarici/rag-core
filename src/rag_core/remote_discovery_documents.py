@@ -5,6 +5,11 @@ from urllib.parse import urljoin
 
 from rag_core.fetch_security import FetchSecurityPolicy, validate_fetch_url
 from rag_core.remote_discovery_models import (
+    DEFAULT_REMOTE_LLMS_TXT_MAX_URLS,
+    DEFAULT_REMOTE_SITEMAP_MAX_URLS,
+    REMOTE_DISCOVERY_KIND_LLMS_TXT,
+    REMOTE_DISCOVERY_KIND_SITEMAP,
+    REMOTE_DISCOVERY_KIND_SITEMAP_INDEX,
     RemoteDiscoveredUrl,
     RemoteDiscovery,
     RemoteDiscoveryKind,
@@ -27,7 +32,7 @@ def parse_sitemap_urls(
     content: str | bytes,
     *,
     policy: FetchSecurityPolicy | None = None,
-    max_urls: int = 50_000,
+    max_urls: int = DEFAULT_REMOTE_SITEMAP_MAX_URLS,
 ) -> RemoteDiscovery:
     validate_max_urls(max_urls)
     text = decode_xml_text(content)
@@ -44,15 +49,15 @@ def parse_sitemap_urls(
             policy=policy,
             max_urls=max_urls,
         )
-        return RemoteDiscovery(source_kind="sitemap", items=items)
+        return RemoteDiscovery(source_kind=REMOTE_DISCOVERY_KIND_SITEMAP, items=items)
     if root_name == "sitemapindex":
         items = _sitemap_items(
             children_named(root, "sitemap"),
             policy=policy,
             max_urls=max_urls,
-            source_kind="sitemap_index",
+            source_kind=REMOTE_DISCOVERY_KIND_SITEMAP_INDEX,
         )
-        return RemoteDiscovery(source_kind="sitemap_index", items=items)
+        return RemoteDiscovery(source_kind=REMOTE_DISCOVERY_KIND_SITEMAP_INDEX, items=items)
     raise ValueError(f"unsupported sitemap root element: {root_name or '<missing>'}")
 
 
@@ -61,7 +66,7 @@ def parse_llms_txt_urls(
     *,
     base_url: str,
     policy: FetchSecurityPolicy | None = None,
-    max_urls: int = 1_000,
+    max_urls: int = DEFAULT_REMOTE_LLMS_TXT_MAX_URLS,
 ) -> RemoteDiscovery:
     validate_max_urls(max_urls)
     section = ""
@@ -78,7 +83,7 @@ def parse_llms_txt_urls(
         raw_url = urljoin(base_url, match.group("url").strip())
         item = _discovered_url(
             raw_url,
-            source_kind="llms_txt",
+            source_kind=REMOTE_DISCOVERY_KIND_LLMS_TXT,
             policy=policy,
             title=match.group("title").strip(),
             section=section,
@@ -92,7 +97,7 @@ def parse_llms_txt_urls(
             raise ValueError(f"remote discovery exceeds max_urls ({max_urls})")
         seen.add(key)
         items.append(item)
-    return RemoteDiscovery(source_kind="llms_txt", items=tuple(items))
+    return RemoteDiscovery(source_kind=REMOTE_DISCOVERY_KIND_LLMS_TXT, items=tuple(items))
 
 
 def _sitemap_items(
@@ -100,7 +105,7 @@ def _sitemap_items(
     *,
     policy: FetchSecurityPolicy | None,
     max_urls: int,
-    source_kind: RemoteDiscoveryKind = "sitemap",
+    source_kind: RemoteDiscoveryKind = REMOTE_DISCOVERY_KIND_SITEMAP,
 ) -> tuple[RemoteDiscoveredUrl, ...]:
     items: list[RemoteDiscoveredUrl] = []
     seen: set[tuple[str, str | None]] = set()
@@ -120,7 +125,7 @@ def _sitemap_item(
     entry: ET.Element,
     *,
     policy: FetchSecurityPolicy | None,
-    source_kind: RemoteDiscoveryKind = "sitemap",
+    source_kind: RemoteDiscoveryKind = REMOTE_DISCOVERY_KIND_SITEMAP,
 ) -> RemoteDiscoveredUrl:
     loc = child_text(entry, "loc")
     if not loc:

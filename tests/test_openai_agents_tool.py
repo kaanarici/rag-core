@@ -5,6 +5,7 @@ from typing import Any, Callable
 import pytest
 
 from rag_core.integrations.openai_agents import build_retrieve_context_tool
+from rag_core.search import DenseChannel, Prefetch, QueryPlan
 
 
 class _FakePack:
@@ -15,10 +16,13 @@ class _FakePack:
     def as_text(self) -> str:
         return self._text
 
-    def as_model_text(self) -> str:
+    def as_prompt_text(self) -> str:
         return self._text
 
     def to_payload(self) -> dict[str, object]:
+        return self._payload
+
+    def to_prompt_payload(self) -> dict[str, object]:
         return self._payload
 
 
@@ -53,9 +57,11 @@ class _FakeCore:
         namespace: str,
         corpus_ids: list[str],
         limit: int,
+        content_types: list[str] | None,
         document_ids: list[str] | None,
         rerank: bool,
         use_lexical_search: bool,
+        query_plan: object | None,
         max_chars: int | None,
         max_tokens: int | None,
     ) -> _FakePack:
@@ -65,9 +71,11 @@ class _FakeCore:
                 "namespace": namespace,
                 "corpus_ids": corpus_ids,
                 "limit": limit,
+                "content_types": content_types,
                 "document_ids": document_ids,
                 "rerank": rerank,
                 "use_lexical_search": use_lexical_search,
+                "query_plan": query_plan,
                 "max_chars": max_chars,
                 "max_tokens": max_tokens,
             }
@@ -187,14 +195,16 @@ def test_retrieve_context_tool_binds_scope_and_default_arguments(
     assert call["namespace"] == "acme"
     assert call["corpus_ids"] == ["help"]
     assert call["limit"] == 4
+    assert call["content_types"] is None
     assert call["rerank"] is False
     assert call["use_lexical_search"] is False
+    assert call["query_plan"] is None
     assert call["max_chars"] == 400
     assert call["max_tokens"] is None
     assert call["document_ids"] is None
 
 
-def test_retrieve_context_tool_prefers_model_text_over_as_text_when_payload_disabled(
+def test_retrieve_context_tool_prefers_prompt_text_over_as_text_when_payload_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _install_fake_agents(monkeypatch)
@@ -206,7 +216,7 @@ def test_retrieve_context_tool_prefers_model_text_over_as_text_when_payload_disa
         def as_text(self) -> str:
             return "LEAK private/billing.md"
 
-        def as_model_text(self) -> str:
+        def as_prompt_text(self) -> str:
             return "safe billing context"
 
     core = _FakeCore(_SplitPack())
@@ -219,20 +229,6 @@ def test_retrieve_context_tool_prefers_model_text_over_as_text_when_payload_disa
 
     assert asyncio.run(tool_fn(query="billing")) == "safe billing context"
 
-
-def test_retrieve_context_tool_falls_back_to_as_text_without_model_text(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _install_fake_agents(monkeypatch)
-    core = _FakeCore(_FakePack(text="legacy context", payload=_context_payload()))
-    tool_fn = build_retrieve_context_tool(
-        core,
-        namespace="acme",
-        corpus_ids=["help"],
-        return_payload=False,
-    )
-
-    assert asyncio.run(tool_fn(query="billing")) == "legacy context"
 
 
 def test_retrieve_context_tool_allows_per_call_overrides_and_returns_payload(
@@ -267,8 +263,44 @@ def test_retrieve_context_tool_allows_per_call_overrides_and_returns_payload(
     assert call["document_ids"] == ["doc-7"]
     assert call["rerank"] is True
     assert call["use_lexical_search"] is True
+    assert call["query_plan"] is None
     assert call["max_chars"] == 256
     assert call["max_tokens"] == 64
+
+
+def test_retrieve_context_tool_binds_app_owned_query_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_agents(monkeypatch)
+    core = _FakeCore(_FakePack(text="context", payload=_context_payload()))
+    query_plan = QueryPlan(prefetches=(Prefetch(channel=DenseChannel(), limit=5),))
+    tool_fn = build_retrieve_context_tool(
+        core,
+        namespace="acme",
+        corpus_ids=["help"],
+        query_plan=query_plan,
+    )
+
+    asyncio.run(tool_fn(query="billing"))
+
+    assert core.calls[0]["query_plan"] is query_plan
+
+
+def test_retrieve_context_tool_binds_app_owned_content_types(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_agents(monkeypatch)
+    core = _FakeCore(_FakePack(text="context", payload=_context_payload()))
+    tool_fn = build_retrieve_context_tool(
+        core,
+        namespace="acme",
+        corpus_ids=["help"],
+        content_types=[" document "],
+    )
+
+    asyncio.run(tool_fn(query="billing"))
+
+    assert core.calls[0]["content_types"] == ["document"]
 
 
 @pytest.mark.parametrize(
@@ -276,6 +308,7 @@ def test_retrieve_context_tool_allows_per_call_overrides_and_returns_payload(
     [
         ({"default_limit": 0}, "limit"),
         ({"corpus_ids": []}, "corpus_ids"),
+        ({"content_types": [" "]}, "content_types"),
     ],
 )
 def test_build_retrieve_context_tool_validates_config(

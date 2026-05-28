@@ -9,7 +9,15 @@ from typing import Any, cast
 from qdrant_client import models as rest
 
 from rag_core.search.query_plan import (
+    BOOST_KIND_EXP_DECAY,
+    BOOST_KIND_GAUSS_DECAY,
+    BOOST_KIND_LINEAR_DECAY,
+    BOOST_KIND_RAW,
     Boost,
+    DEFAULT_RRF_K,
+    FUSION_KIND_DBSF,
+    FUSION_KIND_RRF,
+    FUSION_KIND_WEIGHTED_RRF,
     Mmr,
     Prefetch,
     PrefetchFusion,
@@ -17,7 +25,7 @@ from rag_core.search.query_plan import (
     SparseChannel,
     UnsupportedQueryStage,
 )
-from rag_core.search.types import SearchQuery
+from rag_core.search.request_models import SearchQuery
 
 from .qdrant_query_channels import (
     ensure_qdrant_sparse_channel_supported,
@@ -139,7 +147,7 @@ def _optional_positive_float(value: object, *, name: str, kind: str) -> float | 
 
 
 def _qdrant_formula_query(boost: Boost) -> rest.FormulaQuery:
-    if boost.kind == "raw":
+    if boost.kind == BOOST_KIND_RAW:
         unknown = sorted(set(boost.params) - _RAW_PARAM_KEYS)
         if unknown:
             raise UnsupportedQueryStage(
@@ -180,11 +188,11 @@ def _qdrant_formula_query(boost: Boost) -> rest.FormulaQuery:
         ),
     )
 
-    if boost.kind == "linear_decay":
+    if boost.kind == BOOST_KIND_LINEAR_DECAY:
         decay_expression: rest.Expression = rest.LinDecayExpression(lin_decay=params)
-    elif boost.kind == "exp_decay":
+    elif boost.kind == BOOST_KIND_EXP_DECAY:
         decay_expression = rest.ExpDecayExpression(exp_decay=params)
-    elif boost.kind == "gauss_decay":
+    elif boost.kind == BOOST_KIND_GAUSS_DECAY:
         decay_expression = rest.GaussDecayExpression(gauss_decay=params)
     else:
         raise UnsupportedQueryStage(f"Unknown boost kind: {boost.kind!r}")
@@ -223,13 +231,13 @@ def _translate_prefetch(
 
 
 def _translate_fuse(fuse: PrefetchFusion, num_prefetches: int) -> Any:
-    if fuse.kind == "rrf":
-        if fuse.rrf_k == 60:
+    if fuse.kind == FUSION_KIND_RRF:
+        if fuse.rrf_k == DEFAULT_RRF_K:
             return rest.FusionQuery(fusion=rest.Fusion.RRF)
         return rest.RrfQuery(rrf=rest.Rrf(k=fuse.rrf_k))
-    if fuse.kind == "dbsf":
+    if fuse.kind == FUSION_KIND_DBSF:
         return rest.FusionQuery(fusion=rest.Fusion.DBSF)
-    if fuse.kind == "weighted_rrf":
+    if fuse.kind == FUSION_KIND_WEIGHTED_RRF:
         if len(fuse.weights) != num_prefetches:
             raise UnsupportedQueryStage(
                 "PrefetchFusion(weighted_rrf) requires one weight per prefetch "

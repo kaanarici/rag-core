@@ -12,6 +12,7 @@ from rag_core.documents.converters.base import (
     QualityScore,
     QualityVerdict,
 )
+from tests.support import assert_caplog_omits_private
 
 
 class _StubConverter(BaseConverter):
@@ -64,13 +65,13 @@ def test_convert_file_quality_summary_log_is_sanitized(
     assert "stub" in caplog.text
     assert "good" in caplog.text
     assert "48" in caplog.text
-    assert "private-roadmap.md" not in caplog.text
-    assert "private bytes" not in caplog.text
-    assert "private result content" not in caplog.text
-    assert "raw quality detail" not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(
+        caplog,
+        "private-roadmap.md",
+        "private bytes",
+        "private result content",
+        "raw quality detail",
+    )
 
 
 def test_convert_file_no_quality_summary_log_is_sanitized(
@@ -100,9 +101,9 @@ def test_convert_file_no_quality_summary_log_is_sanitized(
     assert "stub" in caplog.text
     assert "needs_ocr=True" in caplog.text
     assert result.metadata["error"] == "raw parse detail sk-test-secret"
-    assert "private-roadmap.md" not in caplog.text
-    assert "private bytes" not in caplog.text
-    assert "raw parse detail" not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(
+        caplog,
+        "private-roadmap.md",
+        "private bytes",
+        "raw parse detail",
+    )

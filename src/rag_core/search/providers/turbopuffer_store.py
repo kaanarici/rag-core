@@ -4,19 +4,27 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from rag_core.config.vector_store_config import (
+    DEFAULT_TURBOPUFFER_DELETE_CONTINUATION_LIMIT,
+    DEFAULT_TURBOPUFFER_DISTANCE_METRIC,
+)
 from rag_core.search.policy import DEFAULT_POLICY, VectorStorePolicy
+from rag_core.search.provider_protocols import StoreCapabilities
 from rag_core.search.query_plan import QueryPlan
-from rag_core.search.types import (
+from rag_core.search.request_models import (
     DeleteFilter,
-    MetadataFilterCapabilities,
     SearchQuery,
-    SearchResult,
-    StoreCapabilities,
     StoredDocumentRecord,
+)
+from rag_core.search.vector_models import (
+    SearchResult,
     VectorPoint,
 )
 
-from .query_plan_capabilities import TURBOPUFFER_QUERY_PLAN_CAPABILITIES
+from .vector_store_capabilities import (
+    TURBOPUFFER_VECTOR_STORE_CAPABILITY_SPEC,
+    TURBOPUFFER_VECTOR_STORE_PROVIDER_SPEC,
+)
 from .registry import VECTOR_STORES
 from .turbopuffer_client import (
     TurboPufferNamespace,
@@ -24,7 +32,6 @@ from .turbopuffer_client import (
     resolve_turbopuffer_namespace,
 )
 from .turbopuffer_config import (
-    DEFAULT_TURBOPUFFER_DELETE_CONTINUATION_LIMIT,
     DEFAULT_TURBOPUFFER_WRITE_BATCH_SIZE,
     build_turbopuffer_config,
     owns_turbopuffer_client,
@@ -51,7 +58,7 @@ class TurboPufferVectorStore:
         api_key: str | None = None,
         region: str | None = None,
         base_url: str | None = None,
-        distance_metric: str = "cosine_distance",
+        distance_metric: str = DEFAULT_TURBOPUFFER_DISTANCE_METRIC,
         write_batch_size: int = DEFAULT_TURBOPUFFER_WRITE_BATCH_SIZE,
         delete_continuation_limit: int = DEFAULT_TURBOPUFFER_DELETE_CONTINUATION_LIMIT,
         client: object | None = None,
@@ -85,19 +92,8 @@ class TurboPufferVectorStore:
 
     @property
     def capabilities(self) -> StoreCapabilities:
-        return StoreCapabilities(
-            per_point_delete=True,
-            document_record_lookup=True,
+        return TURBOPUFFER_VECTOR_STORE_CAPABILITY_SPEC.to_store_capabilities(
             dense_vector_dimensions=self._config.dense_dimensions,
-            query_plan=TURBOPUFFER_QUERY_PLAN_CAPABILITIES,
-            metadata_filter=MetadataFilterCapabilities(
-                term=True,
-                in_=True,
-                numeric_range=True,
-                string_range=True,
-                geo=False,
-                boolean=True,
-            ),
         )
 
     def validate_query_plan(self, plan: QueryPlan) -> None:
@@ -190,6 +186,6 @@ class TurboPufferVectorStore:
 
 
 VECTOR_STORES.register(
-    "turbopuffer",
+    TURBOPUFFER_VECTOR_STORE_PROVIDER_SPEC.name,
     lambda **kw: TurboPufferVectorStore(**kw),
 )

@@ -1,24 +1,24 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from rag_core.cli_inputs import cli_safe_error_message
 from rag_core.core_models import IngestedDocument
 from rag_core.events.emit import emit_event
 from rag_core.events.types import IngestBatchProgress
+from rag_core.ingest_progress_statuses import IngestProgressStatus
 from rag_core.local_ingest_models import (
     LocalIngestFailure,
     LocalIngestPlan,
     LocalIngestSuccess,
     LocalManifestStatus,
 )
+from rag_core.manifest_reconciliation_reasons import MANIFEST_REASON_NOT_CHECKED
+from rag_core.manifest_reconciliation_statuses import MANIFEST_STATUS_UNKNOWN
 from rag_core.sources import LocalSourceItem
 
 if TYPE_CHECKING:
     from rag_core.events.sink import EventSink
-
-
-LocalIngestProgressStatus = Literal["succeeded", "failed"]
 
 
 def failed_local_source_record(
@@ -89,10 +89,10 @@ def emit_local_ingest_progress(
     completed_count: int,
     succeeded_count: int,
     failed_count: int,
-    status: LocalIngestProgressStatus,
+    status: IngestProgressStatus,
     content_sha256: str | None = None,
-    manifest_status: LocalManifestStatus = "unknown",
-    manifest_reason: str = "manifest_not_checked",
+    manifest_status: LocalManifestStatus = MANIFEST_STATUS_UNKNOWN,
+    manifest_reason: str = MANIFEST_REASON_NOT_CHECKED,
     ingest_state: str = "",
     error: str = "",
 ) -> None:
@@ -119,7 +119,6 @@ def emit_local_ingest_progress(
 
 
 __all__ = [
-    "LocalIngestProgressStatus",
     "emit_local_ingest_progress",
     "event_error_type",
     "failed_local_ingest_record",

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, cast
 
 from rag_core.events.emit import emit_event, now_ms
 from rag_core.events.types import RerankApplied
@@ -18,10 +17,8 @@ from rag_core.search.pipeline.stages.reranker_stage_runtime import (
     rerank_fallback_reason,
     run_reranker,
 )
-from rag_core.search.types import RerankBudget, SearchResult
-
-if TYPE_CHECKING:
-    from rag_core.events.sink import EventSink
+from rag_core.search.request_models import RerankBudget
+from rag_core.search.vector_models import SearchResult
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +34,7 @@ class ProviderRerankStage:
     ) -> list[SearchResult]:
         if ctx.reranker is None or not results:
             return results
-        sink = cast("EventSink | None", ctx.event_sink)
+        sink = ctx.event_sink
         reranker = ctx.reranker
         run = build_provider_rerank_run(
             results=results,

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from rag_core.config.ingest_config import DEFAULT_INGEST_MAX_CONCURRENCY
 from rag_core.facade.ingest_sources import resolve_archive_manifest_dir
 from rag_core.core_models import RAGCoreConfig
 
@@ -30,7 +31,7 @@ async def ingest_files_from_facade(
     corpus_id: str,
     metadata: dict[str, str] | None = None,
     force_reindex: bool = False,
-    max_concurrency: int = 1,
+    max_concurrency: int = DEFAULT_INGEST_MAX_CONCURRENCY,
     manifest_dir: str | Path | None = None,
 ) -> "LocalIngestResult":
     from rag_core.core_batch_ingest import ingest_files_with_core
@@ -59,7 +60,7 @@ async def ingest_archive_from_facade(
     corpus_id: str,
     metadata: dict[str, str] | None = None,
     force_reindex: bool = False,
-    max_concurrency: int = 1,
+    max_concurrency: int = DEFAULT_INGEST_MAX_CONCURRENCY,
     archive_limits: "ArchiveLimits | None" = None,
     manifest_dir: str | Path | None = None,
 ) -> "LocalIngestResult":
@@ -93,7 +94,7 @@ async def ingest_urls_from_facade(
     corpus_id: str,
     metadata: dict[str, str] | None = None,
     force_reindex: bool = False,
-    max_concurrency: int = 1,
+    max_concurrency: int = DEFAULT_INGEST_MAX_CONCURRENCY,
     fetch_client: "FetchClient | None" = None,
     fetch_policy: "FetchSecurityPolicy | None" = None,
     fetch_limits: "FetchLimits | None" = None,

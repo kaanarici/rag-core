@@ -7,6 +7,11 @@ from typing import TYPE_CHECKING, Callable, Protocol, Sequence
 
 from rag_core.cli_provider_errors import is_provider_bootstrap_error
 from rag_core.core_models import IngestedDocument
+from rag_core.ingest_progress_statuses import (
+    INGEST_PROGRESS_FAILED,
+    INGEST_PROGRESS_SUCCEEDED,
+    IngestProgressStatus,
+)
 from rag_core.local_ingest_models import (
     LocalIngestFailure,
     LocalIngestPlan,
@@ -19,7 +24,6 @@ from rag_core.local_ingest_manifest import (
     source_reconciliation_by_key,
 )
 from rag_core.local_ingest_records import (
-    LocalIngestProgressStatus,
     emit_local_ingest_progress,
     event_error_type as event_error_type,
     failed_local_ingest_record,
@@ -95,7 +99,7 @@ async def ingest_local_documents(
                 manifest_reason=manifest_reason,
             )
             actual_content_sha256 = document.content_sha256
-            status: LocalIngestProgressStatus = "failed"
+            status: IngestProgressStatus = INGEST_PROGRESS_FAILED
             ingest_state = ""
             progress_error = "SourceReadError"
         else:
@@ -120,7 +124,7 @@ async def ingest_local_documents(
                     manifest_reason=manifest_reason,
                 )
                 actual_content_sha256 = document.content_sha256
-                status = "failed"
+                status = INGEST_PROGRESS_FAILED
                 ingest_state = ""
                 progress_error = event_error_type(exc)
             else:
@@ -137,7 +141,7 @@ async def ingest_local_documents(
                     manifest_status=manifest_status,
                     manifest_reason=manifest_reason,
                 )
-                status = "succeeded"
+                status = INGEST_PROGRESS_SUCCEEDED
                 ingest_state = ingested.ingest_state
                 progress_error = ""
 

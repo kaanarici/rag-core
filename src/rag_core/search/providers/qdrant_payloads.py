@@ -11,8 +11,9 @@ from uuid import UUID
 from qdrant_client import models as rest
 
 from rag_core.search.policy import VectorStorePolicy
+from rag_core.search.request_models import StoredDocumentRecord
 from rag_core.search.stored_payload import payload_to_result
-from rag_core.search.types import SearchResult, StoredDocumentRecord, VectorPoint
+from rag_core.search.vector_models import SearchResult, VectorPoint
 
 from .qdrant_shared import _DENSE_VECTOR_NAME, _KNOWN_SPARSE_VECTOR_NAMES
 

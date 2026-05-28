@@ -10,6 +10,13 @@ import pytest
 from rag_core import RAGCoreConfig
 from rag_core.config import (
     ChunkingConfig,
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_EMBEDDING_PROVIDER,
+    DEFAULT_INGEST_SOURCE_TYPE,
+    DEFAULT_QDRANT_COLLECTION,
+    DEFAULT_QDRANT_DIMENSION_AWARE_COLLECTION,
+    DEFAULT_RERANKER_PROVIDER,
+    DEFAULT_VECTOR_STORE_PROVIDER,
     EmbeddingConfig,
     IngestConfig,
     QdrantConfig,
@@ -24,8 +31,8 @@ def test_qdrant_config_defaults() -> None:
     assert config.url is None
     assert config.location is None
     assert config.api_key is None
-    assert config.collection == "rag_core_chunks"
-    assert config.dimension_aware_collection is True
+    assert config.collection == DEFAULT_QDRANT_COLLECTION
+    assert config.dimension_aware_collection is DEFAULT_QDRANT_DIMENSION_AWARE_COLLECTION
 
 
 @pytest.mark.parametrize(
@@ -54,8 +61,8 @@ def test_qdrant_config_normalizes_blank_api_key() -> None:
 
 def test_embedding_config_defaults() -> None:
     config = EmbeddingConfig()
-    assert config.provider == "openai"
-    assert config.model == "text-embedding-3-large"
+    assert config.provider == DEFAULT_EMBEDDING_PROVIDER
+    assert config.model == DEFAULT_EMBEDDING_MODEL
     assert config.dimensions is None
     assert config.api_key is None
     assert config.base_url is None
@@ -81,7 +88,7 @@ def test_embedding_config_accepts_explicit_dimensions() -> None:
 
 def test_reranker_config_defaults() -> None:
     config = RerankerConfig()
-    assert config.provider == "none"
+    assert config.provider == DEFAULT_RERANKER_PROVIDER
     assert config.model is None
     assert config.api_key is None
 
@@ -94,13 +101,13 @@ def test_chunking_config_constructs_with_defaults() -> None:
 def test_ingest_config_defaults() -> None:
     config = IngestConfig()
     assert config.processing_version == DEFAULT_PROCESSING_VERSION
-    assert config.source_type == "file"
+    assert config.source_type == DEFAULT_INGEST_SOURCE_TYPE
     assert config.enable_lexical_search is False
 
 
 def test_vector_store_config_defaults_to_qdrant() -> None:
     config = VectorStoreConfig()
-    assert config.provider == "qdrant"
+    assert config.provider == DEFAULT_VECTOR_STORE_PROVIDER
 
 
 def test_vector_store_config_normalizes_provider() -> None:
@@ -121,18 +128,18 @@ def test_rag_core_config_composes_subsystem_configs() -> None:
     assert config.qdrant.collection == "product_docs"
     assert config.embedding.model == "text-embedding-3-small"
     assert config.embedding.dimensions == 1536
-    assert config.vector_store.provider == "qdrant"
-    assert config.reranker.provider == "none"
+    assert config.vector_store.provider == DEFAULT_VECTOR_STORE_PROVIDER
+    assert config.reranker.provider == DEFAULT_RERANKER_PROVIDER
     assert config.ingest.processing_version == DEFAULT_PROCESSING_VERSION
 
 
 def test_rag_core_config_uses_default_subsystems_when_omitted() -> None:
     config = RAGCoreConfig()
     assert config.qdrant.url is None
-    assert config.embedding.provider == "openai"
-    assert config.vector_store.provider == "qdrant"
-    assert config.reranker.provider == "none"
-    assert config.ingest.source_type == "file"
+    assert config.embedding.provider == DEFAULT_EMBEDDING_PROVIDER
+    assert config.vector_store.provider == DEFAULT_VECTOR_STORE_PROVIDER
+    assert config.reranker.provider == DEFAULT_RERANKER_PROVIDER
+    assert config.ingest.source_type == DEFAULT_INGEST_SOURCE_TYPE
 
 
 def test_rag_core_config_propagates_qdrant_validation() -> None:

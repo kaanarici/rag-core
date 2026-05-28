@@ -1,24 +1,13 @@
-"""Shared model-facing context text helpers for optional integrations."""
+"""Prompt-facing context text helpers for optional integrations."""
 
 from __future__ import annotations
 
-from typing import Protocol
+from rag_core.contracts import SupportsContextPackPromptPayload
 
 
-class ContextPackTextLike(Protocol):
-    def as_text(self) -> str: ...
+def context_pack_prompt_text(pack: SupportsContextPackPromptPayload) -> str:
+    """Return prompt-safe context text for agent tool responses."""
+    return pack.as_prompt_text()
 
 
-def context_pack_model_text(pack: ContextPackTextLike) -> str:
-    """Return model-safe context text when available, else ``as_text()``."""
-
-    as_model_text = getattr(pack, "as_model_text", None)
-    if callable(as_model_text):
-        value = as_model_text()
-        if not isinstance(value, str):
-            raise ValueError("context pack model text must be a string")
-        return value
-    return pack.as_text()
-
-
-__all__ = ["ContextPackTextLike", "context_pack_model_text"]
+__all__ = ["context_pack_prompt_text"]

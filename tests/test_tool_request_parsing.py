@@ -7,7 +7,10 @@ from rag_core.contracts import (
     SEARCH_USER_DOCUMENTS_DEFAULT_MAX_CHARS,
     SEARCH_USER_DOCUMENTS_INPUT_SCHEMA,
     SearchUserDocumentsRequest,
+    normalize_static_retrieval_scope,
     parse_search_user_documents_request,
+    scope_document_ids,
+    validate_bound_namespace,
 )
 
 
@@ -68,6 +71,37 @@ def test_parse_search_user_documents_request_accepts_endpoint_defaults() -> None
         max_chars=None,
         max_tokens=256,
     )
+
+
+def test_retrieval_scope_helpers_normalize_app_bound_scope() -> None:
+    assert validate_bound_namespace(" acme ") == "acme"
+    assert normalize_static_retrieval_scope(
+        corpus_ids=[" help ", "docs"],
+        document_ids=[" doc-1 "],
+        limit=2,
+    ) == (("help", "docs"), ("doc-1",))
+    assert scope_document_ids(requested=None, configured=("doc-1", "doc-2")) == [
+        "doc-1",
+        "doc-2",
+    ]
+    assert scope_document_ids(requested=("doc-2",), configured=("doc-1", "doc-2")) == [
+        "doc-2"
+    ]
+
+
+def test_retrieval_scope_helpers_reject_unbound_or_out_of_scope_values() -> None:
+    with pytest.raises(ValueError, match="namespace must not be empty"):
+        validate_bound_namespace(" ")
+    with pytest.raises(ValueError, match="corpus_ids must not be empty"):
+        normalize_static_retrieval_scope(corpus_ids=[], document_ids=None, limit=1)
+    with pytest.raises(ValueError, match="document_ids must contain non-empty strings"):
+        normalize_static_retrieval_scope(
+            corpus_ids=["help"],
+            document_ids=[" "],
+            limit=1,
+        )
+    with pytest.raises(ValueError, match="outside the configured retrieval scope"):
+        scope_document_ids(requested=("doc-2",), configured=("doc-1",))
 
 
 def test_input_schema_rejects_blank_after_trim_values() -> None:

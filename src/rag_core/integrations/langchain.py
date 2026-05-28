@@ -12,10 +12,14 @@ from rag_core.contracts import (
     SEARCH_USER_DOCUMENTS_DEFAULT_RERANK,
     SEARCH_USER_DOCUMENTS_DEFAULT_USE_LEXICAL_SEARCH,
     SEARCH_USER_DOCUMENTS_TOOL_NAME,
+    normalize_static_content_types,
+    normalize_static_retrieval_scope,
     parse_search_user_documents_request,
+    scope_document_ids,
+    validate_bound_namespace,
     validate_search_user_documents_bounds,
 )
-from rag_core.core import RAGCore
+from rag_core import RAGCore
 from rag_core.integrations.langchain_retriever import (
     search_langchain_documents as _search,
 )
@@ -28,10 +32,7 @@ from rag_core.integrations.langchain_runtime import (
     require_langchain_symbol as _require_symbol,
     run_coro_blocking as _run_coro_blocking,
 )
-from rag_core.integrations.langchain_scope import (
-    normalize_langchain_retrieval_scope,
-    validate_langchain_namespace,
-)
+from rag_core.search import QueryPlan
 
 
 @dataclass(frozen=True)
@@ -41,10 +42,11 @@ class LangChainRetrieverConfig:
     namespace: str
     corpus_ids: tuple[str, ...]
     limit: int = SEARCH_USER_DOCUMENTS_DEFAULT_LIMIT
+    content_types: tuple[str, ...] | None = None
     document_ids: tuple[str, ...] | None = None
     rerank: bool = SEARCH_USER_DOCUMENTS_DEFAULT_RERANK
     use_lexical_search: bool = SEARCH_USER_DOCUMENTS_DEFAULT_USE_LEXICAL_SEARCH
-    query_plan: object | None = None
+    query_plan: QueryPlan | None = None
 
 
 def build_langchain_retriever(
@@ -53,28 +55,31 @@ def build_langchain_retriever(
     namespace: str,
     corpus_ids: Sequence[str],
     limit: int = SEARCH_USER_DOCUMENTS_DEFAULT_LIMIT,
+    content_types: Sequence[str] | None = None,
     document_ids: Sequence[str] | None = None,
     rerank: bool = SEARCH_USER_DOCUMENTS_DEFAULT_RERANK,
     use_lexical_search: bool = SEARCH_USER_DOCUMENTS_DEFAULT_USE_LEXICAL_SEARCH,
-    query_plan: object | None = None,
+    query_plan: QueryPlan | None = None,
 ) -> Any:
     """Build a ``BaseRetriever`` backed by ``RAGCore.search``."""
 
-    normalized_namespace = validate_langchain_namespace(namespace)
+    normalized_namespace = validate_bound_namespace(namespace)
     validate_search_user_documents_bounds(
         limit=limit,
         max_chars=SEARCH_USER_DOCUMENTS_DEFAULT_MAX_CHARS,
         max_tokens=None,
     )
-    corpus_ids_tuple, document_ids_tuple = normalize_langchain_retrieval_scope(
+    corpus_ids_tuple, document_ids_tuple = normalize_static_retrieval_scope(
         corpus_ids=corpus_ids,
         document_ids=document_ids,
         limit=limit,
     )
+    content_types_tuple = normalize_static_content_types(content_types)
     config = LangChainRetrieverConfig(
         namespace=normalized_namespace,
         corpus_ids=corpus_ids_tuple,
         limit=limit,
+        content_types=content_types_tuple,
         document_ids=document_ids_tuple,
         rerank=rerank,
         use_lexical_search=use_lexical_search,
@@ -144,28 +149,34 @@ def create_langchain_context_tool(
     name: str = SEARCH_USER_DOCUMENTS_TOOL_NAME,
     description: str = "Search app-owned documents with rag-core and return grounded context with citations.",
     limit: int = SEARCH_USER_DOCUMENTS_DEFAULT_LIMIT,
+    content_types: Sequence[str] | None = None,
     document_ids: Sequence[str] | None = None,
     rerank: bool = SEARCH_USER_DOCUMENTS_DEFAULT_RERANK,
     use_lexical_search: bool = SEARCH_USER_DOCUMENTS_DEFAULT_USE_LEXICAL_SEARCH,
     max_chars: int | None = SEARCH_USER_DOCUMENTS_DEFAULT_MAX_CHARS,
     max_tokens: int | None = None,
-    query_plan: object | None = None,
+    query_plan: QueryPlan | None = None,
 ) -> Any:
-    """Build a LangChain tool returning ``(content, artifact)`` from context packs."""
+    """Build a LangChain tool returning ``(content, artifact)`` from context packs.
 
-    normalized_namespace = validate_langchain_namespace(namespace)
+    ``namespace`` and ``corpus_ids`` are bound at construction time. Pass
+    ``document_ids`` to bind a static document allowlist; any tool-call
+    document ids must stay within it.
+    """
+
+    normalized_namespace = validate_bound_namespace(namespace)
     validate_search_user_documents_bounds(
         limit=limit,
         max_chars=max_chars,
         max_tokens=max_tokens,
     )
-    tool_decorator = _require_symbol("langchain_core.tools", "tool")
-
-    corpus_ids_tuple, document_ids_tuple = normalize_langchain_retrieval_scope(
+    corpus_ids_tuple, document_ids_tuple = normalize_static_retrieval_scope(
         corpus_ids=corpus_ids,
         document_ids=document_ids,
         limit=limit,
     )
+    content_types_tuple = normalize_static_content_types(content_types)
+    tool_decorator = _require_symbol("langchain_core.tools", "tool")
 
     async def _retrieve(
         *,
@@ -198,7 +209,7 @@ def create_langchain_context_tool(
             default_max_chars=max_chars,
             default_max_tokens=max_tokens,
         )
-        scoped_document_ids = _scope_document_ids(
+        scoped_document_ids = scope_document_ids(
             requested=request.document_ids,
             configured=document_ids_tuple,
         )
@@ -207,10 +218,13 @@ def create_langchain_context_tool(
             namespace=normalized_namespace,
             corpus_ids=list(corpus_ids_tuple),
             limit=request.limit,
+            content_types=(
+                list(content_types_tuple) if content_types_tuple is not None else None
+            ),
             document_ids=scoped_document_ids,
             rerank=request.rerank,
             use_lexical_search=request.use_lexical_search,
-            query_plan=cast(Any, query_plan),
+            query_plan=query_plan,
             max_chars=request.max_chars,
             max_tokens=request.max_tokens,
         )
@@ -240,23 +254,6 @@ def create_langchain_context_tool(
 
     _context_tool.description = description
     return _context_tool
-
-
-def _scope_document_ids(
-    *,
-    requested: tuple[str, ...] | None,
-    configured: tuple[str, ...] | None,
-) -> list[str] | None:
-    if configured is None:
-        return list(requested) if requested is not None else None
-    if requested is None:
-        return list(configured)
-    configured_set = set(configured)
-    rejected = [document_id for document_id in requested if document_id not in configured_set]
-    if rejected:
-        raise ValueError("document_ids contain values outside the configured retrieval scope")
-    return list(requested)
-
 
 __all__ = [
     "LangChainNotInstalledError",

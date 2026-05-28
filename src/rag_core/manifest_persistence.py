@@ -7,8 +7,8 @@ delete and compaction rewrite the JSONL atomically to keep the current
 manifest small and canonical. ``read_entries`` collapses to the latest entry
 per document.
 
-Free functions keep the manifest boundary concrete until another backend
-needs the same shape.
+Free functions keep the manifest boundary concrete until another persistence
+adapter needs the same shape.
 """
 
 from __future__ import annotations

@@ -2,9 +2,13 @@ import asyncio
 
 import pytest
 
-from rag_core import ModelContextPack, RAGCore
+from rag_core import ContextPack, RAGCore
 from rag_core.events import EventBuffer
-from rag_core.search.context_pack import build_context_pack
+from rag_core.retrieval_defaults import DEFAULT_CONTEXT_LIMIT
+from rag_core.search.context_pack import (
+    build_context_pack,
+    context_pack_response_payload,
+)
 from rag_core.events.types import SearchStageCompleted
 from rag_core.search.context_pack import (
     source_locator_from_result,
@@ -80,6 +84,26 @@ def test_context_pack_preserves_rank_order_and_source_references() -> None:
     assert pack.char_count == len(pack.as_text())
 
 
+def test_context_pack_default_snippet_limit_uses_shared_context_default() -> None:
+    results = [
+        make_search_result(
+            id=f"hit-{index}",
+            document_id=f"doc-{index}",
+            document_key=f"doc-{index}.md",
+            text=f"context {index}",
+            score=1.0,
+        )
+        for index in range(DEFAULT_CONTEXT_LIMIT + 2)
+    ]
+
+    pack = build_context_pack(results, query="context")
+
+    assert len(pack.snippets) == DEFAULT_CONTEXT_LIMIT
+    assert pack.max_snippets == DEFAULT_CONTEXT_LIMIT
+    assert pack.dropped_count == 2
+    assert pack.truncated is True
+
+
 def test_context_pack_exposes_slide_and_sheet_locators() -> None:
     slide = make_search_result(
         id="slide-1",
@@ -111,11 +135,20 @@ def test_context_pack_exposes_slide_and_sheet_locators() -> None:
     pack = build_context_pack([slide, sheet, sheet_with_section], query="signals")
 
     assert pack.snippets[0].locator.slide_number == 2
-    assert pack.snippets[0].header == "[space-1:corpus-1:deck#chunk-0] Deck Slide 2, chunk 0"
+    assert (
+        pack.snippets[0].header
+        == "[space-1:corpus-1:deck#chunk-0] Deck Slide 2, chunk 0"
+    )
     assert pack.snippets[1].locator.sheet_name == "Signals"
     assert pack.snippets[1].locator.row_range == "11-20"
-    assert pack.snippets[1].header == "[space-1:corpus-1:workbook#chunk-1] Workbook sheet Signals, rows 11-20, chunk 1"
-    assert pack.snippets[2].header == "[space-1:corpus-1:workbook#chunk-2] Workbook Sheet: Signals (Rows 11-20), chunk 2"
+    assert (
+        pack.snippets[1].header
+        == "[space-1:corpus-1:workbook#chunk-1] Workbook sheet Signals, rows 11-20, chunk 1"
+    )
+    assert (
+        pack.snippets[2].header
+        == "[space-1:corpus-1:workbook#chunk-2] Workbook Sheet: Signals (Rows 11-20), chunk 2"
+    )
     snippets = pack.to_payload()["snippets"]
     assert isinstance(snippets, list)
     second = snippets[1]
@@ -124,6 +157,37 @@ def test_context_pack_exposes_slide_and_sheet_locators() -> None:
     assert isinstance(locator, dict)
     assert locator["sheet_name"] == "Signals"
     assert locator["page_number"] is None
+
+
+def test_context_pack_exposes_code_line_locators() -> None:
+    pack = build_context_pack(
+        [
+            make_search_result(
+                id="code-hit",
+                text="def answer(query: str) -> str:\n    return query",
+                source_type="file",
+                title="answer.py",
+                chunk_index=0,
+                metadata={"line_start": 10, "line_end": 11},
+            )
+        ],
+        query="answer",
+    )
+
+    [snippet] = pack.snippets
+    assert snippet.locator.line_start == 10
+    assert snippet.locator.line_end == 11
+    assert "lines 10-11" in snippet.header
+    payload = pack.to_payload()
+    snippets = payload["snippets"]
+    assert isinstance(snippets, list)
+    first = snippets[0]
+    assert isinstance(first, dict)
+    locator = first["locator"]
+    assert isinstance(locator, dict)
+    assert locator["line_start"] == 10
+    assert locator["line_end"] == 11
+    assert pack.source_previews[0].locator_label == "lines 10-11, chunk 0"
 
 
 def test_context_pack_dedupes_page_label_when_section_path_already_names_page() -> None:
@@ -139,7 +203,10 @@ def test_context_pack_dedupes_page_label_when_section_path_already_names_page() 
 
     pack = build_context_pack([hit], query="page")
 
-    assert pack.snippets[0].header == "[space-1:corpus-1:doc#chunk-0] Document Page 4, chunk 0"
+    assert (
+        pack.snippets[0].header
+        == "[space-1:corpus-1:doc#chunk-0] Document Page 4, chunk 0"
+    )
 
 
 def test_context_pack_payload_keeps_missing_locator_keys_explicit() -> None:
@@ -164,6 +231,8 @@ def test_context_pack_payload_keeps_missing_locator_keys_explicit() -> None:
         "slide_number",
         "sheet_name",
         "row_range",
+        "line_start",
+        "line_end",
         "bbox",
         "figure_id",
         "figure_caption",
@@ -175,16 +244,32 @@ def test_context_pack_payload_keeps_missing_locator_keys_explicit() -> None:
 
 def test_context_pack_dedupes_repeated_source_chunks_and_fills_budget() -> None:
     first = make_search_result(
-        id="point-1", document_id=None, document_key="guide.md", chunk_index=1, text="first guide chunk"
+        id="point-1",
+        document_id=None,
+        document_key="guide.md",
+        chunk_index=1,
+        text="first guide chunk",
     )
     duplicate = make_search_result(
-        id="point-2", document_id=None, document_key="guide.md", chunk_index=1, text="duplicate guide chunk"
+        id="point-2",
+        document_id=None,
+        document_key="guide.md",
+        chunk_index=1,
+        text="duplicate guide chunk",
     )
     second = make_search_result(
-        id="point-3", document_id=None, document_key="guide.md", chunk_index=2, text="second guide chunk"
+        id="point-3",
+        document_id=None,
+        document_key="guide.md",
+        chunk_index=2,
+        text="second guide chunk",
     )
     dropped_by_limit = make_search_result(
-        id="point-4", document_id=None, document_key=None, chunk_index=None, text="fallback chunk"
+        id="point-4",
+        document_id=None,
+        document_key=None,
+        chunk_index=None,
+        text="fallback chunk",
     )
 
     pack = build_context_pack(
@@ -227,8 +312,12 @@ def test_context_pack_source_ids_ignore_hidden_duplicate_hits() -> None:
 
 
 def test_context_pack_keeps_hits_without_chunk_identity_distinct() -> None:
-    first = make_search_result(id="point-1", document_id="guide", chunk_index=None, text="first guide hit")
-    second = make_search_result(id="point-2", document_id="guide", chunk_index=None, text="second guide hit")
+    first = make_search_result(
+        id="point-1", document_id="guide", chunk_index=None, text="first guide hit"
+    )
+    second = make_search_result(
+        id="point-2", document_id="guide", chunk_index=None, text="second guide hit"
+    )
 
     pack = build_context_pack([first, second], query="guide")
 
@@ -316,7 +405,9 @@ def test_context_pack_duplicate_document_key_citation_ids_are_rank_stable() -> N
     reversed_order = build_context_pack([second, first], query="guide")
 
     first_ids = {snippet.text: snippet.citation_id for snippet in first_order.snippets}
-    reversed_ids = {snippet.text: snippet.citation_id for snippet in reversed_order.snippets}
+    reversed_ids = {
+        snippet.text: snippet.citation_id for snippet in reversed_order.snippets
+    }
     assert first_ids == reversed_ids
     assert first_ids["first guide hit"].startswith("space-1:guide.md#chunk-0-")
     assert first_ids["second guide hit"].startswith("space-1:guide.md#chunk-0-")
@@ -383,7 +474,9 @@ def test_context_pack_dedupes_missing_chunk_when_section_identity_matches() -> N
     assert pack.truncated is False
 
 
-def test_context_pack_keeps_section_citation_ids_stable_when_rank_order_changes() -> None:
+def test_context_pack_keeps_section_citation_ids_stable_when_rank_order_changes() -> (
+    None
+):
     setup = make_search_result(
         id="point-1",
         document_id="guide",
@@ -403,16 +496,24 @@ def test_context_pack_keeps_section_citation_ids_stable_when_rank_order_changes(
     reversed_order = build_context_pack([billing, setup], query="guide")
 
     first_ids = {snippet.text: snippet.citation_id for snippet in first_order.snippets}
-    reversed_ids = {snippet.text: snippet.citation_id for snippet in reversed_order.snippets}
+    reversed_ids = {
+        snippet.text: snippet.citation_id for snippet in reversed_order.snippets
+    }
     assert first_ids == reversed_ids
 
 
 def test_context_pack_enforces_char_budget_and_reports_drops() -> None:
     pack = build_context_pack(
         [
-            make_search_result(id="a", text="abcdefghij", document_id="doc-a", chunk_index=0),
-            make_search_result(id="b", text="klmnop", document_id="doc-b", chunk_index=0),
-            make_search_result(id="c", text="qrstuv", document_id="doc-c", chunk_index=0),
+            make_search_result(
+                id="a", text="abcdefghij", document_id="doc-a", chunk_index=0
+            ),
+            make_search_result(
+                id="b", text="klmnop", document_id="doc-b", chunk_index=0
+            ),
+            make_search_result(
+                id="c", text="qrstuv", document_id="doc-c", chunk_index=0
+            ),
         ],
         query="budget",
         max_snippets=3,
@@ -427,7 +528,11 @@ def test_context_pack_enforces_char_budget_and_reports_drops() -> None:
 
 def test_context_pack_budgets_rendered_text_not_only_raw_snippets() -> None:
     pack = build_context_pack(
-        [make_search_result(id="a", text="abcdefghij", document_id="doc-a", chunk_index=0)],
+        [
+            make_search_result(
+                id="a", text="abcdefghij", document_id="doc-a", chunk_index=0
+            )
+        ],
         query="budget",
         max_chars=3,
     )
@@ -440,7 +545,11 @@ def test_context_pack_budgets_rendered_text_not_only_raw_snippets() -> None:
 
 def test_context_pack_token_budget_translates_to_char_budget() -> None:
     pack = build_context_pack(
-        [make_search_result(id="a", text="abcdefghij", document_id="doc-a", chunk_index=0)],
+        [
+            make_search_result(
+                id="a", text="abcdefghij", document_id="doc-a", chunk_index=0
+            )
+        ],
         query="budget",
         max_tokens=10,
         chars_per_token=2,
@@ -559,6 +668,42 @@ def test_context_pack_preserves_sanitized_rerank_provenance() -> None:
     }
 
 
+def test_context_pack_preserves_parse_quality_provenance() -> None:
+    hit = make_search_result(
+        id="quality-hit",
+        text="quality text",
+        score=0.8,
+        metadata={
+            "quality_verdict": "poor",
+            "quality_details": "low meaningful text ratio",
+            "quality_char_count": 128,
+            "quality_meaningful_ratio": 0.31,
+            "quality_mojibake_ratio": 0.04,
+            "quality_text_to_page_ratio": 64.0,
+            "quality_page_count": 2,
+            "quality_ignored": {"raw": "shape"},
+        },
+    )
+
+    pack = build_context_pack([hit], query="quality")
+    payload = pack.to_payload()
+    snippets = payload["snippets"]
+    assert isinstance(snippets, list)
+    first = snippets[0]
+    assert isinstance(first, dict)
+    assert first["retrieval_metadata"] == {
+        "quality": {
+            "verdict": "poor",
+            "details": "low meaningful text ratio",
+            "char_count": 128,
+            "page_count": 2,
+            "meaningful_ratio": 0.31,
+            "mojibake_ratio": 0.04,
+            "text_to_page_ratio": 64.0,
+        }
+    }
+
+
 def test_context_pack_sanitizes_non_finite_scores() -> None:
     pack = build_context_pack(
         [make_search_result(id="bad-score", score=float("nan"))],
@@ -588,7 +733,7 @@ def test_context_pack_drops_malformed_bbox_instead_of_failing() -> None:
 
 
 def test_rag_core_retrieve_context_builds_pack_and_forwards_scope() -> None:
-    async def scenario() -> tuple[ModelContextPack, RecordingVectorStore]:
+    async def scenario() -> tuple[ContextPack, RecordingVectorStore]:
         store = RecordingVectorStore(
             search_results=[
                 make_search_result(
@@ -601,7 +746,9 @@ def test_rag_core_retrieve_context_builds_pack_and_forwards_scope() -> None:
             ]
         )
         core = RAGCore(
-            make_test_config(qdrant_collection="rag_core_context_pack", embedding_dimensions=4),
+            make_test_config(
+                qdrant_collection="rag_core_context_pack", embedding_dimensions=4
+            ),
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(),
             vector_store=store,
@@ -627,12 +774,18 @@ def test_rag_core_retrieve_context_builds_pack_and_forwards_scope() -> None:
 
 
 def test_rag_core_retrieve_context_honors_explicit_query_plan_final_limit() -> None:
-    async def scenario() -> tuple[ModelContextPack, RecordingVectorStore]:
+    async def scenario() -> tuple[ContextPack, RecordingVectorStore]:
         store = RecordingVectorStore(
             search_results=[
-                make_search_result(id="hit-1", text="One", document_id="doc-1", chunk_index=0),
-                make_search_result(id="hit-2", text="Two", document_id="doc-2", chunk_index=0),
-                make_search_result(id="hit-3", text="Three", document_id="doc-3", chunk_index=0),
+                make_search_result(
+                    id="hit-1", text="One", document_id="doc-1", chunk_index=0
+                ),
+                make_search_result(
+                    id="hit-2", text="Two", document_id="doc-2", chunk_index=0
+                ),
+                make_search_result(
+                    id="hit-3", text="Three", document_id="doc-3", chunk_index=0
+                ),
             ]
         )
         core = RAGCore(
@@ -695,6 +848,169 @@ def test_context_pack_payload_includes_source_previews_and_citation_summary() ->
     assert source_preview_from_snippet(pack.snippets[0]).source_hash == "sha256:abc"
 
 
+def test_context_pack_response_payload_adds_prompt_safe_context_text() -> None:
+    pack = build_context_pack(
+        [
+            make_search_result(
+                id="hit-1",
+                text="Invoice payment context",
+                document_id="billing-doc",
+                document_key="billing.md",
+                title="Billing",
+                chunk_index=3,
+            )
+        ],
+        query="billing",
+    )
+
+    payload = context_pack_response_payload(pack)
+
+    assert payload["context_text"] == pack.as_prompt_text()
+    assert payload["snippets"] == pack.to_payload()["snippets"]
+    assert payload["char_count"] == pack.to_payload()["char_count"]
+    assert payload["char_count"] != len(pack.as_prompt_text())
+    assert payload["citation_summary"] == pack.to_payload()["citation_summary"]
+    assert payload["citation_summary"] != pack.to_prompt_payload()["citation_summary"]
+
+
+def test_context_pack_prompt_payload_uses_rank_local_citations() -> None:
+    pack = build_context_pack(
+        [
+            make_search_result(
+                id="private-hit-1",
+                text="Invoice payment context",
+                document_id="internal-doc-id",
+                document_key="private/billing.md",
+                title=None,
+                corpus_id="tenant-corpus",
+                chunk_index=3,
+                content_sha256="sha256:abc",
+            )
+        ],
+        query="billing",
+    )
+
+    payload = pack.to_prompt_payload()
+    encoded = str(payload)
+
+    assert "[S1] file" in pack.as_prompt_text()
+    assert "internal-doc-id" not in encoded
+    assert "private/billing.md" not in encoded
+    assert "private-hit-1" not in encoded
+    assert "tenant-corpus" not in encoded
+    assert "sha256:abc" not in encoded
+    snippets = payload["snippets"]
+    assert isinstance(snippets, list)
+    snippet = snippets[0]
+    assert isinstance(snippet, dict)
+    assert snippet["citation_id"] == "S1"
+    assert snippet["char_count"] == len(pack.snippets[0].as_prompt_text())
+    assert snippet["char_count"] != pack.snippets[0].char_count
+    source = snippet["source"]
+    assert isinstance(source, dict)
+    assert source == {
+        "citation_id": "S1",
+        "chunk_index": 3,
+        "source_type": "file",
+    }
+
+
+def test_context_pack_prompt_payload_keeps_metadata_allowlisted() -> None:
+    pack = build_context_pack(
+        [
+            make_search_result(
+                id="private-hit-1",
+                text="Invoice payment context",
+                document_id="internal-doc-id",
+                document_key="private/billing.md",
+                corpus_id="tenant-corpus",
+                chunk_index=3,
+                content_sha256="sha256:abc",
+                metadata={
+                    "quality_verdict": "poor",
+                    "quality_char_count": 128,
+                    "quality_ignored": "private/billing.md",
+                    "rerank": {
+                        "provider": "voyage",
+                        "model": "rerank-2.5-lite",
+                        "provider_score": 0.91,
+                        "ignored": {"document_id": "internal-doc-id"},
+                    },
+                },
+            )
+        ],
+        query="billing",
+    )
+
+    payload = pack.to_prompt_payload()
+    encoded = str(payload)
+
+    assert "internal-doc-id" not in encoded
+    assert "private/billing.md" not in encoded
+    assert "tenant-corpus" not in encoded
+    assert "sha256:abc" not in encoded
+    snippets = payload["snippets"]
+    assert isinstance(snippets, list)
+    snippet = snippets[0]
+    assert isinstance(snippet, dict)
+    assert snippet["retrieval_metadata"] == {
+        "quality": {"verdict": "poor", "char_count": 128},
+        "rerank": {
+            "provider": "voyage",
+            "model": "rerank-2.5-lite",
+            "provider_score": 0.91,
+        },
+    }
+
+
+def test_context_pack_prompt_payload_keeps_remote_url_identity_private() -> None:
+    pack = build_context_pack(
+        [
+            make_search_result(
+                id="remote-hit-1",
+                text="Remote export context",
+                source_type="url",
+                document_id="internal-remote-doc",
+                document_key="url:https://example.com/export?redacted|query_sha256:abc123",
+                title="https://example.com/export?redacted",
+                corpus_id="tenant-corpus",
+                chunk_index=2,
+                content_sha256="sha256:remote",
+            )
+        ],
+        query="remote export",
+    )
+
+    payload = pack.to_prompt_payload()
+    encoded = str(payload) + pack.as_prompt_text()
+
+    assert "https://example.com/export?redacted" in encoded
+    assert "query_sha256" not in encoded
+    assert "abc123" not in encoded
+    assert "internal-remote-doc" not in encoded
+    assert "tenant-corpus" not in encoded
+    assert "sha256:remote" not in encoded
+    snippets = payload["snippets"]
+    assert isinstance(snippets, list)
+    snippet = snippets[0]
+    assert isinstance(snippet, dict)
+    source = snippet["source"]
+    assert isinstance(source, dict)
+    assert source == {
+        "citation_id": "S1",
+        "title": "https://example.com/export?redacted",
+        "chunk_index": 2,
+        "source_type": "url",
+    }
+    previews = payload["source_previews"]
+    assert isinstance(previews, list)
+    preview = previews[0]
+    assert isinstance(preview, dict)
+    assert preview["title"] == "https://example.com/export?redacted"
+    assert preview["source_type"] == "url"
+    assert "document_key" not in preview
+
+
 def test_rag_core_retrieve_context_emits_context_pack_timing() -> None:
     async def scenario() -> EventBuffer:
         events = EventBuffer()
@@ -705,7 +1021,9 @@ def test_rag_core_retrieve_context_emits_context_pack_timing() -> None:
             ),
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(),
-            vector_store=RecordingVectorStore(search_results=[make_search_result(id="hit-1")]),
+            vector_store=RecordingVectorStore(
+                search_results=[make_search_result(id="hit-1")]
+            ),
             event_sink=events,
         )
         try:
@@ -722,7 +1040,8 @@ def test_rag_core_retrieve_context_emits_context_pack_timing() -> None:
 
     events = asyncio.run(scenario())
     context_events = [
-        e for e in events.events
+        e
+        for e in events.events
         if isinstance(e, SearchStageCompleted) and e.stage == "context_pack"
     ]
     [event] = context_events

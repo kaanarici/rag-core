@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Final, Literal
 
 EmbeddingOperation = Literal["embed_texts", "embed_query"]
+EMBEDDING_OPERATION_TEXTS: Final[EmbeddingOperation] = "embed_texts"
+EMBEDDING_OPERATION_QUERY: Final[EmbeddingOperation] = "embed_query"
 
 
 @dataclass(frozen=True)
@@ -35,5 +37,7 @@ class CachedEmbeddingDiagnostics:
 
 __all__ = [
     "CachedEmbeddingDiagnostics",
+    "EMBEDDING_OPERATION_QUERY",
+    "EMBEDDING_OPERATION_TEXTS",
     "EmbeddingCacheObservation",
 ]

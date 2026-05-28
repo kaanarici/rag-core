@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from typing import Any, Final
 
+from rag_core.retrieval_defaults import DEFAULT_RERANK, DEFAULT_USE_LEXICAL_SEARCH
+
 JsonObject = dict[str, Any]
 
 SEARCH_USER_DOCUMENTS_TOOL_NAME: Final[str] = "search_user_documents"
 SEARCH_USER_DOCUMENTS_DEFAULT_LIMIT: Final[int] = 5
-SEARCH_USER_DOCUMENTS_DEFAULT_RERANK: Final[bool] = False
-SEARCH_USER_DOCUMENTS_DEFAULT_USE_LEXICAL_SEARCH: Final[bool] = True
+SEARCH_USER_DOCUMENTS_DEFAULT_RERANK: Final[bool] = DEFAULT_RERANK
+SEARCH_USER_DOCUMENTS_DEFAULT_USE_LEXICAL_SEARCH: Final[bool] = DEFAULT_USE_LEXICAL_SEARCH
 SEARCH_USER_DOCUMENTS_DEFAULT_MAX_CHARS: Final[int] = 3000
 SEARCH_USER_DOCUMENTS_LIMIT_MIN: Final[int] = 1
 SEARCH_USER_DOCUMENTS_LIMIT_MAX: Final[int] = 20
@@ -33,12 +35,12 @@ SEARCH_USER_DOCUMENTS_INPUT_SCHEMA: Final[JsonObject] = {
             "minimum": SEARCH_USER_DOCUMENTS_LIMIT_MIN,
             "maximum": SEARCH_USER_DOCUMENTS_LIMIT_MAX,
             "default": SEARCH_USER_DOCUMENTS_DEFAULT_LIMIT,
-            "description": "Maximum number of hits to return.",
+            "description": "Maximum number of context snippets to return.",
         },
         "document_ids": {
             "type": "array",
             "items": {"type": "string", "minLength": 1, "pattern": r"\S"},
-            "description": "Optional document IDs, after app-side authorization.",
+            "description": "Optional narrowing filter inside the app-bound document scope.",
         },
         "rerank": {
             "type": "boolean",
@@ -48,7 +50,10 @@ SEARCH_USER_DOCUMENTS_INPUT_SCHEMA: Final[JsonObject] = {
         "use_lexical_search": {
             "type": "boolean",
             "default": SEARCH_USER_DOCUMENTS_DEFAULT_USE_LEXICAL_SEARCH,
-            "description": "Whether the endpoint should include configured lexical or exact-match retrieval.",
+            "description": (
+                "Controls configured lexical/exact-match expansion only; "
+                "query-plan defaults remain provider capability-aware."
+            ),
         },
         "max_chars": {
             "type": "integer",
@@ -70,35 +75,37 @@ _SEARCH_USER_DOCUMENTS_INPUT_FIELDS: Final[frozenset[str]] = frozenset(
     SEARCH_USER_DOCUMENTS_INPUT_SCHEMA["properties"]
 )
 
-_SOURCE_REFERENCE_SCHEMA: Final[JsonObject] = {
+_PROMPT_SOURCE_REFERENCE_SCHEMA: Final[JsonObject] = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
-        "source_id": {"type": "string"},
-        "result_id": {"type": "string"},
+        "citation_id": {"type": "string"},
         "title": {"type": "string"},
-        "section_id": {"type": "string"},
         "section_title": {"type": "string"},
         "section_path": {"type": "string"},
         "chunk_index": {"type": "integer"},
         "source_type": {"type": "string"},
         "result_type": {"type": "string"},
     },
-    "required": ["source_id", "result_id"],
+    "required": ["citation_id"],
 }
 
-_SOURCE_LOCATOR_SCHEMA: Final[JsonObject] = {
+_PROMPT_SOURCE_LOCATOR_SCHEMA: Final[JsonObject] = {
     "type": "object",
+    "description": (
+        "Prompt-safe source locator projection; app-private source hashes are omitted."
+    ),
     "additionalProperties": False,
     "properties": {
         "chunk_index": {"type": ["integer", "null"]},
         "section_path": {"type": ["string", "null"]},
-        "source_hash": {"type": ["string", "null"]},
         "page_number": {"type": ["integer", "null"]},
         "page_index": {"type": ["integer", "null"]},
         "slide_number": {"type": ["integer", "null"]},
         "sheet_name": {"type": ["string", "null"]},
         "row_range": {"type": ["string", "null"]},
+        "line_start": {"type": ["integer", "null"]},
+        "line_end": {"type": ["integer", "null"]},
         "bbox": {
             "oneOf": [
                 {"type": "null"},
@@ -117,12 +124,13 @@ _SOURCE_LOCATOR_SCHEMA: Final[JsonObject] = {
     "required": [
         "chunk_index",
         "section_path",
-        "source_hash",
         "page_number",
         "page_index",
         "slide_number",
         "sheet_name",
         "row_range",
+        "line_start",
+        "line_end",
         "bbox",
         "figure_id",
         "figure_caption",
@@ -130,7 +138,7 @@ _SOURCE_LOCATOR_SCHEMA: Final[JsonObject] = {
     ],
 }
 
-_SOURCE_PREVIEW_SCHEMA: Final[JsonObject] = {
+_PROMPT_SOURCE_PREVIEW_SCHEMA: Final[JsonObject] = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
@@ -151,6 +159,20 @@ _SOURCE_PREVIEW_SCHEMA: Final[JsonObject] = {
     ],
 }
 
+_QUALITY_METADATA_SCHEMA: Final[JsonObject] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "verdict": {"type": "string"},
+        "details": {"type": "string"},
+        "char_count": {"type": "integer"},
+        "page_count": {"type": "integer"},
+        "meaningful_ratio": {"type": "number"},
+        "mojibake_ratio": {"type": "number"},
+        "text_to_page_ratio": {"type": "number"},
+    },
+}
+
 _CONTEXT_SNIPPET_SCHEMA: Final[JsonObject] = {
     "type": "object",
     "additionalProperties": False,
@@ -159,14 +181,15 @@ _CONTEXT_SNIPPET_SCHEMA: Final[JsonObject] = {
         "rank": {"type": "integer", "minimum": 1},
         "text": {"type": "string"},
         "score": {"type": "number"},
-        "source": {"$ref": "#/definitions/source_reference"},
-        "locator": {"$ref": "#/definitions/source_locator"},
+        "source": {"$ref": "#/definitions/prompt_source_reference"},
+        "locator": {"$ref": "#/definitions/prompt_source_locator"},
         "token_estimate": {"type": "integer", "minimum": 0},
         "char_count": {"type": "integer", "minimum": 0},
         "retrieval_metadata": {
             "type": "object",
             "additionalProperties": False,
             "properties": {
+                "quality": _QUALITY_METADATA_SCHEMA,
                 "rerank": {
                     "type": "object",
                     "additionalProperties": False,
@@ -203,9 +226,9 @@ SEARCH_USER_DOCUMENTS_OUTPUT_SCHEMA: Final[JsonObject] = {
     "type": "object",
     "additionalProperties": False,
     "definitions": {
-        "source_reference": _SOURCE_REFERENCE_SCHEMA,
-        "source_locator": _SOURCE_LOCATOR_SCHEMA,
-        "source_preview": _SOURCE_PREVIEW_SCHEMA,
+        "prompt_source_reference": _PROMPT_SOURCE_REFERENCE_SCHEMA,
+        "prompt_source_locator": _PROMPT_SOURCE_LOCATOR_SCHEMA,
+        "prompt_source_preview": _PROMPT_SOURCE_PREVIEW_SCHEMA,
         "context_snippet": _CONTEXT_SNIPPET_SCHEMA,
     },
     "properties": {
@@ -218,11 +241,11 @@ SEARCH_USER_DOCUMENTS_OUTPUT_SCHEMA: Final[JsonObject] = {
         },
         "citations": {
             "type": "array",
-            "items": {"$ref": "#/definitions/source_reference"},
+            "items": {"$ref": "#/definitions/prompt_source_reference"},
         },
         "source_previews": {
             "type": "array",
-            "items": {"$ref": "#/definitions/source_preview"},
+            "items": {"$ref": "#/definitions/prompt_source_preview"},
         },
         "citation_summary": {"type": "string"},
         "dropped_count": {"type": "integer", "minimum": 0},

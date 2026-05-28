@@ -1,9 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Final
 from typing import Literal
 
+DEFAULT_REMOTE_LLMS_TXT_MAX_URLS: Final[int] = 1_000
+DEFAULT_REMOTE_SITEMAP_INDEX_MAX_FETCHES: Final[int] = 128
+DEFAULT_REMOTE_SITEMAP_MAX_URLS: Final[int] = 50_000
+
 RemoteDiscoveryKind = Literal["sitemap", "sitemap_index", "llms_txt"]
+
+REMOTE_DISCOVERY_KIND_SITEMAP: Final[RemoteDiscoveryKind] = "sitemap"
+REMOTE_DISCOVERY_KIND_SITEMAP_INDEX: Final[RemoteDiscoveryKind] = "sitemap_index"
+REMOTE_DISCOVERY_KIND_LLMS_TXT: Final[RemoteDiscoveryKind] = "llms_txt"
+
+REMOTE_DISCOVERY_CLI_KIND_SITEMAP: Final[str] = "sitemap"
+REMOTE_DISCOVERY_CLI_KIND_LLMS_TXT: Final[str] = "llms-txt"
 
 
 @dataclass(frozen=True)
@@ -57,3 +69,19 @@ class RemoteDiscovery:
 
 def discovery_key(item: RemoteDiscoveredUrl) -> tuple[str, str | None]:
     return (item.redacted_url, item.query_sha256)
+
+
+__all__ = [
+    "DEFAULT_REMOTE_LLMS_TXT_MAX_URLS",
+    "DEFAULT_REMOTE_SITEMAP_INDEX_MAX_FETCHES",
+    "DEFAULT_REMOTE_SITEMAP_MAX_URLS",
+    "REMOTE_DISCOVERY_CLI_KIND_LLMS_TXT",
+    "REMOTE_DISCOVERY_CLI_KIND_SITEMAP",
+    "REMOTE_DISCOVERY_KIND_LLMS_TXT",
+    "REMOTE_DISCOVERY_KIND_SITEMAP",
+    "REMOTE_DISCOVERY_KIND_SITEMAP_INDEX",
+    "RemoteDiscoveredUrl",
+    "RemoteDiscovery",
+    "RemoteDiscoveryKind",
+    "discovery_key",
+]

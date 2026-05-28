@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass, field
 from typing import List
 
+from rag_core.config.chunking_config import MARKDOWN_CHUNKING_STRATEGY
 from rag_core.core_models import PreparedChunk
 
 from .protocol import ChunkConfig
@@ -85,7 +86,7 @@ class MarkdownChunker:
                     start_char=start,
                     end_char=start + len(raw),
                     token_count=word_count,
-                    chunking_strategy="markdown",
+                    chunking_strategy=MARKDOWN_CHUNKING_STRATEGY,
                     metadata=dict(raw_chunk.metadata),
                 )
             )

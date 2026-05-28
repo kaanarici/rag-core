@@ -15,11 +15,19 @@ import pytest
 pytest.importorskip("starlette")
 from starlette.testclient import TestClient
 
+from rag_core.cli_parser import _build_parser
 from rag_core.config import EmbeddingConfig, QdrantConfig
 from rag_core.core import RAGCore
 from rag_core.core_models import RAGCoreConfig
 from rag_core.demo import DemoEmbeddingProvider, DemoSparseEmbedder
+from rag_core.retrieval_defaults import DEFAULT_SEARCH_LIMIT
 from rag_core.runtime.app import create_app
+from rag_core.runtime_defaults import DEFAULT_RUNTIME_JOB_DB_PATH_ENV
+from rag_core.runtime.requests import (
+    DEFAULT_RUNTIME_CONTEXT_LIMIT,
+    DEFAULT_RUNTIME_SEARCH_LIMIT,
+    parse_retrieval_request,
+)
 from rag_core.search.providers.embedding import create_embedding_provider
 from rag_core.search.providers.memory_store import InMemoryVectorStore
 from rag_core.search.types import RerankResult
@@ -69,6 +77,7 @@ def _make_runtime_client(job_db_path: Path) -> TestClient:
         config=config,
         core_factory=core_factory,
         job_db_path=job_db_path,
+        ingest_roots=(job_db_path.parent,),
     )
     return TestClient(app)
 
@@ -76,6 +85,25 @@ def _make_runtime_client(job_db_path: Path) -> TestClient:
 @pytest.fixture
 def runtime_client(tmp_path: Path) -> TestClient:
     return _make_runtime_client(tmp_path / "jobs.sqlite3")
+
+
+class _FailingIngestCore:
+    async def ensure_ready(self) -> None:
+        return None
+
+    async def ingest_file(
+        self,
+        path: Path,
+        *,
+        namespace: str,
+        corpus_id: str,
+    ) -> object:
+        raise RuntimeError(
+            f"ingest refused for {path.name} in {namespace}/{corpus_id}"
+        )
+
+    async def close(self) -> None:
+        return None
 
 
 def _openapi_schema_block(schema_name: str) -> str:
@@ -101,6 +129,22 @@ def test_demo_embedding_provider_is_registered_for_serve() -> None:
     assert provider.dimensions == 8
 
 
+def test_serve_cli_job_db_path_flag_overrides_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    env_path = tmp_path / "env-jobs.sqlite3"
+    flag_path = tmp_path / "flag-jobs.sqlite3"
+
+    monkeypatch.setenv(DEFAULT_RUNTIME_JOB_DB_PATH_ENV, str(env_path))
+
+    env_args = _build_parser().parse_args(["serve"])
+    flag_args = _build_parser().parse_args(["serve", "--job-db-path", str(flag_path)])
+
+    assert env_args.job_db_path == env_path
+    assert flag_args.job_db_path == flag_path
+
+
 def test_openapi_paths_match_runtime_routes(runtime_client: TestClient) -> None:
     route_methods: dict[str, set[str]] = {}
     app = cast(Any, runtime_client.app)
@@ -121,36 +165,77 @@ def test_openapi_declares_runtime_request_and_response_shapes() -> None:
     _assert_schema_mentions(
         "IngestRequest",
         (
+            "additionalProperties: false",
             "required: [path, namespace, corpus_id]",
             "path:",
+            'pattern: "\\\\S"',
             "namespace:",
             "corpus_id:",
-            "corpusId:",
         ),
     )
     _assert_schema_mentions(
         "IngestJobCreated",
-        ("required: [job_id, status]", "job_id:", "status:"),
+        (
+            "required: [job_id, status]",
+            "job_id:",
+            "status:",
+            "enum: [pending, running, completed, failed]",
+        ),
     )
     _assert_schema_mentions(
         "IngestJobStatus",
         (
             "required: [job_id, status, path, namespace, corpus_id]",
+            "enum: [pending, running, completed, failed]",
             "result:",
             "error:",
         ),
     )
     _assert_schema_mentions(
-        "SearchRequest",
+        "SearchEndpointRequest",
         (
+            "additionalProperties: false",
             "required: [query, namespace, corpus_ids]",
             "query:",
             "corpus_ids:",
-            "corpusIds:",
+            'pattern: "\\\\S"',
             "limit:",
+            "minimum: 1",
+            "content_types:",
+            "document_ids:",
+            f"default: {DEFAULT_RUNTIME_SEARCH_LIMIT}",
             "rerank:",
+            "use_lexical_search:",
+            "Controls configured lexical/exact-match expansion only",
         ),
     )
+    _assert_schema_mentions(
+        "ContextRetrievalRequest",
+        (
+            "additionalProperties: false",
+            "required: [query, namespace, corpus_ids]",
+            "query:",
+            "corpus_ids:",
+            'pattern: "\\\\S"',
+            "limit:",
+            "minimum: 1",
+            "content_types:",
+            "document_ids:",
+            f"default: {DEFAULT_RUNTIME_CONTEXT_LIMIT}",
+            "rerank:",
+            "use_lexical_search:",
+            "Controls configured lexical/exact-match expansion only",
+            "max_chars:",
+            "max_tokens:",
+        ),
+    )
+    for schema_name in ("SearchEndpointRequest", "ContextRetrievalRequest"):
+        block = _openapi_schema_block(schema_name)
+        assert "query_plan:" not in block
+        assert "search_profile:" not in block
+
+    openapi = _OPENAPI_PATH.read_text(encoding="utf-8")
+    assert "#/components/schemas/SearchRequest" not in openapi
     _assert_schema_mentions(
         "SearchHit",
         (
@@ -159,6 +244,83 @@ def test_openapi_declares_runtime_request_and_response_shapes() -> None:
             "chunk_index:",
         ),
     )
+    _assert_schema_mentions(
+        "ContextPackResponse",
+        (
+            "- query",
+            "- context_text",
+            "- snippets",
+            "- citations",
+            "- source_previews",
+            "- citation_summary",
+            "- dropped_count",
+            "- max_snippets",
+            "- max_chars",
+            "- max_tokens",
+            "- token_estimate",
+            "- char_count",
+            "- truncated",
+            "Prompt-safe text from",
+            "App-facing context snippets",
+            "App-facing source references",
+            "App-facing source previews",
+            "App-facing citation summary",
+            "not the length of ``context_text``",
+        ),
+    )
+
+
+def test_runtime_retrieval_request_defaults_match_route_surface() -> None:
+    payload = {"query": "billing", "namespace": "acme", "corpus_ids": ["help"]}
+
+    search_request = parse_retrieval_request(
+        payload,
+        default_limit=DEFAULT_RUNTIME_SEARCH_LIMIT,
+    )
+    context_request = parse_retrieval_request(
+        payload,
+        default_limit=DEFAULT_RUNTIME_CONTEXT_LIMIT,
+    )
+
+    assert search_request.limit == DEFAULT_RUNTIME_SEARCH_LIMIT
+    assert search_request.content_types is None
+    assert search_request.document_ids is None
+    assert search_request.use_lexical_search is True
+    assert search_request.max_chars is None
+    assert search_request.max_tokens is None
+    assert context_request.limit == DEFAULT_RUNTIME_CONTEXT_LIMIT
+    assert context_request.content_types is None
+    assert context_request.document_ids is None
+    assert context_request.use_lexical_search is True
+    assert context_request.max_chars is None
+    assert context_request.max_tokens is None
+
+
+def test_runtime_retrieval_request_accepts_optional_filters_and_context_budget() -> None:
+    payload = {
+        "query": "billing",
+        "namespace": "acme",
+        "corpus_ids": [" help "],
+        "content_types": [" document "],
+        "document_ids": [" doc-1 "],
+        "rerank": False,
+        "use_lexical_search": False,
+        "max_chars": 1200,
+        "max_tokens": 256,
+    }
+
+    search_request = parse_retrieval_request(
+        payload,
+        default_limit=DEFAULT_RUNTIME_SEARCH_LIMIT,
+        allow_context_budget=True,
+    )
+
+    assert search_request.corpus_ids == ("help",)
+    assert search_request.content_types == ("document",)
+    assert search_request.document_ids == ("doc-1",)
+    assert search_request.use_lexical_search is False
+    assert search_request.max_chars == 1200
+    assert search_request.max_tokens == 256
 
 
 def test_runtime_health_and_runtime_endpoints(runtime_client: TestClient) -> None:
@@ -177,6 +339,8 @@ def test_runtime_health_and_runtime_endpoints(runtime_client: TestClient) -> Non
     assert runtime.status_code == 200
     payload = runtime.json()
     assert "collection_name" in payload
+    assert "retrieval" not in payload
+    assert payload["search"]["default_search_profile"] == "balanced"
 
 
 def test_runtime_api_error_shape(runtime_client: TestClient) -> None:
@@ -194,10 +358,238 @@ def test_runtime_api_error_shape(runtime_client: TestClient) -> None:
     assert invalid_json.status_code == 400
     assert invalid_json.json()["error"]["code"] == "invalid_json"
 
+    invalid_limit = runtime_client.post(
+        "/v1/search",
+        json={
+            "query": "billing",
+            "namespace": "acme",
+            "corpus_ids": ["help"],
+            "limit": True,
+        },
+    )
+    assert invalid_limit.status_code == 400
+    assert invalid_limit.json()["error"]["details"] == {"field": "limit"}
+
+    string_limit = runtime_client.post(
+        "/v1/search",
+        json={
+            "query": "billing",
+            "namespace": "acme",
+            "corpus_ids": ["help"],
+            "limit": "5",
+        },
+    )
+    assert string_limit.status_code == 400
+    assert string_limit.json()["error"]["details"] == {"field": "limit"}
+
+    invalid_rerank = runtime_client.post(
+        "/v1/search",
+        json={
+            "query": "billing",
+            "namespace": "acme",
+            "corpus_ids": ["help"],
+            "rerank": "false",
+        },
+    )
+    assert invalid_rerank.status_code == 400
+    assert invalid_rerank.json()["error"]["details"] == {"field": "rerank"}
+
+    invalid_use_lexical_search = runtime_client.post(
+        "/v1/search",
+        json={
+            "query": "billing",
+            "namespace": "acme",
+            "corpus_ids": ["help"],
+            "use_lexical_search": "false",
+        },
+    )
+    assert invalid_use_lexical_search.status_code == 400
+    assert invalid_use_lexical_search.json()["error"]["details"] == {
+        "field": "use_lexical_search"
+    }
+
+    invalid_document_ids = runtime_client.post(
+        "/v1/search",
+        json={
+            "query": "billing",
+            "namespace": "acme",
+            "corpus_ids": ["help"],
+            "document_ids": [" "],
+        },
+    )
+    assert invalid_document_ids.status_code == 400
+    assert invalid_document_ids.json()["error"]["details"] == {"field": "document_ids"}
+
+    invalid_content_types = runtime_client.post(
+        "/v1/search",
+        json={
+            "query": "billing",
+            "namespace": "acme",
+            "corpus_ids": ["help"],
+            "content_types": [" "],
+        },
+    )
+    assert invalid_content_types.status_code == 400
+    assert invalid_content_types.json()["error"]["details"] == {"field": "content_types"}
+
+    context_budget_on_search = runtime_client.post(
+        "/v1/search",
+        json={
+            "query": "billing",
+            "namespace": "acme",
+            "corpus_ids": ["help"],
+            "max_chars": 1200,
+        },
+    )
+    assert context_budget_on_search.status_code == 400
+    assert context_budget_on_search.json()["error"]["details"] == {
+        "fields": ["max_chars"]
+    }
+
+    invalid_context_budget = runtime_client.post(
+        "/v1/retrieve-context",
+        json={
+            "query": "billing",
+            "namespace": "acme",
+            "corpus_ids": ["help"],
+            "max_tokens": 0,
+        },
+    )
+    assert invalid_context_budget.status_code == 400
+    assert invalid_context_budget.json()["error"]["details"] == {"field": "max_tokens"}
+
+    invalid_corpus_ids = runtime_client.post(
+        "/v1/search",
+        json={
+            "query": "billing",
+            "namespace": "acme",
+            "corpus_ids": [123],
+        },
+    )
+    assert invalid_corpus_ids.status_code == 400
+    assert invalid_corpus_ids.json()["error"]["details"] == {"field": "corpus_ids"}
+
+    blank_corpus_id_item = runtime_client.post(
+        "/v1/search",
+        json={
+            "query": "billing",
+            "namespace": "acme",
+            "corpus_ids": ["help", " "],
+        },
+    )
+    assert blank_corpus_id_item.status_code == 400
+    assert blank_corpus_id_item.json()["error"]["details"] == {
+        "field": "corpus_ids"
+    }
+
+    camel_case_search = runtime_client.post(
+        "/v1/search",
+        json={
+            "query": "billing",
+            "namespace": "acme",
+            "corpusIds": ["help"],
+        },
+    )
+    assert camel_case_search.status_code == 400
+    assert camel_case_search.json()["error"]["details"] == {
+        "fields": ["corpusIds"]
+    }
+
+    camel_case_ingest = runtime_client.post(
+        "/v1/ingest",
+        json={
+            "path": "/tmp/nope.md",
+            "namespace": "acme",
+            "corpusId": "help",
+        },
+    )
+    assert camel_case_ingest.status_code == 400
+    assert camel_case_ingest.json()["error"]["details"] == {
+        "fields": ["corpusId"]
+    }
+
+    unknown_with_canonical = runtime_client.post(
+        "/v1/search",
+        json={
+            "query": "billing",
+            "namespace": "acme",
+            "corpus_ids": ["help"],
+            "corpusIds": ["help"],
+        },
+    )
+    assert unknown_with_canonical.status_code == 400
+    assert unknown_with_canonical.json()["error"]["details"] == {
+        "fields": ["corpusIds"]
+    }
+
+    advanced_controls = runtime_client.post(
+        "/v1/search",
+        json={
+            "query": "billing",
+            "namespace": "acme",
+            "corpus_ids": ["help"],
+            "query_plan": {"preset": "dense_only"},
+            "search_profile": "fast",
+        },
+    )
+    assert advanced_controls.status_code == 400
+    assert advanced_controls.json()["error"]["details"] == {
+        "fields": ["query_plan", "search_profile"]
+    }
+
+    blank_scope = runtime_client.post(
+        "/v1/search",
+        json={
+            "query": "   ",
+            "namespace": "  ",
+            "corpus_ids": ["  "],
+        },
+    )
+    assert blank_scope.status_code == 400
+    assert blank_scope.json()["error"]["details"] == {
+        "field": "corpus_ids"
+    }
+
     missing_job = runtime_client.get("/v1/ingest/does-not-exist")
     assert missing_job.status_code == 404
     assert missing_job.json()["error"]["code"] == "not_found"
     assert missing_job.json()["error"]["details"]["job_id"] == "does-not-exist"
+
+
+def test_runtime_ingest_rejects_paths_outside_ingest_roots(runtime_client: TestClient) -> None:
+    response = runtime_client.post(
+        "/v1/ingest",
+        json={
+            "path": "/tmp/outside-runtime-root.md",
+            "namespace": "acme",
+            "corpus_id": "help",
+        },
+    )
+
+    assert response.status_code == 400
+    error = response.json()["error"]
+    assert error["code"] == "invalid_request"
+    assert error["details"]["field"] == "path"
+
+
+def test_runtime_ingest_rejects_missing_paths_inside_ingest_roots(
+    runtime_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    response = runtime_client.post(
+        "/v1/ingest",
+        json={
+            "path": str(tmp_path / "missing.md"),
+            "namespace": "acme",
+            "corpus_id": "help",
+        },
+    )
+
+    assert response.status_code == 400
+    error = response.json()["error"]
+    assert error["code"] == "invalid_request"
+    assert error["message"] == "path does not exist"
+    assert error["details"] == {"field": "path"}
 
 
 def test_runtime_unknown_route_returns_api_error(runtime_client: TestClient) -> None:
@@ -206,19 +598,27 @@ def test_runtime_unknown_route_returns_api_error(runtime_client: TestClient) -> 
     assert response.json()["error"]["code"] == "not_found"
 
 
-def _wait_for_job(client: TestClient, job_id: str, *, timeout_s: float = 5.0) -> dict[str, object]:
+def _wait_for_job(
+    client: TestClient,
+    job_id: str,
+    *,
+    terminal_status: str = "completed",
+    timeout_s: float = 5.0,
+) -> dict[str, object]:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         response = client.get(f"/v1/ingest/{job_id}")
         assert response.status_code == 200
         payload = response.json()
         status = payload.get("status")
-        if status == "completed":
+        if status == terminal_status:
             return dict(payload)
-        if status == "failed":
-            pytest.fail(f"ingest job failed: {payload}")
+        if status in {"completed", "failed"}:
+            pytest.fail(
+                f"ingest job reached {status}, expected {terminal_status}: {payload}"
+            )
         time.sleep(0.05)
-    pytest.fail(f"ingest job timed out: {job_id}")
+    pytest.fail(f"ingest job did not reach {terminal_status} before timeout: {job_id}")
 
 
 def test_runtime_ingest_search_and_retrieve_context_journey(
@@ -251,6 +651,8 @@ def test_runtime_ingest_search_and_retrieve_context_journey(
     result = finished.get("result")
     assert isinstance(result, dict)
     assert result.get("chunk_count", 0) > 0
+    document_id = result.get("document_id")
+    assert isinstance(document_id, str)
 
     search = runtime_client.post(
         "/v1/search",
@@ -258,7 +660,10 @@ def test_runtime_ingest_search_and_retrieve_context_journey(
             "query": "How can invoices be paid?",
             "namespace": "acme",
             "corpus_ids": ["help"],
+            "content_types": ["document"],
+            "document_ids": [document_id],
             "limit": 5,
+            "use_lexical_search": False,
         },
     )
     assert search.status_code == 200
@@ -275,13 +680,27 @@ def test_runtime_ingest_search_and_retrieve_context_journey(
             "query": "invoice payment methods",
             "namespace": "acme",
             "corpus_ids": ["help"],
+            "content_types": ["document"],
+            "document_ids": [document_id],
             "limit": 5,
+            "use_lexical_search": False,
+            "max_chars": 300,
+            "max_tokens": 100,
         },
     )
     assert context.status_code == 200
     pack = context.json()
     assert isinstance(pack.get("context_text"), str)
     assert pack["context_text"]
+    assert "[S1]" in pack["context_text"]
+    snippets = pack["snippets"]
+    assert isinstance(snippets, list)
+    assert snippets
+    structured_source = snippets[0]["source"]
+    assert isinstance(structured_source, dict)
+    assert "source_id" in structured_source
+    assert "result_id" in structured_source
+    assert pack["max_tokens"] == 100
 
 
 def test_runtime_ingest_job_persists_across_app_restart(tmp_path: Path) -> None:
@@ -311,6 +730,50 @@ def test_runtime_ingest_job_persists_across_app_restart(tmp_path: Path) -> None:
     assert reloaded.json() == finished
 
 
+def test_runtime_failed_ingest_job_exposes_error_after_restart(tmp_path: Path) -> None:
+    job_db_path = tmp_path / "jobs.sqlite3"
+    doc = tmp_path / "failure.md"
+    doc.write_text("This file intentionally fails in the injected core.\n", encoding="utf-8")
+    config = RAGCoreConfig()
+
+    def make_client() -> TestClient:
+        return TestClient(
+            create_app(
+                config=config,
+                core_factory=lambda _: cast(Any, _FailingIngestCore()),
+                job_db_path=job_db_path,
+                ingest_roots=(tmp_path,),
+            )
+        )
+
+    first_client = make_client()
+    created = first_client.post(
+        "/v1/ingest",
+        json={
+            "path": str(doc),
+            "namespace": "acme",
+            "corpus_id": "help",
+        },
+    )
+    assert created.status_code == 202
+    failed = _wait_for_job(
+        first_client,
+        created.json()["job_id"],
+        terminal_status="failed",
+    )
+    first_client.close()
+
+    restarted_client = make_client()
+    reloaded = restarted_client.get(f"/v1/ingest/{failed['job_id']}")
+    restarted_client.close()
+
+    assert failed["status"] == "failed"
+    assert failed["error"] == "RuntimeError: ingest refused for failure.md in acme/help"
+    assert "result" not in failed
+    assert reloaded.status_code == 200
+    assert reloaded.json() == failed
+
+
 class _RecordingReranker:
     def __init__(self) -> None:
         self.calls: list[tuple[str, list[str], int]] = []
@@ -319,7 +782,7 @@ class _RecordingReranker:
         self,
         query: str,
         documents: list[str],
-        top_k: int = 10,
+        top_k: int = DEFAULT_SEARCH_LIMIT,
     ) -> list[RerankResult]:
         self.calls.append((query, list(documents), top_k))
         return [
@@ -395,8 +858,9 @@ def test_runtime_search_returns_hit_list(runtime_client: TestClient) -> None:
     assert isinstance(response.json(), list)
 
 
-def test_serve_cli_starts_without_nested_event_loop() -> None:
+def test_serve_cli_starts_without_nested_event_loop(tmp_path: Path) -> None:
     pytest.importorskip("uvicorn")
+    job_db_path = tmp_path / "serve-jobs.sqlite3"
     proc = subprocess.Popen(
         [
             sys.executable,
@@ -407,6 +871,8 @@ def test_serve_cli_starts_without_nested_event_loop() -> None:
             "127.0.0.1",
             "--port",
             "8797",
+            "--job-db-path",
+            str(job_db_path),
             "--qdrant-location",
             ":memory:",
             "--embedding-provider",
@@ -436,6 +902,7 @@ def test_serve_cli_starts_without_nested_event_loop() -> None:
         else:
             stderr = proc.stderr.read() if proc.stderr else ""
             raise AssertionError(f"serve never became healthy: {stderr}")
+        assert job_db_path.exists()
     finally:
         proc.terminate()
         proc.wait(timeout=5)

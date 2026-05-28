@@ -2,7 +2,7 @@
 
 Provides:
 - BaseConverter: protocol for all converters
-- HybridConverter: extract-first / OCR-fallback orchestration
+- HybridConverter: extract-first / OCR-fallback coordination
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from rag_core.documents.converters.text_helpers import (
     safe_decode as safe_decode,
     text_to_markdown as text_to_markdown,
 )
+from rag_core.documents.exception_names import exception_type
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ class BaseConverter(ABC):
 
 
 def sanitized_error_value(exc: Exception) -> str:
-    return type(exc).__name__
+    return exception_type(exc)
 
 
 def sanitized_error_metadata(*, parser: str, exc: Exception) -> Dict[str, Any]:
@@ -88,7 +89,7 @@ class HybridConverter(BaseConverter):
 
     Subclasses implement _try_extract for format-specific extraction.
     The shared convert method handles the extract-first / OCR-fallback
-    orchestration, including partial OCR for PDFs (per-page, not whole-doc).
+    coordination, including partial OCR for PDFs (per-page, not whole-doc).
     """
 
     async def convert(
@@ -121,7 +122,7 @@ class HybridConverter(BaseConverter):
             logger.warning(
                 "%s extraction failed with %s; recommending OCR",
                 self.format_name,
-                type(exc).__name__,
+                exception_type(exc),
             )
             return ConversionResult(
                 needs_ocr=True,

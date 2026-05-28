@@ -5,11 +5,15 @@ import sqlite3
 import struct
 from pathlib import Path
 
-from rag_core.search.providers.embedding_cache import (
+from rag_core.search.providers.chunk_context_cache import (
     ChunkContextKey,
-    EmbedCacheKey,
-    SqliteCache,
     SqliteChunkContextCache,
+)
+from rag_core.search.providers.embedding_cache import (
+    SqliteCache,
+)
+from rag_core.search.providers.embedding_cache_models import (
+    EmbedCacheKey,
 )
 
 

@@ -23,6 +23,9 @@ from rag_core.core_prepare_figure_locators import with_figure_locators
 from rag_core.core_models import IngestedDocument, PreparedChunk, PreparedDocument
 from rag_core.local_ingest import ManifestPreviewRequest, preview_manifest
 from rag_core.manifest_entries import sanitize_manifest_metadata
+from rag_core.search.context_pack import ContextPack, build_context_pack
+from rag_core.search.indexer import DocumentIndexer, IndexRequest
+from rag_core.search.stored_payload import payload_to_result
 from tests.support import (
     FakeEmbeddingProvider,
     FakeSparseEmbedder,
@@ -128,7 +131,7 @@ def _docx_bytes() -> bytes:
     document.add_heading("Retrieval Runbook", level=1)
     document.add_paragraph(
         "This DOCX fixture covers parser regression behavior for headings, "
-        "paragraphs, and tables in document ingestion workflows."
+        "paragraphs, and tables in document ingestion flows."
     )
     table = document.add_table(rows=2, cols=2)
     table.cell(0, 0).text = "Signal"
@@ -493,6 +496,62 @@ def test_representative_supported_formats_parse_with_quality_metadata(
     for key, expected_value in case.metadata.items():
         assert metadata.get(key) == expected_value
     assert_quality_metadata(metadata)
+
+
+def test_code_line_locators_survive_index_payload_and_context_pack() -> None:
+    async def go() -> tuple[PreparedDocument, ContextPack]:
+        prepared = await prepare_document_bytes(
+            file_bytes=_code_bytes(),
+            filename="answer.py",
+            mime_type="text/x-python",
+            path=None,
+            ocr_provider=None,
+        )
+        store = RecordingVectorStore()
+        indexer = DocumentIndexer(
+            embedding_provider=FakeEmbeddingProvider(),
+            sparse_embedder=FakeSparseEmbedder(include_extra_channel=False),
+            vector_store=store,
+        )
+        await indexer.index_document(
+            IndexRequest(
+                document_id="answer.py",
+                corpus_id="code-fixtures",
+                namespace="fixture",
+                text=prepared.markdown,
+                filename="answer.py",
+                mime_type="text/x-python",
+                source_type="file",
+                document_key="file:answer.py",
+                content_sha256="sha256:answer.py",
+                processing_version="test-code-context",
+                document_metadata=prepared.metadata,
+                pre_chunked_texts=[chunk.text for chunk in prepared.chunks],
+                embedding_chunk_texts=[chunk.embedding_text for chunk in prepared.chunks],
+                chunk_metadata=[dict(chunk.metadata) for chunk in prepared.chunks],
+            )
+        )
+        [points] = store.upsert_calls
+        results = [
+            payload_to_result(point_id=point.id, payload=point.payload, score=0.9)
+            for point in points
+        ]
+        return prepared, build_context_pack(results, query="answer")
+
+    prepared, pack = asyncio.run(go())
+
+    assert prepared.metadata["parser"] == "local:code"
+    assert prepared.metadata["language"] == "python"
+    [chunk] = prepared.chunks
+    assert chunk.metadata["line_start"] == 1
+    assert chunk.metadata["line_end"] == 2
+    [snippet] = pack.snippets
+    assert snippet.locator.line_start == 1
+    assert snippet.locator.line_end == 2
+    assert "lines 1-2" in snippet.header
+    assert "lines 1-2" in snippet.prompt_header
+    assert pack.source_previews[0].locator_label == "lines 1-2, chunk 0"
+    assert pack.prompt_source_previews[0].locator_label == "lines 1-2, chunk 0"
 
 
 def test_image_converter_requires_ocr_without_extracting_text() -> None:
@@ -1117,6 +1176,14 @@ def test_real_pdf_parse_metadata_survives_prepare_and_ingest(
     indexed_payloads = [point.payload for call in store.upsert_calls for point in call]
     assert indexed_payloads
     assert any(payload.get("page_index") == 0 for payload in indexed_payloads)
+    assert any(
+        payload.get("quality_verdict") == prepared.metadata["quality"]["verdict"]
+        for payload in indexed_payloads
+    )
+    assert any(
+        payload.get("quality_char_count") == prepared.metadata["quality"]["char_count"]
+        for payload in indexed_payloads
+    )
 
 
 def test_local_manifest_preview_uses_same_converter_metadata_as_direct_bytes(

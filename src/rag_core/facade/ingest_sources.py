@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from rag_core.config import INGEST_SOURCE_TYPE_FILE
 from rag_core.core_file_io import detect_local_mime_type, read_file_bytes
 from rag_core.core_models import IngestedDocument, RAGCoreConfig
 from rag_core.core_remote import IngestBytes, ingest_remote_url
@@ -46,7 +47,7 @@ async def ingest_local_file_source(
         path=str(file_path),
         metadata=metadata,
         force_reindex=force_reindex,
-        source_type="file",
+        source_type=INGEST_SOURCE_TYPE_FILE,
     )
 
 

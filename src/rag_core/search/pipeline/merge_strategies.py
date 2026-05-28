@@ -13,7 +13,7 @@ from typing import Protocol, runtime_checkable
 
 from rag_core.search.result_scores import blended_score, sanitize_result_score
 from rag_core.search.stored_payload import merge_duplicate_result
-from rag_core.search.types import SearchResult
+from rag_core.search.vector_models import SearchResult
 
 
 @runtime_checkable

@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Iterable, Literal, Sequence
+from typing import Iterable, Sequence
 
 from rag_core.core_models import CorpusManifestEntry
 from rag_core.manifest_reconciliation_matching import build_reconciliation_items
-
-ManifestReconciliationStatus = Literal[
-    "changed",
-    "duplicate",
-    "missing",
-    "orphaned",
-    "unchanged",
-]
+from rag_core.manifest_reconciliation_statuses import (
+    MANIFEST_NEEDS_REINDEX_STATUSES,
+    MANIFEST_RECONCILIATION_STATUSES,
+    MANIFEST_STATUS_CHANGED,
+    MANIFEST_STATUS_DUPLICATE,
+    MANIFEST_STATUS_MISSING,
+    MANIFEST_STATUS_ORPHANED,
+    MANIFEST_STATUS_UNCHANGED,
+    ManifestReconciliationStatus,
+)
 
 
 @dataclass(frozen=True)
@@ -37,28 +39,28 @@ class ManifestReconciliation:
 
     @property
     def unchanged(self) -> tuple[ManifestReconciliationItem, ...]:
-        return self.by_status("unchanged")
+        return self.by_status(MANIFEST_STATUS_UNCHANGED)
 
     @property
     def changed(self) -> tuple[ManifestReconciliationItem, ...]:
-        return self.by_status("changed")
+        return self.by_status(MANIFEST_STATUS_CHANGED)
 
     @property
     def missing(self) -> tuple[ManifestReconciliationItem, ...]:
-        return self.by_status("missing")
+        return self.by_status(MANIFEST_STATUS_MISSING)
 
     @property
     def orphaned(self) -> tuple[ManifestReconciliationItem, ...]:
-        return self.by_status("orphaned")
+        return self.by_status(MANIFEST_STATUS_ORPHANED)
 
     @property
     def duplicate(self) -> tuple[ManifestReconciliationItem, ...]:
-        return self.by_status("duplicate")
+        return self.by_status(MANIFEST_STATUS_DUPLICATE)
 
     @property
     def needs_reindex(self) -> tuple[ManifestReconciliationItem, ...]:
         return tuple(
-            item for item in self.items if item.status in {"missing", "changed"}
+            item for item in self.items if item.status in MANIFEST_NEEDS_REINDEX_STATUSES
         )
 
     def by_status(
@@ -72,15 +74,9 @@ def manifest_reconciliation_payload(
     *,
     include_private: bool = False,
 ) -> dict[str, object]:
-    statuses: tuple[ManifestReconciliationStatus, ...] = (
-        "unchanged",
-        "changed",
-        "missing",
-        "orphaned",
-        "duplicate",
-    )
     summary: dict[str, int] = {
-        f"{status}_count": len(reconciliation.by_status(status)) for status in statuses
+        f"{status}_count": len(reconciliation.by_status(status))
+        for status in MANIFEST_RECONCILIATION_STATUSES
     }
     summary["needs_reindex_count"] = len(reconciliation.needs_reindex)
     return {

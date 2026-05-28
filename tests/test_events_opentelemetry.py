@@ -16,6 +16,7 @@ from rag_core.events.types import (
     SearchPlanned,
     StageError,
 )
+from rag_core.search.query_plan import PRIMARY_DENSE_QUERY_VECTOR
 
 AWS_ACCESS_KEY_LABEL = "AKIA1234567890ABCDEF"
 PREFIXED_OPENAI_SECRET = "openai:sk-proj-abcdefghijklmnopqrstuvwxyz123456"
@@ -23,6 +24,7 @@ PREFIXED_ANTHROPIC_SECRET = "anthropic:sk-ant-api03-abcdefghijklmnopqrstuvwxyz12
 PREFIXED_SLACK_XOXC_SECRET = (
     "slack:xoxc-123456789012-123456789012-abcdefghijklmnopqrstuvwxyz"
 )
+_DENSE_PRIMARY_CHANNEL = f"dense:dense:{PRIMARY_DENSE_QUERY_VECTOR}"
 
 
 class _FakeSpan:
@@ -57,8 +59,9 @@ def test_open_telemetry_sink_emits_prefixed_safe_attributes(
             namespace="acme",
             corpus_ids=("help", "docs"),
             limit=5,
-            channels=("dense:dense:primary", "sparse:bm25:bm25"),
+            channels=(_DENSE_PRIMARY_CHANNEL, "sparse:bm25:bm25"),
             prefetch_limits=(10, 20),
+            search_profile="balanced",
             query_transforms=(),
             metadata_filter="Term",
             rerank_timeout_ms=1500.0,
@@ -72,8 +75,9 @@ def test_open_telemetry_sink_emits_prefixed_safe_attributes(
                     "rag_core.limit": 5,
                     "rag_core.final_limit": 0,
                     "rag_core.corpus_count": 2,
-                    "rag_core.channels": ["dense:dense:primary", "sparse:bm25:bm25"],
+                "rag_core.channels": [_DENSE_PRIMARY_CHANNEL, "sparse:bm25:bm25"],
                 "rag_core.prefetch_limits": [10, 20],
+                "rag_core.search_profile": "balanced",
                 "rag_core.fusion": "",
                 "rag_core.plan_rerank": "",
                 "rag_core.boost": "",
@@ -380,7 +384,7 @@ def test_open_telemetry_sink_accepts_real_sdk_span() -> None:
             SearchPlanned(
                 namespace="acme",
                 corpus_ids=("help",),
-                channels=("dense:dense:primary",),
+                channels=(_DENSE_PRIMARY_CHANNEL,),
                 prefetch_limits=(10,),
             )
         )
@@ -388,4 +392,4 @@ def test_open_telemetry_sink_accepts_real_sdk_span() -> None:
 
     [event] = exported_spans[0].events
     assert event.name == "search.planned"
-    assert dict(event.attributes)["rag_core.channels"] == ("dense:dense:primary",)
+    assert dict(event.attributes)["rag_core.channels"] == (_DENSE_PRIMARY_CHANNEL,)

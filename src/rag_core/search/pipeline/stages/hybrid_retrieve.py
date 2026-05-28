@@ -1,4 +1,4 @@
-"""Default Retrieve stage: dense + sparse query embedding plus a vector-store hit.
+"""Default Retrieve stage: capability-aware query embedding and vector-store search.
 
 Emits embed events on the pipeline's event sink.
 """
@@ -6,15 +6,20 @@ Emits embed events on the pipeline's event sink.
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from rag_core.events.emit import emit_event, now_ms
 from rag_core.events.types import EmbedCompleted, EmbedRequested
+from rag_core.retrieval_channels import (
+    DENSE_RETRIEVAL_CHANNEL,
+    SPARSE_RETRIEVAL_CHANNEL,
+)
 from rag_core.search.embedding_cache_diagnostics import (
     embed_query_with_cache_observation,
 )
 from rag_core.search.pipeline.types import PipelineContext, PipelineQuery
 from rag_core.search.planning import (
+    QUERY_PLAN_PRESET_DENSE_ONLY,
     QueryPlanPreparer,
     default_query_plan_for_store,
     query_plan_preset,
@@ -23,38 +28,35 @@ from rag_core.search.planning import (
 )
 from rag_core.search.query_plan import DenseChannel, Prefetch, QueryPlan, SparseChannel
 from rag_core.search.sparse_channels import PRIMARY_SPARSE_CHANNEL, primary_sparse_channel
-from rag_core.search.types import (
+from rag_core.search.provider_protocols import (
     EmbeddingProvider,
     QueryPlanCapabilities,
-    SearchQuery,
-    SearchResult,
     SparseEmbedder,
-    SparseVector,
 )
+from rag_core.search.request_models import SearchQuery
+from rag_core.search.vector_models import SearchResult, SparseVector
 
 if TYPE_CHECKING:
     from rag_core.events.sink import EventSink
 
-COLLECTION_ENSURED_EXTRA_KEY = "__query_plan_collection_ensured"
-
 
 class HybridRetrieve:
-    """Embed (when needed), then call `vector_store.search()` once."""
+    """Embed only the query channels required by the resolved query plan."""
 
     async def retrieve(
         self, query: PipelineQuery, ctx: PipelineContext
     ) -> list[SearchResult]:
-        sink = cast("EventSink | None", ctx.event_sink)
+        sink = ctx.event_sink
         embedding = ctx.embedding_provider
         sparse = ctx.sparse_embedder
 
         if (
             query.query_plan is None
             and isinstance(ctx.vector_store, QueryPlanPreparer)
-            and query.extra.get(COLLECTION_ENSURED_EXTRA_KEY) is not True
+            and not query.state.collection_ensured
         ):
             await ctx.vector_store.ensure_collection()
-            query.extra[COLLECTION_ENSURED_EXTRA_KEY] = True
+            query.state.collection_ensured = True
         capabilities = ctx.vector_store.capabilities.query_plan
         plan = query.query_plan or default_query_plan_for_store(
             store=ctx.vector_store,
@@ -66,7 +68,7 @@ class HybridRetrieve:
             validate_query_plan_for_store(
                 plan,
                 capabilities=capabilities,
-                backend=_provider_name(ctx.vector_store),
+                provider_name=_provider_name(ctx.vector_store),
                 store=ctx.vector_store,
             )
             if isinstance(ctx.vector_store, QueryPlanPreparer):
@@ -118,7 +120,7 @@ class HybridRetrieve:
                 validate_query_plan_for_store(
                     plan,
                     capabilities=capabilities,
-                    backend=_provider_name(ctx.vector_store),
+                    provider_name=_provider_name(ctx.vector_store),
                     store=ctx.vector_store,
                 )
                 if isinstance(ctx.vector_store, QueryPlanPreparer):
@@ -156,7 +158,7 @@ class HybridRetrieve:
             lexical_query=query.query.strip() or None,
         )
         query.query_plan = plan
-        query.emit_search_plan(plan, query.limit)
+        query.emit_query_plan_trace(plan, query.limit)
         return await ctx.vector_store.search(vector_query)
 
 
@@ -187,7 +189,7 @@ async def _embed_dense_query(
             provider=dense_provider,
             model=dense_model,
             text_count=1,
-            role="dense",
+            role=DENSE_RETRIEVAL_CHANNEL,
         ),
     )
     dense_started_ms = now_ms()
@@ -200,7 +202,7 @@ async def _embed_dense_query(
             provider=dense_provider,
             model=dense_model,
             text_count=1,
-            role="dense",
+            role=DENSE_RETRIEVAL_CHANNEL,
             duration_ms=now_ms() - dense_started_ms,
             cache_hits=dense_cache.hits,
             cache_misses=dense_cache.misses,
@@ -224,7 +226,7 @@ async def _embed_sparse_query_async(
             provider=sparse_provider,
             model=sparse_model,
             text_count=1,
-            role="sparse",
+            role=SPARSE_RETRIEVAL_CHANNEL,
         ),
     )
     sparse_started_ms = now_ms()
@@ -235,7 +237,7 @@ async def _embed_sparse_query_async(
             provider=sparse_provider,
             model=sparse_model,
             text_count=1,
-            role="sparse",
+            role=SPARSE_RETRIEVAL_CHANNEL,
             duration_ms=now_ms() - sparse_started_ms,
         ),
     )
@@ -293,7 +295,7 @@ def _reconcile_implicit_default_plan(
     if available_plan is not None:
         return available_plan
     if capabilities.dense:
-        return query_plan_preset("dense_only", limit=query.limit)
+        return query_plan_preset(QUERY_PLAN_PRESET_DENSE_ONLY, limit=query.limit)
     sparse_channel = next(iter(sparse_vectors), "")
     if not sparse_channel:
         return plan
@@ -334,7 +336,7 @@ def _plan_with_available_sparse_channels(
         rerank=plan.rerank,
         boost=plan.boost,
         final_limit=plan.final_limit,
-        search_profile=plan.search_profile,
+        search_profile=plan.search_profile if prefetches == plan.prefetches else None,
     )
 
 

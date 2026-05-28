@@ -1,7 +1,7 @@
 """Reusable behavior contract for first-party vector store adapters.
 
-Each test runs against every first-party backend so the cross-backend behavior
-contract stays single-sourced. Backend-specific edges live in their own files.
+Each test runs against every first-party adapter so cross-adapter behavior
+stays single-sourced. Adapter-specific edges live in their own files.
 """
 
 from __future__ import annotations
@@ -273,6 +273,8 @@ def test_vector_store_contract_health(case: _VectorStoreCase) -> None:
             health = await store.check_health()
 
             assert health["healthy"] is True
+            assert "adapter" in health
+            assert "backend" not in health
         finally:
             await store.close()
 
@@ -367,4 +369,3 @@ def _point_without_document_id(
 
 def _empty_sparse() -> SparseVector:
     return SparseVector(indices=[], values=[])
-

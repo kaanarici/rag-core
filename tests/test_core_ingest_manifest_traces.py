@@ -7,6 +7,8 @@ from typing import Any, cast
 import pytest
 
 import rag_core.core_ingest as core_ingest
+import rag_core.core_ingest_delete as core_ingest_delete
+import rag_core.core_ingest_recovery as core_ingest_recovery
 from rag_core.core_ingest import CoreIngestor
 from rag_core.core_models import (
     CorpusManifestEntry,
@@ -143,7 +145,7 @@ def test_manifest_write_failure_emits_sanitized_stage_error(
     def fail_write_entry(directory: Path, entry: object) -> None:
         raise RuntimeError("secret manifest path /tmp/private/acme/help.jsonl")
 
-    monkeypatch.setattr(core_ingest, "write_entry", fail_write_entry)
+    monkeypatch.setattr(core_ingest_recovery, "write_entry", fail_write_entry)
 
     async def run() -> tuple[EventBuffer, RecordingIndexer]:
         events = EventBuffer()
@@ -731,7 +733,7 @@ def test_existing_document_final_manifest_retry_does_not_report_failure(
             )
         }
     )
-    original_write_entry = core_ingest.write_entry
+    original_write_entry = write_entry
     write_calls = 0
 
     def fail_final_write(directory: Path, entry: object) -> None:
@@ -742,6 +744,7 @@ def test_existing_document_final_manifest_retry_does_not_report_failure(
         original_write_entry(directory, cast(Any, entry))
 
     monkeypatch.setattr(core_ingest, "write_entry", fail_final_write)
+    monkeypatch.setattr(core_ingest_recovery, "write_entry", fail_final_write)
 
     async def run() -> SevenChunkIndexer:
         events = EventBuffer()
@@ -909,7 +912,7 @@ def test_manifest_write_failure_reports_failed_index_rollback(
     def fail_write_entry(directory: Path, entry: object) -> None:
         raise OSError("manifest write failed")
 
-    monkeypatch.setattr(core_ingest, "write_entry", fail_write_entry)
+    monkeypatch.setattr(core_ingest_recovery, "write_entry", fail_write_entry)
 
     async def run() -> DeleteFailingIndexer:
         events = EventBuffer()
@@ -956,11 +959,15 @@ def test_delete_document_removes_manifest_entry(tmp_path: Path) -> None:
             corpus_id="help",
             document_id="doc-1",
         )
-        await ingestor.delete_document(
+        result = await ingestor.delete_document(
             document_id="doc-1",
             namespace="acme",
             corpus_id="help",
         )
+        assert result.document_id == "doc-1"
+        assert result.index_deleted is True
+        assert result.sidecar_deleted is None
+        assert result.manifest_entry_deleted is True
 
     asyncio.run(run())
 
@@ -1002,7 +1009,7 @@ def test_delete_document_keeps_manifest_when_index_delete_fails(
     indexer, sidecar = asyncio.run(run())
 
     assert indexer.delete_document_calls == 1
-    assert sidecar.deleted == []
+    assert sidecar.deleted == [("acme", "doc-1")]
     entries = read_entries(manifest_directory, namespace="acme", corpus_id="help")
     assert [entry.document_id for entry in entries] == ["doc-1"]
 
@@ -1016,7 +1023,7 @@ def test_delete_document_keeps_manifest_when_manifest_delete_fails(
     def fail_delete_entry(*args: object, **kwargs: object) -> bool:
         raise OSError("manifest delete failed")
 
-    monkeypatch.setattr(core_ingest, "delete_entry", fail_delete_entry)
+    monkeypatch.setattr(core_ingest_delete, "delete_entry", fail_delete_entry)
 
     async def run() -> tuple[RecordingIndexer, RecordingSidecar]:
         events = EventBuffer()
@@ -1054,7 +1061,7 @@ def test_delete_document_keeps_manifest_when_manifest_delete_fails(
     assert [entry.document_id for entry in entries] == ["doc-1"]
 
 
-def test_delete_document_keeps_manifest_aligned_when_sidecar_delete_fails(
+def test_delete_document_keeps_index_and_manifest_when_sidecar_delete_fails(
     tmp_path: Path,
 ) -> None:
     manifest_directory = tmp_path / "manifest"
@@ -1087,7 +1094,7 @@ def test_delete_document_keeps_manifest_aligned_when_sidecar_delete_fails(
     sidecar, indexer = asyncio.run(run())
 
     assert sidecar.deleted == [("acme", "doc-1")]
-    assert indexer.delete_document_calls == 1
+    assert indexer.delete_document_calls == 0
     entries = read_entries(manifest_directory, namespace="acme", corpus_id="help")
     assert [entry.document_id for entry in entries] == ["doc-1"]
 

@@ -6,7 +6,7 @@ from argparse import Namespace
 import pytest
 
 from rag_core.cli import _build_parser
-from rag_core.cli_doctor import _planned_runtime_payload
+from rag_core.cli_doctor import _planned_core_payload
 from rag_core.config import EmbeddingConfig, QdrantConfig
 from rag_core.core_models import RAGCoreConfig
 from rag_core.search.indexer import DocumentIndexer, IndexRequest
@@ -89,7 +89,7 @@ def test_config_flags_accept_embedding_batch_size() -> None:
     )
 
     config = RAGCoreConfig.from_cli(args)
-    payload = _planned_runtime_payload(config)
+    payload = _planned_core_payload(config)
 
     assert config.embedding.batch_size == 8
     assert payload["embedding"] == {

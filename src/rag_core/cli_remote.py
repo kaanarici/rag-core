@@ -26,6 +26,7 @@ from rag_core.cli_remote_output import (
     emit_remote_discovery,
     emit_remote_url_ingest,
 )
+from rag_core.config import INGEST_SOURCE_TYPE_URL
 from rag_core.core_config_cli import with_ingest_source_type
 from rag_core.core_models import RAGCoreConfig
 from rag_core.fetching import FetchError
@@ -37,6 +38,12 @@ from rag_core.remote_discovery import (
     redacted_url_file_lines,
     write_raw_discovered_url_file,
     write_redacted_discovered_url_file,
+)
+from rag_core.remote_discovery_models import (
+    DEFAULT_REMOTE_LLMS_TXT_MAX_URLS,
+    DEFAULT_REMOTE_SITEMAP_MAX_URLS,
+    REMOTE_DISCOVERY_CLI_KIND_LLMS_TXT,
+    REMOTE_DISCOVERY_CLI_KIND_SITEMAP,
 )
 from rag_core.remote_ingest import (
     build_remote_url_ingest_plan,
@@ -66,7 +73,7 @@ async def run_ingest_url_command(
     metadata = parse_metadata_fields(args.metadata)
     config = with_ingest_source_type(
         RAGCoreConfig.from_cli(args, manifest_dir=Path(args.manifest_dir)),
-        source_type="url",
+        source_type=INGEST_SOURCE_TYPE_URL,
     )
 
     async def run_ingest_url(core: RAGCore) -> "IngestedDocument":
@@ -133,7 +140,7 @@ async def run_ingest_urls_command(
 
     config = with_ingest_source_type(
         RAGCoreConfig.from_cli(args, manifest_dir=Path(args.manifest_dir)),
-        source_type="url",
+        source_type=INGEST_SOURCE_TYPE_URL,
     )
 
     def url_core_factory() -> RAGCore:
@@ -172,8 +179,11 @@ async def run_discover_remote_command(
     fetch_limits = fetch_limits_from_args(args)
     validate_fetch_url(args.url, policy=fetch_policy)
     try:
-        if args.kind == "sitemap":
-            max_urls = discovery_max_urls(args.max_urls, default=50_000)
+        if args.kind == REMOTE_DISCOVERY_CLI_KIND_SITEMAP:
+            max_urls = discovery_max_urls(
+                args.max_urls,
+                default=DEFAULT_REMOTE_SITEMAP_MAX_URLS,
+            )
             max_sitemap_fetches = discovery_max_sitemap_fetches(
                 args.max_sitemap_fetches
             )
@@ -183,8 +193,11 @@ async def run_discover_remote_command(
                 max_urls=max_urls,
                 max_sitemap_fetches=max_sitemap_fetches,
             )
-        elif args.kind == "llms-txt":
-            max_urls = discovery_max_urls(args.max_urls, default=1_000)
+        elif args.kind == REMOTE_DISCOVERY_CLI_KIND_LLMS_TXT:
+            max_urls = discovery_max_urls(
+                args.max_urls,
+                default=DEFAULT_REMOTE_LLMS_TXT_MAX_URLS,
+            )
             reader = reader_factory(policy=fetch_policy, limits=fetch_limits)
             discovery = reader.read_llms_txt(args.url, max_urls=max_urls)
         else:

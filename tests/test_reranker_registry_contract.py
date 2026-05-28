@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from rag_core.retrieval_defaults import DEFAULT_SEARCH_LIMIT
 from rag_core.search.providers.registry import RERANKER_PROVIDERS
 from rag_core.search.providers.reranker import (
     create_reranker,
@@ -25,7 +26,7 @@ class _CustomReranker:
         self,
         query: str,
         documents: list[str],
-        top_k: int = 10,
+        top_k: int = DEFAULT_SEARCH_LIMIT,
     ) -> list[RerankResult]:
         return [
             RerankResult(index=index, score=1.0, text=document)

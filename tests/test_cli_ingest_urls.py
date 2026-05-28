@@ -2,57 +2,22 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
 from rag_core.cli import main
-from rag_core.core_models import CorpusManifestEntry, IngestedDocument, RAGCoreConfig
+from rag_core.core_models import CorpusManifestEntry, IngestedDocument
 from rag_core.cli_remote_output import emit_ingested_document
-from rag_core.fetch_security import ValidatedFetchUrl, validate_fetch_url
-from rag_core.fetch_security_url import safe_remote_source_url
+from rag_core.fetch_security import validate_fetch_url
 from rag_core.manifest_persistence import write_entry
-
-
-class _FakeRAGCore:
-    _last_instance: "_FakeRAGCore | None" = None
-
-    def __init__(self, config: RAGCoreConfig, **kwargs: Any) -> None:
-        self.config = config
-        self.event_sink = kwargs.get("event_sink")
-        self.ensure_ready_called = False
-        self.closed = False
-        self.ingest_url_calls: list[dict[str, Any]] = []
-        type(self)._last_instance = self
-
-    async def ensure_ready(self) -> None:
-        self.ensure_ready_called = True
-
-    async def ingest_url(self, url: str, **kwargs: Any) -> IngestedDocument:
-        self.ingest_url_calls.append({"url": url, **kwargs})
-        if "/fail" in url:
-            raise RuntimeError(f"fetch exploded for {url}")
-        validated_url = validate_fetch_url(url, policy=kwargs.get("fetch_policy"))
-        redacted_url = safe_remote_source_url(validated_url)
-        return IngestedDocument(
-            document_id=f"doc-{len(self.ingest_url_calls)}",
-            corpus_id=kwargs["corpus_id"],
-            namespace=kwargs["namespace"],
-            chunk_count=1,
-            filename="guide.txt",
-            mime_type="text/plain",
-            document_key=_url_key(validated_url),
-            content_sha256=f"hash-{len(self.ingest_url_calls)}",
-            ingest_state="created",
-            metadata={"source_type": "url", "source_url": redacted_url},
-        )
-
-    async def close(self) -> None:
-        self.closed = True
-
-
-class _FakeOpenAIError(Exception):
-    __module__ = "openai"
+from tests.support.cli_remote import (
+    FakeOpenAIError,
+    FakeRemoteRAGCore,
+    install_fake_remote_core,
+    remote_url_key,
+    require_fake_remote_core,
+)
 
 
 def _manifest_entry(
@@ -81,9 +46,7 @@ def test_ingest_urls_json_sets_runtime_source_type_to_url_and_redacted_records(
     monkeypatch: Any,
     capsys: Any,
 ) -> None:
-    from rag_core import cli as cli_module
-
-    monkeypatch.setattr(cli_module, "RAGCore", _FakeRAGCore)
+    install_fake_remote_core(monkeypatch)
     url_file = tmp_path / "urls.txt"
     url_file.write_text(
         "\n".join(
@@ -123,7 +86,7 @@ def test_ingest_urls_json_sets_runtime_source_type_to_url_and_redacted_records(
     )
 
     assert exit_code == 0
-    instance = cast(_FakeRAGCore, _FakeRAGCore._last_instance)
+    instance = require_fake_remote_core()
     assert instance.ensure_ready_called is True
     assert instance.closed is True
     assert instance.config.ingest.source_type == "url"
@@ -177,9 +140,7 @@ def test_ingest_urls_json_returns_one_for_mixed_results_and_redacts_failure(
     monkeypatch: Any,
     capsys: Any,
 ) -> None:
-    from rag_core import cli as cli_module
-
-    monkeypatch.setattr(cli_module, "RAGCore", _FakeRAGCore)
+    install_fake_remote_core(monkeypatch)
     url_file = tmp_path / "urls.txt"
     url_file.write_text(
         "\n".join(
@@ -221,19 +182,16 @@ def test_ingest_urls_surfaces_provider_bootstrap_as_batch_setup_error(
     monkeypatch: Any,
     capsys: Any,
 ) -> None:
-    from rag_core import cli as cli_module
-
     async def fail_ingest_url(
-        self: _FakeRAGCore,
+        self: FakeRemoteRAGCore,
         url: str,
         **kwargs: Any,
     ) -> IngestedDocument:
         self.ingest_url_calls.append({"url": url, **kwargs})
-        raise _FakeOpenAIError("raw api_key client option OPENAI_API_KEY private-token")
+        raise FakeOpenAIError("raw api_key client option OPENAI_API_KEY private-token")
 
-    _FakeRAGCore._last_instance = None
-    monkeypatch.setattr(cli_module, "RAGCore", _FakeRAGCore)
-    monkeypatch.setattr(_FakeRAGCore, "ingest_url", fail_ingest_url)
+    install_fake_remote_core(monkeypatch)
+    monkeypatch.setattr(FakeRemoteRAGCore, "ingest_url", fail_ingest_url)
     url_file = tmp_path / "urls.txt"
     url_file.write_text("https://example.com/docs/guide\n", encoding="utf-8")
 
@@ -262,7 +220,7 @@ def test_ingest_urls_surfaces_provider_bootstrap_as_batch_setup_error(
     assert "raw api_key" not in captured.err
     assert "private-token" not in captured.err
     assert "failed:" not in captured.out
-    instance = cast(_FakeRAGCore, _FakeRAGCore._last_instance)
+    instance = require_fake_remote_core()
     assert instance.closed is True
 
 
@@ -271,10 +229,7 @@ def test_ingest_urls_plan_json_prints_redacted_plan_without_runtime_setup(
     monkeypatch: Any,
     capsys: Any,
 ) -> None:
-    from rag_core import cli as cli_module
-
-    _FakeRAGCore._last_instance = None
-    monkeypatch.setattr(cli_module, "RAGCore", _FakeRAGCore)
+    install_fake_remote_core(monkeypatch)
     url_file = tmp_path / "urls.txt"
     url_file.write_text(
         "\n".join(
@@ -290,7 +245,7 @@ def test_ingest_urls_plan_json_prints_redacted_plan_without_runtime_setup(
     write_entry(
         manifest_dir,
         _manifest_entry(
-            document_key=_url_key(
+            document_key=remote_url_key(
                 validate_fetch_url("https://example.com/docs/reference")
             )
         ),
@@ -311,7 +266,7 @@ def test_ingest_urls_plan_json_prints_redacted_plan_without_runtime_setup(
     )
 
     assert exit_code == 0
-    assert _FakeRAGCore._last_instance is None
+    assert FakeRemoteRAGCore._last_instance is None
     payload = json.loads(capsys.readouterr().out)
     assert payload["source_type"] == "url"
     assert payload["planned_count"] == 2
@@ -331,10 +286,7 @@ def test_ingest_urls_rejects_invalid_url_before_runtime_setup(
     monkeypatch: Any,
     capsys: Any,
 ) -> None:
-    from rag_core import cli as cli_module
-
-    _FakeRAGCore._last_instance = None
-    monkeypatch.setattr(cli_module, "RAGCore", _FakeRAGCore)
+    install_fake_remote_core(monkeypatch)
     url_file = tmp_path / "urls.txt"
     url_file.write_text("file:///tmp/private.md\n", encoding="utf-8")
 
@@ -353,7 +305,7 @@ def test_ingest_urls_rejects_invalid_url_before_runtime_setup(
         )
 
     assert exc_info.value.code == 2
-    assert _FakeRAGCore._last_instance is None
+    assert FakeRemoteRAGCore._last_instance is None
     error = capsys.readouterr().err
     assert "URL list line 1" in error
     assert "unsupported fetch URL scheme" in error
@@ -365,10 +317,7 @@ def test_ingest_urls_rejects_duplicate_url_keys_before_runtime_setup(
     monkeypatch: Any,
     capsys: Any,
 ) -> None:
-    from rag_core import cli as cli_module
-
-    _FakeRAGCore._last_instance = None
-    monkeypatch.setattr(cli_module, "RAGCore", _FakeRAGCore)
+    install_fake_remote_core(monkeypatch)
     url_file = tmp_path / "urls.txt"
     url_file.write_text(
         "https://example.com/docs\nhttps://example.com/docs\n",
@@ -390,7 +339,7 @@ def test_ingest_urls_rejects_duplicate_url_keys_before_runtime_setup(
         )
 
     assert exc_info.value.code == 2
-    assert _FakeRAGCore._last_instance is None
+    assert FakeRemoteRAGCore._last_instance is None
     error = capsys.readouterr().err
     assert "same document key" in error
     assert "lines 1 and 2" in error
@@ -402,10 +351,7 @@ def test_ingest_urls_private_address_requires_explicit_fetch_opt_in(
     monkeypatch: Any,
     capsys: Any,
 ) -> None:
-    from rag_core import cli as cli_module
-
-    _FakeRAGCore._last_instance = None
-    monkeypatch.setattr(cli_module, "RAGCore", _FakeRAGCore)
+    install_fake_remote_core(monkeypatch)
     url_file = tmp_path / "urls.txt"
     private_url = "http://127.0.0.1:8000/docs?private=alpha"
     url_file.write_text(private_url, encoding="utf-8")
@@ -425,7 +371,7 @@ def test_ingest_urls_private_address_requires_explicit_fetch_opt_in(
         )
 
     assert exc_info.value.code == 2
-    assert _FakeRAGCore._last_instance is None
+    assert FakeRemoteRAGCore._last_instance is None
     error = capsys.readouterr().err
     assert "URL list line 1" in error
     assert "HTTP requires explicit opt-in" in error
@@ -447,7 +393,7 @@ def test_ingest_urls_private_address_requires_explicit_fetch_opt_in(
     )
 
     assert exit_code == 0
-    instance = cast(_FakeRAGCore, _FakeRAGCore._last_instance)
+    instance = require_fake_remote_core()
     assert instance.ingest_url_calls[0]["url"] == private_url
     assert instance.ingest_url_calls[0]["fetch_policy"].allowed_schemes == (
         "https",
@@ -496,10 +442,7 @@ def test_ingest_urls_rejects_bad_fetch_limits_before_runtime_setup(
     monkeypatch: Any,
     capsys: Any,
 ) -> None:
-    from rag_core import cli as cli_module
-
-    _FakeRAGCore._last_instance = None
-    monkeypatch.setattr(cli_module, "RAGCore", _FakeRAGCore)
+    install_fake_remote_core(monkeypatch)
     url_file = tmp_path / "urls.txt"
     url_file.write_text("https://example.com/docs\n", encoding="utf-8")
 
@@ -520,14 +463,7 @@ def test_ingest_urls_rejects_bad_fetch_limits_before_runtime_setup(
         )
 
     assert exc_info.value.code == 2
-    assert _FakeRAGCore._last_instance is None
+    assert FakeRemoteRAGCore._last_instance is None
     error = capsys.readouterr().err
     assert "max_redirects" in error
     assert "Traceback" not in error
-
-
-def _url_key(url: ValidatedFetchUrl) -> str:
-    key = f"url:{safe_remote_source_url(url)}"
-    if url.query_sha256:
-        return f"{key}|query_sha256:{url.query_sha256}"
-    return key

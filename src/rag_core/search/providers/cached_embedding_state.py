@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Literal
+from typing import Callable
 
-from rag_core.search.types import EmbeddingProvider
+from rag_core.search.provider_protocols import EmbeddingProvider
 
 from .cached_embedding_observations import (
     CachedEmbeddingDiagnostics,
+    EMBEDDING_OPERATION_TEXTS,
     EmbeddingCacheObservation,
 )
+from .embedding_input_types import EmbeddingInputType
 from .embedding_cache_models import EmbedCacheKey
 
 Hasher = Callable[[str], str]
-EmbeddingInputType = Literal["document", "query"]
 
 
 @dataclass(frozen=True)
@@ -68,7 +69,7 @@ class CachedEmbeddingCounters:
         self.cache_hits += observation.cache_hits
         self.cache_misses += observation.cache_misses
         self.cache_writes += observation.cache_writes
-        if observation.operation == "embed_texts":
+        if observation.operation == EMBEDDING_OPERATION_TEXTS:
             self.text_requests += 1
         else:
             self.query_requests += 1
@@ -96,7 +97,6 @@ def cached_embedding_provider_fingerprint(
 __all__ = [
     "CachedEmbeddingCounters",
     "CachedEmbeddingKeyBuilder",
-    "EmbeddingInputType",
     "Hasher",
     "cached_embedding_provider_fingerprint",
     "cached_embedding_provider_name",

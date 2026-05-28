@@ -7,7 +7,7 @@ import pytest
 from rag_core.search.indexer_embedding_vectors import embed_sparse_channels
 from rag_core.search.sparse_channels import PRIMARY_SPARSE_CHANNEL
 from rag_core.search.types import SparseVector
-from tests.support import FakeSparseEmbedder
+from tests.support import FakeSparseEmbedder, assert_caplog_omits_private
 
 
 class ProviderSecretError(RuntimeError):
@@ -43,7 +43,4 @@ def test_sparse_multi_failure_warning_is_sanitized(
     ]
     assert sparse_channels[0][PRIMARY_SPARSE_CHANNEL].indices == [3, 4]
     assert "ProviderSecretError" in caplog.text
-    assert "raw provider detail" not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(caplog, "raw provider detail")

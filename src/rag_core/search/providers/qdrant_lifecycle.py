@@ -18,6 +18,7 @@ from .qdrant_collection import (
 )
 from .qdrant_health import _collection_fingerprint
 from .qdrant_shared import _KNOWN_SPARSE_VECTOR_NAMES
+from .vector_store_capabilities import QDRANT_VECTOR_STORE_PROVIDER_SPEC
 
 
 @dataclass(frozen=True)
@@ -63,8 +64,9 @@ async def ensure_qdrant_collection_ready(
                 config=config,
             )
             logger.info(
-                "Qdrant collection already exists: backend=qdrant "
+                "Qdrant collection already exists: provider=%s "
                 "dense_dimensions=%d sparse_channels=%d collection_fingerprint=%s",
+                QDRANT_VECTOR_STORE_PROVIDER_SPEC.name,
                 config.dimensions,
                 len(state.available_sparse_vector_names),
                 _collection_fingerprint(config.collection_name),
@@ -97,8 +99,9 @@ async def create_qdrant_collection(
         ),
     )
     logger.info(
-        "Created Qdrant collection: backend=qdrant dense_dimensions=%d "
+        "Created Qdrant collection: provider=%s dense_dimensions=%d "
         "quantization=%s hnsw_ef=%d collection_fingerprint=%s",
+        QDRANT_VECTOR_STORE_PROVIDER_SPEC.name,
         config.dimensions,
         "INT8" if config.quantization_enabled else "none",
         100,

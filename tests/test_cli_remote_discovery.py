@@ -14,6 +14,11 @@ from rag_core.remote_discovery import (
     RemoteDiscovery,
     parse_sitemap_urls,
 )
+from rag_core.remote_discovery_models import (
+    DEFAULT_REMOTE_LLMS_TXT_MAX_URLS,
+    DEFAULT_REMOTE_SITEMAP_INDEX_MAX_FETCHES,
+    DEFAULT_REMOTE_SITEMAP_MAX_URLS,
+)
 
 
 @dataclass
@@ -25,8 +30,8 @@ class _FakeRemoteDiscoveryReader:
         self,
         url: str,
         *,
-        max_urls: int = 50_000,
-        max_sitemap_fetches: int = 128,
+        max_urls: int = DEFAULT_REMOTE_SITEMAP_MAX_URLS,
+        max_sitemap_fetches: int = DEFAULT_REMOTE_SITEMAP_INDEX_MAX_FETCHES,
     ) -> RemoteDiscovery:
         self.sitemap_calls.append(
             {
@@ -48,7 +53,12 @@ class _FakeRemoteDiscoveryReader:
             ),
         )
 
-    def read_llms_txt(self, url: str, *, max_urls: int = 1_000) -> RemoteDiscovery:
+    def read_llms_txt(
+        self,
+        url: str,
+        *,
+        max_urls: int = DEFAULT_REMOTE_LLMS_TXT_MAX_URLS,
+    ) -> RemoteDiscovery:
         self.llms_txt_calls.append({"url": url, "max_urls": max_urls})
         return RemoteDiscovery(
             source_kind="llms_txt",
@@ -74,8 +84,8 @@ class _FailingRemoteDiscoveryReader:
         self,
         url: str,
         *,
-        max_urls: int = 50_000,
-        max_sitemap_fetches: int = 128,
+        max_urls: int = DEFAULT_REMOTE_SITEMAP_MAX_URLS,
+        max_sitemap_fetches: int = DEFAULT_REMOTE_SITEMAP_INDEX_MAX_FETCHES,
     ) -> RemoteDiscovery:
         self.sitemap_calls.append(
             {
@@ -88,7 +98,12 @@ class _FailingRemoteDiscoveryReader:
             "fetch failed for https://example.com/sitemap.xml?redacted: HTTP 500"
         )
 
-    def read_llms_txt(self, url: str, *, max_urls: int = 1_000) -> RemoteDiscovery:
+    def read_llms_txt(
+        self,
+        url: str,
+        *,
+        max_urls: int = DEFAULT_REMOTE_LLMS_TXT_MAX_URLS,
+    ) -> RemoteDiscovery:
         raise AssertionError("llms.txt should not be read")
 
 
@@ -97,8 +112,8 @@ class _DuplicateSitemapRemoteDiscoveryReader:
         self,
         url: str,
         *,
-        max_urls: int = 50_000,
-        max_sitemap_fetches: int = 128,
+        max_urls: int = DEFAULT_REMOTE_SITEMAP_MAX_URLS,
+        max_sitemap_fetches: int = DEFAULT_REMOTE_SITEMAP_INDEX_MAX_FETCHES,
     ) -> RemoteDiscovery:
         del max_sitemap_fetches
         return parse_sitemap_urls(
@@ -111,7 +126,12 @@ class _DuplicateSitemapRemoteDiscoveryReader:
             max_urls=max_urls,
         )
 
-    def read_llms_txt(self, url: str, *, max_urls: int = 1_000) -> RemoteDiscovery:
+    def read_llms_txt(
+        self,
+        url: str,
+        *,
+        max_urls: int = DEFAULT_REMOTE_LLMS_TXT_MAX_URLS,
+    ) -> RemoteDiscovery:
         raise AssertionError("llms.txt should not be read")
 
 
@@ -120,8 +140,8 @@ class _QuerySitemapRemoteDiscoveryReader:
         self,
         url: str,
         *,
-        max_urls: int = 50_000,
-        max_sitemap_fetches: int = 128,
+        max_urls: int = DEFAULT_REMOTE_SITEMAP_MAX_URLS,
+        max_sitemap_fetches: int = DEFAULT_REMOTE_SITEMAP_INDEX_MAX_FETCHES,
     ) -> RemoteDiscovery:
         del max_sitemap_fetches
         return parse_sitemap_urls(
@@ -132,7 +152,12 @@ class _QuerySitemapRemoteDiscoveryReader:
             max_urls=max_urls,
         )
 
-    def read_llms_txt(self, url: str, *, max_urls: int = 1_000) -> RemoteDiscovery:
+    def read_llms_txt(
+        self,
+        url: str,
+        *,
+        max_urls: int = DEFAULT_REMOTE_LLMS_TXT_MAX_URLS,
+    ) -> RemoteDiscovery:
         raise AssertionError("llms.txt should not be read")
 
 
@@ -141,13 +166,18 @@ class _ExplodingRemoteDiscoveryReader:
         self,
         url: str,
         *,
-        max_urls: int = 50_000,
-        max_sitemap_fetches: int = 128,
+        max_urls: int = DEFAULT_REMOTE_SITEMAP_MAX_URLS,
+        max_sitemap_fetches: int = DEFAULT_REMOTE_SITEMAP_INDEX_MAX_FETCHES,
     ) -> RemoteDiscovery:
         del max_urls, max_sitemap_fetches
         raise RuntimeError(f"parser exploded for {url}")
 
-    def read_llms_txt(self, url: str, *, max_urls: int = 1_000) -> RemoteDiscovery:
+    def read_llms_txt(
+        self,
+        url: str,
+        *,
+        max_urls: int = DEFAULT_REMOTE_LLMS_TXT_MAX_URLS,
+    ) -> RemoteDiscovery:
         del max_urls
         raise RuntimeError(f"parser exploded for {url}")
 
@@ -445,7 +475,10 @@ def test_discover_remote_llms_txt_text_output_uses_redacted_urls(
 
     assert exit_code == 0
     assert reader.llms_txt_calls == [
-        {"url": "https://example.com/llms.txt?artifact=alpha", "max_urls": 1_000}
+        {
+            "url": "https://example.com/llms.txt?artifact=alpha",
+            "max_urls": DEFAULT_REMOTE_LLMS_TXT_MAX_URLS,
+        }
     ]
     output = capsys.readouterr().out
     assert "Discovery: llms-txt (1 URLs)" in output
@@ -477,8 +510,8 @@ def test_discover_remote_fetch_error_exits_without_traceback_or_raw_query(
     assert reader.sitemap_calls == [
         {
             "url": "https://example.com/sitemap.xml?artifact=alpha",
-            "max_urls": 50_000,
-            "max_sitemap_fetches": 128,
+            "max_urls": DEFAULT_REMOTE_SITEMAP_MAX_URLS,
+            "max_sitemap_fetches": DEFAULT_REMOTE_SITEMAP_INDEX_MAX_FETCHES,
         }
     ]
     error = capsys.readouterr().err
@@ -585,8 +618,8 @@ def test_discover_remote_private_address_requires_explicit_fetch_opt_in(
     assert reader.sitemap_calls == [
         {
             "url": private_url,
-            "max_urls": 50_000,
-            "max_sitemap_fetches": 128,
+            "max_urls": DEFAULT_REMOTE_SITEMAP_MAX_URLS,
+            "max_sitemap_fetches": DEFAULT_REMOTE_SITEMAP_INDEX_MAX_FETCHES,
         }
     ]
     assert captured["policy"].allowed_schemes == ("https", "http")

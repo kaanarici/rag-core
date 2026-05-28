@@ -2,13 +2,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+DEFAULT_EMBEDDING_PROVIDER = "openai"
+DEMO_EMBEDDING_PROVIDER = "demo"
+DEFAULT_EMBEDDING_MODEL = "text-embedding-3-large"
+DEMO_EMBEDDING_MODEL = "demo-dense-v1"
 DEFAULT_EMBEDDING_BATCH_SIZE = 50
+EMBEDDING_BATCH_SIZE_ENV = "RAG_CORE_EMBEDDING_BATCH_SIZE"
+EMBEDDING_DIMENSIONS_ENV = "RAG_CORE_EMBEDDING_DIMENSIONS"
+EMBEDDING_MODEL_ENV = "RAG_CORE_EMBEDDING_MODEL"
+EMBEDDING_PROVIDER_ENV = "RAG_CORE_EMBEDDING_PROVIDER"
 
 
 @dataclass(frozen=True)
 class EmbeddingConfig:
-    provider: str = "openai"
-    model: str = "text-embedding-3-large"
+    provider: str = DEFAULT_EMBEDDING_PROVIDER
+    model: str = DEFAULT_EMBEDDING_MODEL
     dimensions: int | None = None
     api_key: str | None = None
     base_url: str | None = None

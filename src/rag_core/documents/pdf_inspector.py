@@ -10,6 +10,7 @@ from rag_core.documents.pdf_inspector_results import (
     detection_result_from_payload,
     extraction_result_from_payload,
 )
+from rag_core.documents.exception_names import exception_type
 from rag_core.documents import pdf_inspector_runtime
 
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ def detect_pdf_with_inspector(file_bytes: bytes) -> PdfInspectorDetectionResult 
     except ValueError as exc:
         logger.warning(
             "pdf-inspector detection payload was invalid: %s",
-            _exception_type(exc),
+            exception_type(exc),
         )
         return None
 
@@ -51,7 +52,7 @@ def extract_pdf_with_inspector(file_bytes: bytes) -> PdfInspectorExtractionResul
     except ValueError as exc:
         logger.warning(
             "pdf-inspector extraction payload was invalid: %s",
-            _exception_type(exc),
+            exception_type(exc),
         )
         return None
 
@@ -62,7 +63,3 @@ def pdf_inspector_enabled() -> bool:
 
 def describe_pdf_inspector_runtime() -> dict[str, object]:
     return pdf_inspector_runtime.describe_pdf_inspector_runtime()
-
-
-def _exception_type(exc: Exception) -> str:
-    return type(exc).__name__

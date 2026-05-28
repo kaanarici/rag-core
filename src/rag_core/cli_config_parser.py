@@ -4,13 +4,37 @@ import argparse
 import sys
 from urllib.parse import parse_qsl, urlsplit
 
-from rag_core.config import SUPPORTED_VECTOR_STORE_PROVIDERS
+from rag_core.config import (
+    DEFAULT_EMBEDDING_PROVIDER,
+    DEFAULT_QDRANT_COLLECTION,
+    DEFAULT_RERANKER_PROVIDER,
+    DEFAULT_VECTOR_STORE_PROVIDER,
+    EMBEDDING_MODEL_ENV,
+    EMBEDDING_PROVIDER_ENV,
+    PROCESSING_VERSION_ENV,
+    QDRANT_COLLECTION_ENV,
+    QDRANT_LOCATION_ENV,
+    QDRANT_URL_ENV,
+    RERANKER_MODEL_ENV,
+    RERANKER_PROVIDER_ENV,
+    SUPPORTED_VECTOR_STORE_PROVIDERS,
+)
 from rag_core.config.embedding_config import DEFAULT_EMBEDDING_BATCH_SIZE
-from rag_core.config.vector_store_config import DEFAULT_TURBOPUFFER_DELETE_CONTINUATION_LIMIT
+from rag_core.config.ingest_config import DEFAULT_PROCESSING_VERSION
+from rag_core.config.vector_store_config import (
+    DEFAULT_TURBOPUFFER_DELETE_CONTINUATION_LIMIT,
+    DEFAULT_TURBOPUFFER_DISTANCE_METRIC,
+    TURBOPUFFER_BASE_URL_ENV,
+    TURBOPUFFER_DISTANCE_METRIC_ENV,
+    TURBOPUFFER_NAMESPACE_ENV,
+    TURBOPUFFER_REGION_ENV,
+    VECTOR_STORE_ENV,
+)
 from rag_core.config.env_access import (
     get_env,
     get_env_stripped,
 )
+from rag_core.provider_api_keys import QDRANT_API_KEY_ENVS, TURBOPUFFER_API_KEY_ENVS
 
 
 class _WarnSensitiveFlagAction(argparse.Action):
@@ -46,14 +70,14 @@ class _WarnSensitiveUrlAction(argparse.Action):
             flag = option_string or f"--{self.dest.replace('_', '-')}"
             print(
                 f"warning: {flag} contains credentials in shell history/process argv; "
-                "prefer RAG_CORE_QDRANT_URL env var",
+                f"prefer {QDRANT_URL_ENV} env var",
                 file=sys.stderr,
             )
 
 
 _SENSITIVE_FLAG_ENVS: dict[str, str] = {
-    "--qdrant-api-key": "RAG_CORE_QDRANT_API_KEY env var",
-    "--turbopuffer-api-key": "TURBOPUFFER_API_KEY env var",
+    "--qdrant-api-key": f"{QDRANT_API_KEY_ENVS[0]} env var",
+    "--turbopuffer-api-key": f"{TURBOPUFFER_API_KEY_ENVS[0]} env var",
 }
 _SENSITIVE_URL_QUERY_KEYS = frozenset(
     {
@@ -73,34 +97,42 @@ def add_config_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--vector-store",
         choices=SUPPORTED_VECTOR_STORE_PROVIDERS,
-        default=env_or_default("RAG_CORE_VECTOR_STORE", "qdrant").strip().lower(),
-        help="First-party vector store to assemble. Default: qdrant.",
+        default=env_or_default(
+            VECTOR_STORE_ENV,
+            DEFAULT_VECTOR_STORE_PROVIDER,
+        )
+        .strip()
+        .lower(),
+        help=f"First-party vector store to assemble. Default: {DEFAULT_VECTOR_STORE_PROVIDER}.",
     )
     parser.add_argument(
         "--qdrant-url",
-        default=_env_or_none("RAG_CORE_QDRANT_URL"),
+        default=_env_or_none(QDRANT_URL_ENV),
         action=_WarnSensitiveUrlAction,
     )
     parser.add_argument(
         "--qdrant-location",
-        default=_env_or_none("RAG_CORE_QDRANT_LOCATION"),
+        default=_env_or_none(QDRANT_LOCATION_ENV),
     )
     parser.add_argument(
         "--qdrant-api-key",
-        default=_env_or_none("RAG_CORE_QDRANT_API_KEY"),
+        default=_env_or_none(QDRANT_API_KEY_ENVS[0]),
         action=_WarnSensitiveFlagAction,
     )
     parser.add_argument(
         "--qdrant-collection",
-        default=env_or_default("RAG_CORE_QDRANT_COLLECTION", "rag_core_chunks"),
+        default=env_or_default(
+            QDRANT_COLLECTION_ENV,
+            DEFAULT_QDRANT_COLLECTION,
+        ),
     )
     parser.add_argument(
         "--embedding-provider",
-        default=env_or_default("RAG_CORE_EMBEDDING_PROVIDER", "openai"),
+        default=env_or_default(EMBEDDING_PROVIDER_ENV, DEFAULT_EMBEDDING_PROVIDER),
     )
     parser.add_argument(
         "--embedding-model",
-        default=env_or_default("RAG_CORE_EMBEDDING_MODEL", "text-embedding-3-large"),
+        default=_env_or_none(EMBEDDING_MODEL_ENV),
     )
     parser.add_argument(
         "--embedding-dimensions",
@@ -118,14 +150,12 @@ def add_config_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--reranker-provider",
-        default=env_or_default("RAG_CORE_RERANKER_PROVIDER", "none"),
+        default=env_or_default(RERANKER_PROVIDER_ENV, DEFAULT_RERANKER_PROVIDER),
     )
-    parser.add_argument(
-        "--reranker-model", default=_env_or_none("RAG_CORE_RERANKER_MODEL")
-    )
+    parser.add_argument("--reranker-model", default=_env_or_none(RERANKER_MODEL_ENV))
     parser.add_argument(
         "--processing-version",
-        default=env_or_default("RAG_CORE_PROCESSING_VERSION", "rag_core_processing_v1"),
+        default=env_or_default(PROCESSING_VERSION_ENV, DEFAULT_PROCESSING_VERSION),
         help="Base processing version used for automatic reindex decisions.",
     )
     parser.add_argument(
@@ -135,28 +165,28 @@ def add_config_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--turbopuffer-namespace",
-        default=_env_or_none("RAG_CORE_TURBOPUFFER_NAMESPACE"),
+        default=_env_or_none(TURBOPUFFER_NAMESPACE_ENV),
         help="TurboPuffer namespace used as the physical vector-store collection.",
     )
     parser.add_argument(
         "--turbopuffer-api-key",
-        default=_env_or_none("TURBOPUFFER_API_KEY"),
+        default=_env_or_none(TURBOPUFFER_API_KEY_ENVS[0]),
         action=_WarnSensitiveFlagAction,
         help="TurboPuffer API key. Never printed by doctor output.",
     )
     parser.add_argument(
         "--turbopuffer-region",
-        default=_env_or_none("TURBOPUFFER_REGION"),
+        default=_env_or_none(TURBOPUFFER_REGION_ENV),
     )
     parser.add_argument(
         "--turbopuffer-base-url",
-        default=_env_or_none("TURBOPUFFER_BASE_URL"),
+        default=_env_or_none(TURBOPUFFER_BASE_URL_ENV),
     )
     parser.add_argument(
         "--turbopuffer-distance-metric",
         default=env_or_default(
-            "RAG_CORE_TURBOPUFFER_DISTANCE_METRIC",
-            "cosine_distance",
+            TURBOPUFFER_DISTANCE_METRIC_ENV,
+            DEFAULT_TURBOPUFFER_DISTANCE_METRIC,
         ),
     )
     parser.add_argument(

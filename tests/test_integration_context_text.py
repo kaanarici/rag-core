@@ -1,20 +1,18 @@
-from rag_core.integrations.integration_context_text import context_pack_model_text
+from rag_core.integrations.integration_context_text import context_pack_prompt_text
 
 
-def test_context_pack_model_text_prefers_as_model_text() -> None:
+def test_context_pack_prompt_text_prefers_as_prompt_text() -> None:
     class _Pack:
         def as_text(self) -> str:
             return "leak"
 
-        def as_model_text(self) -> str:
+        def as_prompt_text(self) -> str:
             return "safe"
 
-    assert context_pack_model_text(_Pack()) == "safe"
+        def to_payload(self) -> dict[str, object]:
+            return {}
 
+        def to_prompt_payload(self) -> dict[str, object]:
+            return {}
 
-def test_context_pack_model_text_falls_back_to_as_text() -> None:
-    class _Pack:
-        def as_text(self) -> str:
-            return "legacy"
-
-    assert context_pack_model_text(_Pack()) == "legacy"
+    assert context_pack_prompt_text(_Pack()) == "safe"

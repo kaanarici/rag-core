@@ -4,9 +4,19 @@ import asyncio
 import importlib
 from typing import TYPE_CHECKING
 
+from rag_core.retrieval_defaults import DEFAULT_SEARCH_LIMIT
+from rag_core.search.providers.embedding_input_types import (
+    EMBEDDING_INPUT_DOCUMENT,
+    EMBEDDING_INPUT_QUERY,
+    EmbeddingInputType,
+)
 from rag_core.search.providers.embedding_results import safe_ordered_embedding_vectors
 from rag_core.search.providers.rerank_results import safe_indexed_rerank_results
-from rag_core.search.types import RerankResult
+from rag_core.search.request_models import RerankResult
+
+ZEROENTROPY_PROVIDER = "zeroentropy"
+DEFAULT_ZEROENTROPY_EMBEDDING_MODEL = "zembed-1"
+DEFAULT_ZEROENTROPY_RERANKER_MODEL = "zerank-2"
 
 if TYPE_CHECKING:
     import types
@@ -33,7 +43,7 @@ class ZeroEntropyEmbeddingProvider:
     def __init__(
         self,
         *,
-        model: str = "zembed-1",
+        model: str = DEFAULT_ZEROENTROPY_EMBEDDING_MODEL,
         dimensions: int = 2560,
         api_key: str | None = None,
     ) -> None:
@@ -52,16 +62,28 @@ class ZeroEntropyEmbeddingProvider:
 
     @property
     def provider_name(self) -> str:
-        return "zeroentropy"
+        return ZEROENTROPY_PROVIDER
 
     async def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        return await asyncio.to_thread(self._embed_sync, texts, "document")
+        return await asyncio.to_thread(
+            self._embed_sync,
+            texts,
+            EMBEDDING_INPUT_DOCUMENT,
+        )
 
     async def embed_query(self, query: str) -> list[float]:
-        rows = await asyncio.to_thread(self._embed_sync, [query], "query")
+        rows = await asyncio.to_thread(
+            self._embed_sync,
+            [query],
+            EMBEDDING_INPUT_QUERY,
+        )
         return rows[0]
 
-    def _embed_sync(self, texts: list[str], input_type: str) -> list[list[float]]:
+    def _embed_sync(
+        self,
+        texts: list[str],
+        input_type: EmbeddingInputType,
+    ) -> list[list[float]]:
         response = self._client.models.embed(
             model=self._model,
             input_type=input_type,
@@ -81,7 +103,7 @@ class ZeroEntropyReranker:
     def __init__(
         self,
         *,
-        model: str = "zerank-2",
+        model: str = DEFAULT_ZEROENTROPY_RERANKER_MODEL,
         api_key: str | None = None,
     ) -> None:
         zeroentropy = _import_zeroentropy()
@@ -90,7 +112,7 @@ class ZeroEntropyReranker:
 
     @property
     def provider_name(self) -> str:
-        return "zeroentropy"
+        return ZEROENTROPY_PROVIDER
 
     @property
     def model_name(self) -> str:
@@ -100,7 +122,7 @@ class ZeroEntropyReranker:
         self,
         query: str,
         documents: list[str],
-        top_k: int = 10,
+        top_k: int = DEFAULT_SEARCH_LIMIT,
     ) -> list[RerankResult]:
         if not documents:
             return []

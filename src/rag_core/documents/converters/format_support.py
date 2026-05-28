@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .converter_keys import IMAGE_CONVERTER_KEY
 from .format_support_models import (
     FormatSupport,
     UNSUPPORTED_BINARY_EXTENSIONS,
@@ -48,7 +49,7 @@ def local_ingest_format_keys() -> tuple[str, ...]:
 
 def unsupported_local_file_message(path: Path, *, label: str = "path") -> str:
     support = format_support_for_extension(path.suffix)
-    if support is not None and support.key == "image":
+    if support is not None and support.key == IMAGE_CONVERTER_KEY:
         reason = support.notes
     else:
         suffix = path.suffix.lower() or "no extension"

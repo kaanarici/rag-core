@@ -11,33 +11,17 @@ import tempfile
 from typing import Final
 
 from rag_core.config.env_access import get_env_int, get_env_stripped
+from rag_core.documents.exception_names import exception_type
+from rag_core.documents.subprocess_env import (
+    NODE_SUBPROCESS_ENV_KEYS,
+    allowlisted_subprocess_env,
+)
 
 logger = logging.getLogger("rag_core.documents.pdf_inspector")
 
 _DEFAULT_TIMEOUT_MS: Final[int] = 8_000
 _DEFAULT_MAX_BYTES: Final[int] = 50 * 1024 * 1024
 _WARNED_BINARY_KEYS: set[str] = set()
-_RUNTIME_ENV_KEYS: Final[tuple[str, ...]] = (
-    "PATH",
-    "HOME",
-    "SYSTEMROOT",
-    "TMPDIR",
-    "TEMP",
-    "TMP",
-    "LANG",
-    "LC_ALL",
-    "LC_CTYPE",
-    "NODE_OPTIONS",
-)
-_TRANSPORT_ENV_KEYS: Final[tuple[str, ...]] = (
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "NO_PROXY",
-    "SSL_CERT_FILE",
-    "SSL_CERT_DIR",
-    "REQUESTS_CA_BUNDLE",
-    "CURL_CA_BUNDLE",
-)
 
 
 def pdf_inspector_enabled() -> bool:
@@ -109,7 +93,7 @@ def run_pdf_inspector(command: list[str], file_bytes: bytes) -> dict[str, object
         logger.warning(
             "pdf-inspector %s failed to start: %s",
             binary_name,
-            _exception_type(exc),
+            exception_type(exc),
         )
         return None
     finally:
@@ -135,7 +119,7 @@ def run_pdf_inspector(command: list[str], file_bytes: bytes) -> dict[str, object
         logger.warning(
             "pdf-inspector %s returned invalid JSON: %s",
             binary_name,
-            _exception_type(exc),
+            exception_type(exc),
         )
         return None
 
@@ -177,14 +161,5 @@ def _warn_missing_binary(binary_name: str) -> None:
     )
 
 
-def _exception_type(exc: Exception) -> str:
-    return type(exc).__name__
-
-
 def _subprocess_env() -> dict[str, str]:
-    env: dict[str, str] = {}
-    for key in (*_RUNTIME_ENV_KEYS, *_TRANSPORT_ENV_KEYS):
-        value = get_env_stripped(key, "")
-        if value:
-            env[key] = value
-    return env
+    return allowlisted_subprocess_env(runtime_env_keys=NODE_SUBPROCESS_ENV_KEYS)

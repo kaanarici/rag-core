@@ -5,11 +5,14 @@ from typing import Protocol, runtime_checkable
 from rag_core.search.query_plan_presets import (
     DEFAULT_SEARCH_PROFILE,
     QUERY_PLAN_PRESETS,
+    QUERY_PLAN_PRESET_DENSE_ONLY,
+    QUERY_PLAN_PRESET_SPARSE_ONLY,
     SEARCH_PROFILES,
     default_query_plan,
     default_query_plan_for_capabilities,
+    describe_query_plan,
     describe_query_plan_presets,
-    describe_retrieval_profiles,
+    describe_search_profile_catalog,
     describe_search_profiles,
     query_plan_preset,
     resolve_prefetch_limit,
@@ -17,13 +20,16 @@ from rag_core.search.query_plan_presets import (
 )
 from rag_core.search.query_plan import (
     DenseChannel,
+    FUSION_KIND_DBSF,
+    FUSION_KIND_RRF,
+    FUSION_KIND_WEIGHTED_RRF,
     Prefetch,
     PrefetchFusion,
     QueryPlan,
     SparseChannel,
     UnsupportedQueryStage,
 )
-from rag_core.search.types import QueryPlanCapabilities
+from rag_core.search.provider_protocols import QueryPlanCapabilities
 
 
 @runtime_checkable
@@ -35,7 +41,7 @@ class QueryPlanValidator(Protocol):
 
 @runtime_checkable
 class QueryPlanPreparer(Protocol):
-    """Optional async hook for provider checks that need backend state."""
+    """Optional async hook for provider checks that need store state."""
 
     async def ensure_collection(self) -> None: ...
 
@@ -44,7 +50,7 @@ class QueryPlanPreparer(Protocol):
 
 @runtime_checkable
 class QueryPlanDefaultProvider(Protocol):
-    """Optional provider-aware default plan hook."""
+    """Optional adapter hook for store-specific default plans."""
 
     def default_query_plan(self, *, result_limit: int) -> QueryPlan | None: ...
 
@@ -67,33 +73,41 @@ def validate_query_plan_capabilities(
     plan: QueryPlan,
     *,
     capabilities: QueryPlanCapabilities,
-    backend: str,
+    provider_name: str,
 ) -> None:
     """Fail before provider work when a declared store cannot run a plan."""
     if not _declares_query_plan_support(capabilities):
         raise UnsupportedQueryStage(
-            f"{backend} does not declare query-plan support"
+            f"{provider_name} does not declare query-plan support"
         )
     if plan.boost is not None and not capabilities.boost:
-        raise UnsupportedQueryStage(f"{backend} does not support boost query plans")
+        raise UnsupportedQueryStage(
+            f"{provider_name} does not support boost query plans"
+        )
     if plan.rerank is not None and not capabilities.mmr:
-        raise UnsupportedQueryStage(f"{backend} does not support MMR query plans")
+        raise UnsupportedQueryStage(
+            f"{provider_name} does not support MMR query plans"
+        )
     if plan.fuse is not None:
-        _validate_fusion(plan.fuse, capabilities=capabilities, backend=backend)
+        _validate_fusion(
+            plan.fuse,
+            capabilities=capabilities,
+            provider_name=provider_name,
+        )
     for prefetch in _flatten_prefetches(plan.prefetches):
         if prefetch.nested and not capabilities.nested_prefetch:
             raise UnsupportedQueryStage(
-                f"{backend} does not support nested query-plan prefetches"
+                f"{provider_name} does not support nested query-plan prefetches"
             )
         channel = prefetch.channel
         if isinstance(channel, DenseChannel):
             if not capabilities.dense:
                 raise UnsupportedQueryStage(
-                    f"{backend} does not support dense query-plan channels"
+                    f"{provider_name} does not support dense query-plan channels"
                 )
         elif isinstance(channel, SparseChannel) and not capabilities.sparse:
             raise UnsupportedQueryStage(
-                f"{backend} does not support sparse query-plan channels"
+                f"{provider_name} does not support sparse query-plan channels"
             )
 
 
@@ -101,11 +115,15 @@ def validate_query_plan_for_store(
     plan: QueryPlan,
     *,
     capabilities: QueryPlanCapabilities,
-    backend: str,
+    provider_name: str,
     store: object,
 ) -> None:
     """Validate generic capabilities plus an adapter's own query-plan constraints."""
-    validate_query_plan_capabilities(plan, capabilities=capabilities, backend=backend)
+    validate_query_plan_capabilities(
+        plan,
+        capabilities=capabilities,
+        provider_name=provider_name,
+    )
     if isinstance(store, QueryPlanValidator):
         store.validate_query_plan(plan)
 
@@ -114,19 +132,22 @@ def _validate_fusion(
     fusion: PrefetchFusion,
     *,
     capabilities: QueryPlanCapabilities,
-    backend: str,
+    provider_name: str,
 ) -> None:
-    if fusion.kind == "rrf" and not capabilities.hybrid_rrf:
+    if fusion.kind == FUSION_KIND_RRF and not capabilities.hybrid_rrf:
         raise UnsupportedQueryStage(
-            f"{backend} does not support hybrid RRF query plans"
+            f"{provider_name} does not support hybrid RRF query plans"
         )
-    if fusion.kind == "dbsf" and not capabilities.hybrid_dbsf:
+    if fusion.kind == FUSION_KIND_DBSF and not capabilities.hybrid_dbsf:
         raise UnsupportedQueryStage(
-            f"{backend} does not support hybrid DBSF query plans"
+            f"{provider_name} does not support hybrid DBSF query plans"
         )
-    if fusion.kind == "weighted_rrf" and not capabilities.hybrid_weighted_rrf:
+    if (
+        fusion.kind == FUSION_KIND_WEIGHTED_RRF
+        and not capabilities.hybrid_weighted_rrf
+    ):
         raise UnsupportedQueryStage(
-            f"{backend} does not support weighted RRF query plans"
+            f"{provider_name} does not support weighted RRF query plans"
         )
 
 
@@ -151,6 +172,8 @@ def _declares_query_plan_support(capabilities: QueryPlanCapabilities) -> bool:
 
 __all__ = [
     "QUERY_PLAN_PRESETS",
+    "QUERY_PLAN_PRESET_DENSE_ONLY",
+    "QUERY_PLAN_PRESET_SPARSE_ONLY",
     "SEARCH_PROFILES",
     "QueryPlanPreparer",
     "QueryPlanValidator",
@@ -159,8 +182,9 @@ __all__ = [
     "default_query_plan",
     "default_query_plan_for_capabilities",
     "default_query_plan_for_store",
+    "describe_query_plan",
     "describe_query_plan_presets",
-    "describe_retrieval_profiles",
+    "describe_search_profile_catalog",
     "describe_search_profiles",
     "query_plan_preset",
     "resolve_prefetch_limit",

@@ -15,13 +15,14 @@ from rag_core.core_vector_store_factory import (
 )
 from rag_core.search.indexer import DocumentIndexer
 from rag_core.search.lexical_sidecar import PortableLexicalSidecar
-from rag_core.search.searcher import SearchOrchestrator
+from rag_core.search.pipeline_runner import SearchPipelineRunner
+from rag_core.search.providers.cache_provider_names import SQLITE_CACHE_PROVIDER
 
 if TYPE_CHECKING:
     from rag_core.documents.contextualizer import ChunkContextualizer
     from rag_core.events.sink import EventSink
-    from rag_core.search.providers.embedding_cache import EmbeddingCache
-    from rag_core.search.types import (
+    from rag_core.search.providers.embedding_cache_models import EmbeddingCache
+    from rag_core.search.provider_protocols import (
         EmbeddingProvider,
         RerankerProvider,
         SearchSidecar,
@@ -38,7 +39,7 @@ class CoreComponents:
     reranker: RerankerProvider
     sidecar: SearchSidecar | None
     indexer: DocumentIndexer
-    search: SearchOrchestrator
+    search: SearchPipelineRunner
     ingest: CoreIngestor
     collection_name: str
     processing_version: ProcessingFingerprint
@@ -84,11 +85,11 @@ def build_core_components(
         from rag_core.search.providers.embedding_cache import create_embedding_cache
 
         cache_kwargs = {}
-        if config.ingest.embedding_cache_provider == "sqlite":
+        if config.ingest.embedding_cache_provider == SQLITE_CACHE_PROVIDER:
             if config.ingest.embedding_cache_path is None:
                 raise ValueError(
                     "ingest.embedding_cache_path is required when "
-                    "embedding_cache_provider='sqlite'"
+                    f"embedding_cache_provider={SQLITE_CACHE_PROVIDER!r}"
                 )
             cache_kwargs["path"] = config.ingest.embedding_cache_path
         resolved_embedding_cache = create_embedding_cache(
@@ -137,7 +138,7 @@ def build_core_components(
         policy=config.policy,
         embedding_batch_size=config.embedding.batch_size,
     )
-    search = SearchOrchestrator(
+    search = SearchPipelineRunner(
         embedding_provider=embedding,
         sparse_embedder=sparse,
         vector_store=store,

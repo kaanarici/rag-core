@@ -179,6 +179,12 @@ def test_jsonl_alias_mime_types_route_to_json_converter(mime_type: str) -> None:
 def test_format_support_docs_cover_matrix() -> None:
     docs = Path("docs/parsing/formats.md").read_text(encoding="utf-8")
 
+    assert "converter registry" in docs
+    assert 'Converters emit parser metadata (`metadata["parser"]`)' in docs
+    assert "names the extraction implementation, not the registry entry" in docs
+    assert "Extraction quality is visible" in docs
+    assert "Parser quality is visible" not in docs
+
     for entry in FORMAT_SUPPORT_MATRIX:
         assert f"| `{entry.key}` |" in docs
         assert f"`{entry.support_level}`" in docs
@@ -186,3 +192,26 @@ def test_format_support_docs_cover_matrix() -> None:
             assert f"`{extension}`" in docs
         for mime_type in entry.mime_types:
             assert f"`{mime_type}`" in docs
+
+
+def test_format_support_docs_name_real_fixture_proof_and_known_gaps() -> None:
+    docs = Path("docs/parsing/formats.md").read_text(encoding="utf-8")
+
+    for phrase in (
+        "Default local ingest launch scope",
+        "the non-image formats marked `yes`",
+        "outside default local ingest",
+        "launch-followup proof targets",
+        "Externally authored Apache Tika fixtures",
+        "PDF section labels",
+        "slide locators",
+        "sheet locators",
+        "Not yet launch-proofed by external fixtures",
+        "scanned PDFs",
+        "table-heavy PDFs",
+        "image-heavy Office files",
+        "larger real code corpora",
+        "bounded by extraction quality metadata and future fixture coverage",
+    ):
+        assert phrase in docs
+    assert "bounded by parser quality metadata and future fixture coverage" not in docs

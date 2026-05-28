@@ -10,6 +10,7 @@ import pytest
 import rag_core.documents.converters.pdf_converter as pdf_converter_module
 from rag_core.documents.converters.pdf_converter import PdfConverter
 from rag_core.documents.converters.pdf_converter_extraction import PageExtraction, PdfExtraction
+from tests.support import assert_caplog_omits_private, assert_log_record_contains
 
 LOGGER_NAME = "rag_core.documents.converters.pdf_converter"
 PRIVATE_FILENAME = "private-roadmap.pdf"
@@ -44,14 +45,8 @@ def _assert_logs_are_sanitized(
     caplog: pytest.LogCaptureFixture,
     *required_fragments: str,
 ) -> None:
-    for fragment in required_fragments:
-        assert fragment in caplog.text
-    assert PRIVATE_FILENAME not in caplog.text
-    assert RAW_ERROR not in caplog.text
-    assert RAW_DOCUMENT_TEXT not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_log_record_contains(caplog, *required_fragments, logger_name=LOGGER_NAME)
+    assert_caplog_omits_private(caplog, PRIVATE_FILENAME, RAW_ERROR, RAW_DOCUMENT_TEXT)
 
 
 def test_inspector_availability_failure_log_is_sanitized(

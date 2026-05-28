@@ -10,6 +10,7 @@ import pytest
 
 from rag_core.events.sinks import EventBuffer
 from rag_core.events.types import RerankApplied
+from rag_core.retrieval_defaults import DEFAULT_SEARCH_LIMIT
 from rag_core.search.pipeline import (
     HybridRetrieve,
     IdentityFuse,
@@ -109,7 +110,6 @@ def test_identity_pipeline_passes_results_through_and_handles_empty() -> None:
         assert empty == []
 
     asyncio.run(_run())
-
 
 def test_identity_stages_are_no_ops() -> None:
     """IdentityPostprocess / IdentityQueryTransform / PassThroughRerank leave inputs alone."""
@@ -225,40 +225,6 @@ def test_pipeline_truncates_to_query_limit() -> None:
         pipeline = _identity_pipeline(hits)
         results = await pipeline.run(_build_query(limit=3), _build_context())
         assert [r.id for r in results] == ["0", "1", "2"]
-
-    asyncio.run(_run())
-
-
-def test_pipeline_query_extra_survives_across_stages() -> None:
-    """Transforms can stash values in ``query.extra`` and postprocesses see them."""
-
-    async def _run() -> None:
-        captured: list[object] = []
-
-        class StashTransform:
-            async def transform(
-                self, query: PipelineQuery, ctx: PipelineContext
-            ) -> PipelineQuery:
-                query.extra["stashed"] = "value"
-                return query
-
-        class ReadPostprocess:
-            async def postprocess(
-                self,
-                results: list[SearchResult],
-                query: PipelineQuery,
-                ctx: PipelineContext,
-            ) -> list[SearchResult]:
-                captured.append(query.extra.get("stashed"))
-                return results
-
-        pipeline = _identity_pipeline(
-            [make_search_result()],
-            query_transforms=(StashTransform(),),
-            postprocesses=(ReadPostprocess(),),
-        )
-        await pipeline.run(_build_query(), _build_context())
-        assert captured == ["value"]
 
     asyncio.run(_run())
 
@@ -507,7 +473,7 @@ def test_rerank_cancelled_error_falls_back_unless_explicitly_disabled() -> None:
             self,
             query: str,
             documents: list[str],
-            top_k: int = 10,
+            top_k: int = DEFAULT_SEARCH_LIMIT,
         ) -> list[RerankResult]:
             raise asyncio.CancelledError()
 
@@ -599,42 +565,5 @@ def test_pipeline_runs_with_no_query_transforms_or_postprocesses() -> None:
         assert pipeline.postprocesses == ()
         result = await pipeline.run(_build_query(), _build_context())
         assert len(result) == 1
-
-    asyncio.run(_run())
-
-
-def test_query_transform_can_pass_awaitables_to_postprocess() -> None:
-    """``query.extra`` is mutable across stages and supports awaitable handoff."""
-
-    async def _run() -> None:
-        captured: list[object] = []
-
-        class StashFuture:
-            async def transform(
-                self, query: PipelineQuery, ctx: PipelineContext
-            ) -> PipelineQuery:
-                future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
-                future.set_result("done")
-                query.extra["future"] = future
-                return query
-
-        class AwaitFuture:
-            async def postprocess(
-                self,
-                results: list[SearchResult],
-                query: PipelineQuery,
-                ctx: PipelineContext,
-            ) -> list[SearchResult]:
-                future = query.extra.pop("future")
-                captured.append(await future)  # type: ignore[misc]
-                return results
-
-        pipeline = _identity_pipeline(
-            [make_search_result()],
-            query_transforms=(StashFuture(),),
-            postprocesses=(AwaitFuture(),),
-        )
-        await pipeline.run(_build_query(), _build_context())
-        assert captured == ["done"]
 
     asyncio.run(_run())

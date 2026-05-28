@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
 
@@ -11,7 +12,7 @@ from rag_core.contracts import (
     parse_search_user_documents_request,
 )
 from rag_core.core_retrieval import search_with_core
-from rag_core.search.searcher import SearchRequest
+from rag_core.search.pipeline_runner import SearchRequest
 from rag_core.search.types import SearchResult
 
 
@@ -24,6 +25,22 @@ def test_search_user_documents_schema_uses_lexical_search_language() -> None:
     lexical_property = properties["use_lexical_search"]
     assert isinstance(lexical_property, dict)
     assert lexical_property["default"] is True
+    assert lexical_property["description"] == (
+        "Controls configured lexical/exact-match expansion only; "
+        "query-plan defaults remain provider capability-aware."
+    )
+
+
+def test_embed_docs_keep_lexical_sidecar_and_profile_separate() -> None:
+    docs = "\n".join(
+        Path(path).read_text(encoding="utf-8")
+        for path in ("docs/embed.md", "docs/stability.md")
+    )
+
+    assert "`use_lexical_search` is the request flag" in docs
+    assert "compatibility flag" not in docs
+    assert "the `lexical` search profile means sparse BM25 retrieval" in docs
+    assert "not the portable exact-match sidecar" in docs
 
 
 def test_parse_search_user_documents_request_rejects_sidecar_alias() -> None:
@@ -58,6 +75,14 @@ def test_rag_core_facade_exposes_lexical_search_request_knob() -> None:
     assert "use_sidecar" not in retrieve_parameters
 
 
+def test_rag_core_facade_exposes_content_type_filter() -> None:
+    search_parameters = RAGCore.search.__annotations__
+    retrieve_parameters = RAGCore.retrieve_context.__annotations__
+
+    assert "content_types" in search_parameters
+    assert "content_types" in retrieve_parameters
+
+
 def test_core_retrieval_bridges_lexical_request_to_internal_sidecar_flag() -> None:
     class _Search:
         def __init__(self) -> None:
@@ -79,4 +104,28 @@ def test_core_retrieval_bridges_lexical_request_to_internal_sidecar_flag() -> No
         )
     )
 
-    assert search.requests[0].use_lexical_search is False
+    assert search.requests[0].execution.use_lexical_search is False
+
+
+def test_core_retrieval_bridges_content_types_to_search_request() -> None:
+    class _Search:
+        def __init__(self) -> None:
+            self.requests: list[SearchRequest] = []
+
+        async def search(self, req: SearchRequest) -> list[SearchResult]:
+            self.requests.append(req)
+            return []
+
+    search = _Search()
+
+    asyncio.run(
+        search_with_core(
+            search=search,
+            query="billing",
+            namespace="acme",
+            corpus_ids=["help-center"],
+            content_types=["document"],
+        )
+    )
+
+    assert search.requests[0].content_types == ["document"]

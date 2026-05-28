@@ -21,6 +21,7 @@ class IndexRequest:
     document_path: Optional[str] = None
     section_mappings: Optional[list[dict[str, object]]] = None
     content_bytes: Optional[bytes] = None
+    document_metadata: Optional[dict[str, object]] = None
     extra_fields: Optional[dict[str, str]] = None
     chunker_strategy: Optional[str] = None
     embedding_model: Optional[str] = None

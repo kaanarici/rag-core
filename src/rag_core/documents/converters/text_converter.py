@@ -15,6 +15,7 @@ from .base import (
     safe_decode,
     score_text_quality,
 )
+from .converter_keys import TEXT_CONVERTER_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 class TextConverter(BaseConverter):
     """Converts plain text files (TXT, MD, YAML, TOML, etc.) with encoding detection."""
 
-    format_name = "text"
+    format_name = TEXT_CONVERTER_KEY
 
     async def convert(
         self,
@@ -37,7 +38,10 @@ class TextConverter(BaseConverter):
                 content = safe_decode(file_bytes)
             except ValueError:
                 return ConversionResult(
-                    metadata={"parser": "local:text", "error": "binary content detected"},
+                    metadata={
+                        "parser": "local:text",
+                        "error": "binary content detected",
+                    },
                 )
 
             quality = score_text_quality(content)
@@ -45,7 +49,10 @@ class TextConverter(BaseConverter):
                 quality.mojibake_ratio > 0.1 or quality.meaningful_ratio < 0.2
             ):
                 return ConversionResult(
-                    metadata={"parser": "local:text", "error": "binary content detected"},
+                    metadata={
+                        "parser": "local:text",
+                        "error": "binary content detected",
+                    },
                 )
 
             return ConversionResult(

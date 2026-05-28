@@ -11,7 +11,7 @@ from typing import Any, Sequence, cast
 from qdrant_client import models as rest
 
 from rag_core.search.policy import DEFAULT_POLICY, VectorStorePolicy
-from rag_core.search.types import (
+from rag_core.search.request_models import (
     DeleteFilter,
     SearchQuery,
 )

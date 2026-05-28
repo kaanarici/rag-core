@@ -7,6 +7,10 @@ from rag_core.config.embedding_config import DEFAULT_EMBEDDING_BATCH_SIZE
 from rag_core.core_models import PreparedChunk
 from rag_core.events.emit import emit_event, now_ms
 from rag_core.events.types import EmbedCompleted, EmbedRequested
+from rag_core.retrieval_channels import (
+    DENSE_RETRIEVAL_CHANNEL,
+    SPARSE_RETRIEVAL_CHANNEL,
+)
 from rag_core.search.indexer_embedding_vectors import (
     embed_dense_texts as _embed_dense_texts,
     embed_sparse_channels as _embed_sparse_channels,
@@ -14,10 +18,12 @@ from rag_core.search.indexer_embedding_vectors import (
     validate_dense_vectors as _validate_dense_vectors,
     validate_embedding_batch_size as _validate_embedding_batch_size,
 )
-from rag_core.search.types import (
-    ContentType,
+from rag_core.search.provider_protocols import (
     EmbeddingProvider,
     SparseEmbedder,
+)
+from rag_core.search.vector_models import (
+    ContentType,
     SparseVector,
 )
 
@@ -64,7 +70,7 @@ async def prepare_index_data(
             provider=dense_provider_name,
             model=dense_model_name,
             text_count=len(texts.dense_texts),
-            role="dense",
+            role=DENSE_RETRIEVAL_CHANNEL,
         ),
     )
     dense_started_ms = now_ms()
@@ -87,7 +93,7 @@ async def prepare_index_data(
             provider=dense_provider_name,
             model=dense_model_name,
             text_count=len(texts.dense_texts),
-            role="dense",
+            role=DENSE_RETRIEVAL_CHANNEL,
             duration_ms=now_ms() - dense_started_ms,
             cache_hits=dense_cache.hits,
             cache_misses=dense_cache.misses,
@@ -104,7 +110,7 @@ async def prepare_index_data(
             provider=sparse_provider_name,
             model=sparse_model_name,
             text_count=len(texts.sparse_texts),
-            role="sparse",
+            role=SPARSE_RETRIEVAL_CHANNEL,
         ),
     )
     sparse_started_ms = now_ms()
@@ -119,7 +125,7 @@ async def prepare_index_data(
             provider=sparse_provider_name,
             model=sparse_model_name,
             text_count=len(texts.sparse_texts),
-            role="sparse",
+            role=SPARSE_RETRIEVAL_CHANNEL,
             duration_ms=now_ms() - sparse_started_ms,
         ),
     )

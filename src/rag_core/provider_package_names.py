@@ -1,0 +1,39 @@
+"""Shared provider package and import-module names."""
+
+from __future__ import annotations
+
+ANTHROPIC_PACKAGE = "anthropic"
+COHERE_PACKAGE = "cohere"
+FASTEMBED_PACKAGE = "fastembed"
+GEMINI_PACKAGE = "gemini"
+GOOGLE_PACKAGE_ALIAS = "google"
+MISTRAL_PACKAGE = "mistral"
+OPENAI_PACKAGE = "openai"
+OPENTELEMETRY_TRACE_PACKAGE = "opentelemetry.trace"
+VOYAGE_PACKAGE = "voyageai"
+ZEROENTROPY_PACKAGE = "zeroentropy"
+
+PROVIDER_ERROR_MODULES = (
+    ANTHROPIC_PACKAGE,
+    COHERE_PACKAGE,
+    GEMINI_PACKAGE,
+    GOOGLE_PACKAGE_ALIAS,
+    MISTRAL_PACKAGE,
+    OPENAI_PACKAGE,
+    VOYAGE_PACKAGE,
+    ZEROENTROPY_PACKAGE,
+)
+
+__all__ = [
+    "ANTHROPIC_PACKAGE",
+    "COHERE_PACKAGE",
+    "FASTEMBED_PACKAGE",
+    "GEMINI_PACKAGE",
+    "GOOGLE_PACKAGE_ALIAS",
+    "MISTRAL_PACKAGE",
+    "OPENAI_PACKAGE",
+    "OPENTELEMETRY_TRACE_PACKAGE",
+    "PROVIDER_ERROR_MODULES",
+    "VOYAGE_PACKAGE",
+    "ZEROENTROPY_PACKAGE",
+]

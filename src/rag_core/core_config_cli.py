@@ -6,8 +6,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from rag_core.config import (
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_EMBEDDING_PROVIDER,
+    DEFAULT_QDRANT_COLLECTION,
+    DEFAULT_QDRANT_DIMENSION_AWARE_COLLECTION,
+    DEFAULT_RERANKER_PROVIDER,
+    DEFAULT_VECTOR_STORE_PROVIDER,
+    DEMO_EMBEDDING_MODEL,
+    EMBEDDING_BATCH_SIZE_ENV,
+    EMBEDDING_DIMENSIONS_ENV,
     EmbeddingConfig,
     IngestConfig,
+    QDRANT_DIMENSION_AWARE_COLLECTION_ENV,
     QdrantConfig,
     RerankerConfig,
     TurboPufferVectorStoreConfig,
@@ -15,6 +25,8 @@ from rag_core.config import (
 )
 from rag_core.config.vector_store_config import (
     DEFAULT_TURBOPUFFER_DELETE_CONTINUATION_LIMIT,
+    DEFAULT_TURBOPUFFER_DISTANCE_METRIC,
+    TURBOPUFFER_DELETE_CONTINUATION_LIMIT_ENV,
 )
 from rag_core.config.embedding_config import DEFAULT_EMBEDDING_BATCH_SIZE
 from rag_core.config.env_access import get_env, parse_env_bool
@@ -30,22 +42,31 @@ def build_rag_core_config_from_cli_args(
     *,
     manifest_dir: Path | None = None,
 ) -> "RAGCoreConfig":
+    embedding_provider = (
+        _arg(args, "embedding_provider", default=DEFAULT_EMBEDDING_PROVIDER)
+        or DEFAULT_EMBEDDING_PROVIDER
+    )
+    embedding_model = _embedding_model(args, provider=embedding_provider)
+    vector_store_provider = (
+        _arg(args, "vector_store", default=DEFAULT_VECTOR_STORE_PROVIDER)
+        or DEFAULT_VECTOR_STORE_PROVIDER
+    )
     return config_type(
         qdrant=QdrantConfig(
             url=_arg(args, "qdrant_url"),
             location=_arg(args, "qdrant_location"),
             api_key=_arg(args, "qdrant_api_key", default="") or "",
-            collection=_arg(args, "qdrant_collection", default="rag_core_chunks")
-            or "rag_core_chunks",
+            collection=_arg(args, "qdrant_collection", default=DEFAULT_QDRANT_COLLECTION)
+            or DEFAULT_QDRANT_COLLECTION,
             dimension_aware_collection=_env_backed_bool_arg(
                 args,
                 "dimension_aware_collection",
-                env_name="RAG_CORE_QDRANT_DIMENSION_AWARE_COLLECTION",
-                default=True,
+                env_name=QDRANT_DIMENSION_AWARE_COLLECTION_ENV,
+                default=DEFAULT_QDRANT_DIMENSION_AWARE_COLLECTION,
             ),
         ),
         vector_store=VectorStoreConfig(
-            provider=_arg(args, "vector_store", default="qdrant") or "qdrant",
+            provider=vector_store_provider,
             turbopuffer=TurboPufferVectorStoreConfig(
                 namespace=_arg(args, "turbopuffer_namespace"),
                 api_key=_arg(args, "turbopuffer_api_key"),
@@ -54,39 +75,39 @@ def build_rag_core_config_from_cli_args(
                 distance_metric=_arg(
                     args,
                     "turbopuffer_distance_metric",
-                    default="cosine_distance",
+                    default=DEFAULT_TURBOPUFFER_DISTANCE_METRIC,
                 )
-                or "cosine_distance",
+                or DEFAULT_TURBOPUFFER_DISTANCE_METRIC,
                 delete_continuation_limit=_arg(
                     args,
                     "turbopuffer_delete_continuation_limit",
                 )
                 if _arg(args, "turbopuffer_delete_continuation_limit") is not None
                 else _env_int(
-                    "RAG_CORE_TURBOPUFFER_DELETE_CONTINUATION_LIMIT",
+                    TURBOPUFFER_DELETE_CONTINUATION_LIMIT_ENV,
                     DEFAULT_TURBOPUFFER_DELETE_CONTINUATION_LIMIT,
                 ),
             ),
         ),
         embedding=EmbeddingConfig(
-            provider=_arg(args, "embedding_provider", default="openai") or "openai",
-            model=_arg(args, "embedding_model", default="text-embedding-3-large")
-            or "text-embedding-3-large",
+            provider=embedding_provider,
+            model=embedding_model,
             dimensions=_arg(args, "embedding_dimensions")
             if _arg(args, "embedding_dimensions") is not None
-            else _env_optional_int("RAG_CORE_EMBEDDING_DIMENSIONS"),
+            else _env_optional_int(EMBEDDING_DIMENSIONS_ENV),
             batch_size=_arg(
                 args,
                 "embedding_batch_size",
             )
             if _arg(args, "embedding_batch_size") is not None
             else _env_int(
-                "RAG_CORE_EMBEDDING_BATCH_SIZE",
+                EMBEDDING_BATCH_SIZE_ENV,
                 DEFAULT_EMBEDDING_BATCH_SIZE,
             ),
         ),
         reranker=RerankerConfig(
-            provider=_arg(args, "reranker_provider", default="none") or "none",
+            provider=_arg(args, "reranker_provider", default=DEFAULT_RERANKER_PROVIDER)
+            or DEFAULT_RERANKER_PROVIDER,
             model=_arg(args, "reranker_model"),
         ),
         ingest=IngestConfig(
@@ -103,6 +124,15 @@ def build_rag_core_config_from_cli_args(
 
 def _arg(args: argparse.Namespace, name: str, *, default: Any = None) -> Any:
     return getattr(args, name, default)
+
+
+def _embedding_model(args: argparse.Namespace, *, provider: str) -> str:
+    model = _arg(args, "embedding_model")
+    if isinstance(model, str) and model:
+        return model
+    if provider.strip().lower() == "demo":
+        return DEMO_EMBEDDING_MODEL
+    return DEFAULT_EMBEDDING_MODEL
 
 
 def _env_optional_int(name: str) -> int | None:

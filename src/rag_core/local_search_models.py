@@ -3,16 +3,20 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from rag_core.retrieval_defaults import DEFAULT_LOCAL_SEARCH_LIMIT
+
+DEFAULT_LOCAL_SEARCH_COLLECTION = "local_search"
 DEFAULT_LOCAL_MAX_FILES = 200
+DEFAULT_LOCAL_SEARCH_NAMESPACE = "local"
 
 
 @dataclass(frozen=True)
 class LocalSearchRequest:
     path: Path
     query: str
-    namespace: str = "local"
+    namespace: str = DEFAULT_LOCAL_SEARCH_NAMESPACE
     corpus_id: str | None = None
-    limit: int = 5
+    limit: int = DEFAULT_LOCAL_SEARCH_LIMIT
     max_files: int = DEFAULT_LOCAL_MAX_FILES
 
 
@@ -71,7 +75,10 @@ class LocalSearchResult:
 
 
 __all__ = [
+    "DEFAULT_LOCAL_SEARCH_COLLECTION",
+    "DEFAULT_LOCAL_SEARCH_LIMIT",
     "DEFAULT_LOCAL_MAX_FILES",
+    "DEFAULT_LOCAL_SEARCH_NAMESPACE",
     "LocalSearchFileSet",
     "LocalSearchRequest",
     "LocalSearchResult",

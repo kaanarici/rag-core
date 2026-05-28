@@ -6,6 +6,7 @@ import asyncio
 import logging
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol, cast
 
+from rag_core.config.chunking_config import SEMANTIC_CHUNKING_STRATEGY
 from rag_core.config.env_access import get_env as config_get_env, get_env_bool
 from rag_core.core_models import PreparedChunk
 
@@ -176,5 +177,5 @@ class SemanticChunker:
             text,
             segments,
             config,
-            strategy_name="semantic",
+            strategy_name=SEMANTIC_CHUNKING_STRATEGY,
         )

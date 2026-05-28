@@ -2,14 +2,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from rag_core.search.context_pack import ModelContextPack
-from rag_core.search.types import RerankBudget, SearchResult
+from rag_core.retrieval_defaults import (
+    DEFAULT_CONTEXT_LIMIT,
+    DEFAULT_RERANK,
+    DEFAULT_SEARCH_LIMIT,
+    DEFAULT_USE_LEXICAL_SEARCH,
+)
+from rag_core.search import ContextPack, RerankBudget, SearchResult
 
 if TYPE_CHECKING:
     from rag_core.events.sink import EventSink
     from rag_core.core_retrieval import SearchRunner
-    from rag_core.search.query_plan import QueryPlan
-    from rag_core.search.types import Filter
+    from rag_core.search import Filter, QueryPlan
 
 
 class _RAGCoreRetrievalMethods:
@@ -22,10 +26,11 @@ class _RAGCoreRetrievalMethods:
         query: str,
         namespace: str,
         corpus_ids: list[str],
-        limit: int = 10,
+        limit: int = DEFAULT_SEARCH_LIMIT,
+        content_types: list[str] | None = None,
         document_ids: list[str] | None = None,
-        rerank: bool = False,
-        use_lexical_search: bool = True,
+        rerank: bool = DEFAULT_RERANK,
+        use_lexical_search: bool = DEFAULT_USE_LEXICAL_SEARCH,
         query_plan: "QueryPlan | None" = None,
         metadata_filter: "Filter | None" = None,
         rerank_budget: RerankBudget | None = None,
@@ -38,6 +43,7 @@ class _RAGCoreRetrievalMethods:
             namespace=namespace,
             corpus_ids=corpus_ids,
             limit=limit,
+            content_types=content_types,
             document_ids=document_ids,
             rerank=rerank,
             use_lexical_search=use_lexical_search,
@@ -52,16 +58,17 @@ class _RAGCoreRetrievalMethods:
         query: str,
         namespace: str,
         corpus_ids: list[str],
-        limit: int = 8,
+        limit: int = DEFAULT_CONTEXT_LIMIT,
+        content_types: list[str] | None = None,
         document_ids: list[str] | None = None,
-        rerank: bool = False,
-        use_lexical_search: bool = True,
+        rerank: bool = DEFAULT_RERANK,
+        use_lexical_search: bool = DEFAULT_USE_LEXICAL_SEARCH,
         query_plan: "QueryPlan | None" = None,
         metadata_filter: "Filter | None" = None,
         rerank_budget: RerankBudget | None = None,
         max_chars: int | None = None,
         max_tokens: int | None = None,
-    ) -> ModelContextPack:
+    ) -> ContextPack:
         from rag_core.core_retrieval import retrieve_context_with_core
 
         return await retrieve_context_with_core(
@@ -71,6 +78,7 @@ class _RAGCoreRetrievalMethods:
             namespace=namespace,
             corpus_ids=corpus_ids,
             limit=limit,
+            content_types=content_types,
             document_ids=document_ids,
             rerank=rerank,
             use_lexical_search=use_lexical_search,

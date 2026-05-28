@@ -11,6 +11,7 @@ from rag_core.documents.converters.base import BaseConverter
 from rag_core.documents.converters.docx_converter import DocxConverter
 from rag_core.documents.converters.pptx_converter import PptxConverter
 from rag_core.documents.converters.xlsx_converter import XlsxConverter
+from tests.support import assert_caplog_omits_private
 
 
 class ProviderSecretError(RuntimeError):
@@ -72,9 +73,7 @@ def test_office_open_failure_warning_is_sanitized(
 
     assert case.name in caplog.text
     assert "BadZipFile" in caplog.text
-    assert case.filename not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(caplog, case.filename)
 
 
 def test_xlsx_safe_failure_reason_does_not_expose_raw_library_text() -> None:
@@ -138,9 +137,9 @@ def test_xlsx_secondary_workbook_debug_logs_are_sanitized(
     assert "chart metadata" in caplog.text
     assert "xlsx" in caplog.text
     assert "ProviderSecretError" in caplog.text
-    assert "private-financial-model.xlsx" not in caplog.text
-    assert "raw formula detail" not in caplog.text
-    assert "raw chart detail" not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(
+        caplog,
+        "private-financial-model.xlsx",
+        "raw formula detail",
+        "raw chart detail",
+    )

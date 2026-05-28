@@ -107,6 +107,60 @@ def validate_search_user_documents_bounds(
         )
 
 
+def validate_bound_namespace(namespace: str) -> str:
+    """Normalize the app-bound tenant namespace before retrieval."""
+    normalized = namespace.strip()
+    if not normalized:
+        raise ValueError("namespace must not be empty")
+    return normalized
+
+
+def normalize_static_retrieval_scope(
+    *,
+    corpus_ids: Sequence[str],
+    document_ids: Sequence[str] | None,
+    limit: int,
+) -> tuple[tuple[str, ...], tuple[str, ...] | None]:
+    """Normalize app-bound corpus and document scope."""
+    if limit <= 0:
+        raise ValueError("limit must be positive")
+    corpus_ids_tuple = _normalize_scope_values(corpus_ids, "corpus_ids")
+    if not corpus_ids_tuple:
+        raise ValueError("corpus_ids must not be empty")
+    document_ids_tuple = (
+        _normalize_scope_values(document_ids, "document_ids")
+        if document_ids is not None
+        else None
+    )
+    return corpus_ids_tuple, document_ids_tuple
+
+
+def normalize_static_content_types(
+    content_types: Sequence[str] | None,
+) -> tuple[str, ...] | None:
+    """Normalize app-bound content-type scope."""
+    if content_types is None:
+        return None
+    return _normalize_scope_values(content_types, "content_types")
+
+
+def scope_document_ids(
+    *,
+    requested: tuple[str, ...] | None,
+    configured: tuple[str, ...] | None,
+) -> list[str] | None:
+    """Apply model-requested document IDs inside the app-bound document scope."""
+    if configured is None:
+        return list(requested) if requested is not None else None
+    if requested is None:
+        return list(configured)
+    configured_set = set(configured)
+    rejected = [document_id for document_id in requested if document_id not in configured_set]
+    if rejected:
+        raise ValueError("document_ids contain values outside the configured retrieval scope")
+    return list(requested)
+
+
 def _required_non_empty_string(payload: Mapping[str, object], field: str) -> str:
     value = payload.get(field)
     if not isinstance(value, str) or not value.strip():
@@ -154,3 +208,12 @@ def _optional_document_ids(payload: Mapping[str, object]) -> tuple[str, ...] | N
             raise ValueError("document_ids must be an array of non-empty strings")
         ids.append(item.strip())
     return tuple(ids)
+
+
+def _normalize_scope_values(values: Sequence[str], field: str) -> tuple[str, ...]:
+    normalized: list[str] = []
+    for value in values:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{field} must contain non-empty strings")
+        normalized.append(value.strip())
+    return tuple(normalized)

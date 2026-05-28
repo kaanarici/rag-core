@@ -1,32 +1,50 @@
 """Stage protocols and the mutable query bundle for the retrieval pipeline.
 
-The pipeline is the linear list of stages described in `dev/DESIGN.md`:
-QueryTransform[] -> Retrieve -> Fuse -> Rerank -> Postprocess[]. Stages return data;
-the runner composes them. No branching, no DSL.
+The runner composes a linear stage list:
+QueryTransform[] -> Retrieve -> Fuse -> Rerank -> Postprocess[]. Stages return
+data; the runner composes them. No branching, no DSL.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
 
-from rag_core.search.types import (
+from rag_core.retrieval_defaults import (
+    DEFAULT_RERANK,
+    DEFAULT_SEARCH_LIMIT,
+    DEFAULT_USE_LEXICAL_SEARCH,
+)
+from rag_core.search.filters import Filter
+from rag_core.search.provider_protocols import (
     EmbeddingProvider,
-    Filter,
-    RerankBudget,
     RerankerProvider,
-    SearchResult,
     SearchSidecar,
     SparseEmbedder,
-    SparseVector,
     VectorStore,
 )
+from rag_core.search.request_models import RerankBudget
+from rag_core.search.vector_models import SearchResult, SparseVector
 
 if TYPE_CHECKING:
+    from rag_core.events.sink import EventSink
     from rag_core.search.query_plan import QueryPlan
 
-SearchPlanCallback = Callable[["QueryPlan | None", int], None]
+QueryPlanTraceCallback = Callable[["QueryPlan | None", int], None]
+
+
+@dataclass(frozen=True)
+class PipelineSidecarPrefetch:
+    task: asyncio.Task[list[SearchResult]]
+    started_ms: float
+
+
+@dataclass
+class PipelineStageState:
+    collection_ensured: bool = False
+    sidecar_prefetch: PipelineSidecarPrefetch | None = None
 
 
 @dataclass
@@ -34,34 +52,34 @@ class PipelineQuery:
     """The mutable query bundle that flows through QueryTransform stages.
 
     Stages can rewrite the query string (HyDE), inject pre-computed vectors,
-    or stash adjuncts in `extra` (e.g. an awaitable for a parallel sidecar
-    fetch). Once Retrieve has run, downstream stages receive results, but the
-    same PipelineQuery instance is still passed through so postprocessors can
-    look at the resolved limit, filters, or extras.
+    or update built-in coordination state. Once Retrieve has run, downstream
+    stages receive results, but the same PipelineQuery instance is still passed
+    through so postprocessors can look at the resolved limit, filters, or
+    typed pipeline state.
     """
 
     query: str
     namespace: str
     corpus_ids: list[str]
-    limit: int = 20
+    limit: int = DEFAULT_SEARCH_LIMIT
     document_ids: Optional[list[str]] = None
     content_types: Optional[list[str]] = None
-    rerank: bool = False
-    use_lexical_search: bool = True
+    rerank: bool = DEFAULT_RERANK
+    use_lexical_search: bool = DEFAULT_USE_LEXICAL_SEARCH
     query_plan: "QueryPlan | None" = None
     query_vector: Optional[list[float]] = None
     query_sparse_vectors: Optional[dict[str, SparseVector]] = None
     metadata_filter: Filter | None = None
     rerank_budget: RerankBudget | None = None
-    search_plan_callback: SearchPlanCallback | None = None
-    search_plan_emitted: bool = False
-    extra: dict[str, object] = field(default_factory=dict)
+    query_plan_trace_callback: QueryPlanTraceCallback | None = None
+    query_plan_trace_emitted: bool = False
+    state: PipelineStageState = field(default_factory=PipelineStageState)
 
-    def emit_search_plan(self, query_plan: "QueryPlan | None", limit: int) -> None:
-        if self.search_plan_callback is None or self.search_plan_emitted:
+    def emit_query_plan_trace(self, query_plan: "QueryPlan | None", limit: int) -> None:
+        if self.query_plan_trace_callback is None or self.query_plan_trace_emitted:
             return
-        self.search_plan_callback(query_plan, limit)
-        self.search_plan_emitted = True
+        self.query_plan_trace_callback(query_plan, limit)
+        self.query_plan_trace_emitted = True
 
 
 @dataclass
@@ -85,7 +103,7 @@ class PipelineContext:
     vector_store: VectorStore
     reranker: RerankerProvider | None = None
     sidecar: SearchSidecar | None = None
-    event_sink: object | None = None
+    event_sink: "EventSink | None" = None
     execution: PipelineExecutionSummary = field(default_factory=PipelineExecutionSummary)
 
 

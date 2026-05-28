@@ -8,7 +8,6 @@ from typing import Any
 
 from .contextualizer import ChunkContextRequest
 
-_DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
 _ANTHROPIC_CONTEXT_PROMPT_VERSION = "context-v1"
 _ANTHROPIC_PROMPT = (
     "Please give a short succinct context to situate this chunk within the "

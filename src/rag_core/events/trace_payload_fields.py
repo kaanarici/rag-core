@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Literal, Mapping, cast
+from typing import Final, Literal, Mapping
 
 SearchStageName = Literal[
     "query_transform",
@@ -13,19 +13,30 @@ SearchStageName = Literal[
     "context_pack",
 ]
 
+QUERY_TRANSFORM_SEARCH_STAGE: Final[SearchStageName] = "query_transform"
+RETRIEVE_SEARCH_STAGE: Final[SearchStageName] = "retrieve"
+FUSE_SEARCH_STAGE: Final[SearchStageName] = "fuse"
+RERANK_SEARCH_STAGE: Final[SearchStageName] = "rerank"
+POSTPROCESS_SEARCH_STAGE: Final[SearchStageName] = "postprocess"
+CONTEXT_PACK_SEARCH_STAGE: Final[SearchStageName] = "context_pack"
+SEARCH_ERROR_STAGE: Final[str] = "search"
+
 _SEARCH_STAGE_NAMES = frozenset(
     {
-        "query_transform",
-        "retrieve",
-        "fuse",
-        "rerank",
-        "postprocess",
-        "context_pack",
+        QUERY_TRANSFORM_SEARCH_STAGE,
+        RETRIEVE_SEARCH_STAGE,
+        FUSE_SEARCH_STAGE,
+        RERANK_SEARCH_STAGE,
+        POSTPROCESS_SEARCH_STAGE,
+        CONTEXT_PACK_SEARCH_STAGE,
     }
 )
 
 _SAFE_TRACE_LABEL_RE = re.compile(r"[A-Za-z0-9_.:,-]{1,80}")
 _SAFE_TRACE_STAGE_LABEL_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.:]{0,79}")
+TRACE_EMPTY_LABEL = ""
+TRACE_ABSENT_LABEL = "none"
+TRACE_UNKNOWN_LABEL = "unknown"
 _SENSITIVE_TRACE_LABEL_FRAGMENTS = (
     "secret",
     "token",
@@ -49,7 +60,7 @@ def stage_field(payload: Mapping[str, object], key: str) -> SearchStageName:
     value = str_field(payload, key)
     if value not in _SEARCH_STAGE_NAMES:
         raise ValueError(f"trace field {key} must be a supported search stage")
-    return cast(SearchStageName, value)
+    return value
 
 
 def str_field(payload: Mapping[str, object], key: str) -> str:
@@ -169,9 +180,9 @@ def int_tuple_field(payload: Mapping[str, object], key: str) -> tuple[int, ...]:
 
 def safe_trace_label(value: object, *, stage: bool) -> str:
     if not isinstance(value, str):
-        return "unknown"
-    if value == "":
-        return ""
+        return TRACE_UNKNOWN_LABEL
+    if value == TRACE_EMPTY_LABEL:
+        return TRACE_EMPTY_LABEL
     normalized = value.lower()
     if (
         any(fragment in normalized for fragment in _SENSITIVE_TRACE_LABEL_FRAGMENTS)
@@ -180,11 +191,11 @@ def safe_trace_label(value: object, *, stage: bool) -> str:
             for pattern in _SENSITIVE_TRACE_LABEL_PATTERNS
         )
     ):
-        return "unknown"
+        return TRACE_UNKNOWN_LABEL
     pattern = _SAFE_TRACE_STAGE_LABEL_RE if stage else _SAFE_TRACE_LABEL_RE
     if pattern.fullmatch(value):
         return value
-    return "unknown"
+    return TRACE_UNKNOWN_LABEL
 
 
 def safe_trace_label_sequence(value: object, *, stage: bool) -> list[str]:

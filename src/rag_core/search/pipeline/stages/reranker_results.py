@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from rag_core.search.result_scores import finite_score_or_zero
-from rag_core.search.types import RerankResult, SearchResult
+from rag_core.search.request_models import RerankResult
+from rag_core.search.vector_models import SearchResult
 
 
 @dataclass(frozen=True)

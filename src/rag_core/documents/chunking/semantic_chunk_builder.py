@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from rag_core.config.chunking_config import SEMANTIC_CHUNKING_STRATEGY
 from rag_core.core_models import PreparedChunk
 from rag_core.documents.chunking.protocol import ChunkConfig
 
@@ -105,8 +106,8 @@ def single_semantic_chunk(text: str) -> PreparedChunk:
         start_char=0,
         end_char=len(text),
         token_count=word_count,
-        chunking_strategy="semantic",
-        metadata={"chunking_strategy": "semantic"},
+        chunking_strategy=SEMANTIC_CHUNKING_STRATEGY,
+        metadata={"chunking_strategy": SEMANTIC_CHUNKING_STRATEGY},
     )
 
 

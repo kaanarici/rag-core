@@ -14,6 +14,7 @@ from rag_core.fetch_security_url import (
     safe_remote_source_url,
 )
 from rag_core.local_sources import is_multi_link_regular_file, path_has_symlink_segment
+from rag_core.remote_document_keys import private_remote_document_key
 from rag_core.remote_ingest_models import RemoteUrlIngestRequest, RemoteUrlSourceItem
 
 REMOTE_URL_FILE_MAX_BYTES = 1_048_576
@@ -122,7 +123,6 @@ def _source_item(
 
 
 def _document_key(url: ValidatedFetchUrl) -> str:
-    key = f"url:{safe_remote_source_url(url)}"
-    if isinstance(url.query_sha256, str) and url.query_sha256:
-        return f"{key}|query_sha256:{url.query_sha256}"
-    return key
+    return private_remote_document_key(
+        f"url:{safe_remote_source_url(url)}", url.query_sha256
+    )

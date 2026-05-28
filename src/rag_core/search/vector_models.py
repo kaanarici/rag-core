@@ -6,9 +6,11 @@ import enum
 import math
 import numbers
 from dataclasses import dataclass, field
-from typing import Optional, Sequence
+from typing import Final, Optional, Sequence
 
 from rag_core.search.sparse_channels import merge_sparse_channels
+
+SEARCH_RESULT_TYPE_TEXT: Final[str] = "text"
 
 
 class ContentType(str, enum.Enum):
@@ -68,7 +70,7 @@ class SearchResult:
     """A single search result from any source.
 
     Example: SearchResult(id="uuid5-hex", text="# Metadata\\n...\\n# Content\\n...",
-             score=0.87, content_type="document", source_type="file",
+             score=0.87, content_type="document", source_type="<source-type>",
              document_id="doc_123", corpus_id="help_center",
              document_key="docs/report.pdf", title="Q1 Report",
              chunk_index=3, section_title="Introduction")

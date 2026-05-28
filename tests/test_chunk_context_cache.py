@@ -8,13 +8,13 @@ import pytest
 
 from rag_core.documents.contextualizer import ChunkContextRequest
 from rag_core.documents.contextualizer_adapters import CachingContextualizer
-from rag_core.search.providers.embedding_cache import (
+from rag_core.search.providers.chunk_context_cache import (
     ChunkContextKey,
     InMemoryChunkContextCache,
     NoChunkContextCache,
     SqliteChunkContextCache,
-    sha256_text,
 )
+from rag_core.search.providers.embedding_cache_models import sha256_text
 
 
 def _request(

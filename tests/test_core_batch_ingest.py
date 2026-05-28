@@ -8,7 +8,7 @@ from rag_core import RAGCore
 from rag_core.events import EventBuffer
 from rag_core.local_ingest_models import LocalIngestResult
 from rag_core.events import IngestBatchCompleted, IngestBatchStarted
-from rag_core.search.providers.embedding_cache import EmbedCacheKey
+from rag_core.search.providers.embedding_cache_models import EmbedCacheKey
 from rag_core.sources import document_key as local_document_key
 
 from tests.support import (

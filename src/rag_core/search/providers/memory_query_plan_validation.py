@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from rag_core.search.query_plan import (
+    FUSION_KIND_RRF,
+    PRIMARY_DENSE_QUERY_VECTOR,
     DenseChannel,
     QueryPlan,
     SparseChannel,
@@ -16,7 +18,7 @@ def validate_memory_query_plan(plan: QueryPlan) -> None:
         raise UnsupportedQueryStage(
             "MMR rerank is not supported by InMemoryVectorStore"
         )
-    if plan.fuse is not None and plan.fuse.kind != "rrf":
+    if plan.fuse is not None and plan.fuse.kind != FUSION_KIND_RRF:
         raise UnsupportedQueryStage(
             f"{plan.fuse.kind} fusion is not supported by InMemoryVectorStore"
         )
@@ -38,7 +40,7 @@ def validate_memory_query_plan(plan: QueryPlan) -> None:
 
 
 def validate_memory_dense_channel(channel: DenseChannel) -> None:
-    if channel.vector_field or channel.using_query_vector != "primary":
+    if channel.vector_field or channel.using_query_vector != PRIMARY_DENSE_QUERY_VECTOR:
         raise UnsupportedQueryStage(
             "InMemoryVectorStore supports only the primary dense query vector"
         )

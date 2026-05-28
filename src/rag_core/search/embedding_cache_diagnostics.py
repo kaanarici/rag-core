@@ -7,7 +7,7 @@ from typing import Protocol, cast
 from rag_core.search.providers.cached_embedding_observations import (
     EmbeddingCacheObservation,
 )
-from rag_core.search.types import EmbeddingProvider
+from rag_core.search.provider_protocols import EmbeddingProvider
 
 _ObservedEmbedTexts = Callable[
     [list[str]],

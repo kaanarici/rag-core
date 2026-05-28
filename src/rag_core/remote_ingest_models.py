@@ -4,6 +4,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
 
+from rag_core.config.ingest_config import (
+    DEFAULT_INGEST_MAX_CONCURRENCY,
+    INGEST_SOURCE_TYPE_URL,
+)
 from rag_core.fetch_security import FetchLimits, FetchSecurityPolicy
 from rag_core.manifest_persistence import (
     ManifestReconciliation,
@@ -31,7 +35,7 @@ class RemoteUrlIngestRequest:
     urls: Sequence[str] = ()
     metadata: dict[str, str] | None = None
     force_reindex: bool = False
-    max_concurrency: int = 1
+    max_concurrency: int = DEFAULT_INGEST_MAX_CONCURRENCY
     fetch_policy: FetchSecurityPolicy | None = None
     fetch_limits: FetchLimits | None = None
 
@@ -87,7 +91,7 @@ class RemoteUrlIngestPlan:
     ) -> dict[str, object]:
         reconciliation_by_key = remote_source_reconciliation_by_key(reconciliation)
         payload: dict[str, object] = {
-            "source_type": "url",
+            "source_type": INGEST_SOURCE_TYPE_URL,
             "url_source": self.url_source,
             "namespace": self.namespace,
             "corpus_id": self.corpus_id,

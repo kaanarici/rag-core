@@ -17,6 +17,15 @@ from rag_core.events.trace_payload_fields import (
     stage_field,
     str_tuple_field,
 )
+from rag_core.events.event_types import (
+    RERANK_APPLIED_EVENT,
+    SEARCH_COMPLETED_EVENT,
+    SEARCH_PLANNED_EVENT,
+    SEARCH_STAGE_COMPLETED_EVENT,
+    SEARCH_STARTED_EVENT,
+    SIDECAR_APPLIED_EVENT,
+    STAGE_ERROR_EVENT,
+)
 from rag_core.events.types import (
     Event,
     RerankApplied,
@@ -35,7 +44,7 @@ def _lexical_search_flag(payload: Mapping[str, object]) -> bool:
 
 def search_event_from_payload(payload: Mapping[str, object]) -> Event | None:
     event_type = payload.get("event_type")
-    if event_type == "search.started":
+    if event_type == SEARCH_STARTED_EVENT:
         return SearchStarted(
             search_id=search_id_field(payload, "search_id"),
             corpus_ids=str_tuple_field(payload, "corpus_ids"),
@@ -43,7 +52,7 @@ def search_event_from_payload(payload: Mapping[str, object]) -> Event | None:
             limit=int_field(payload, "limit"),
             corpus_count=int_field(payload, "corpus_count"),
         )
-    if event_type == "search.planned":
+    if event_type == SEARCH_PLANNED_EVENT:
         return SearchPlanned(
             search_id=search_id_field(payload, "search_id"),
             corpus_ids=str_tuple_field(payload, "corpus_ids"),
@@ -52,6 +61,7 @@ def search_event_from_payload(payload: Mapping[str, object]) -> Event | None:
             corpus_count=int_field(payload, "corpus_count"),
             channels=safe_label_tuple_field(payload, "channels"),
             prefetch_limits=int_tuple_field(payload, "prefetch_limits"),
+            search_profile=safe_optional_label_field(payload, "search_profile"),
             fusion=safe_optional_label_field(payload, "fusion"),
             plan_rerank=safe_optional_label_field(payload, "plan_rerank"),
             boost=safe_optional_label_field(payload, "boost"),
@@ -73,7 +83,7 @@ def search_event_from_payload(payload: Mapping[str, object]) -> Event | None:
             rerank_stage=safe_stage_label_field(payload, "rerank_stage"),
             postprocesses=safe_stage_label_tuple_field(payload, "postprocesses"),
         )
-    if event_type == "search.stage.completed":
+    if event_type == SEARCH_STAGE_COMPLETED_EVENT:
         return SearchStageCompleted(
             search_id=search_id_field(payload, "search_id"),
             stage=stage_field(payload, "stage"),
@@ -90,12 +100,10 @@ def search_event_from_payload(payload: Mapping[str, object]) -> Event | None:
             source_preview_count=int_field(payload, "source_preview_count"),
             duration_ms=float_field(payload, "duration_ms"),
         )
-    if event_type == "search.completed":
+    if event_type == SEARCH_COMPLETED_EVENT:
         return SearchCompleted(
             search_id=search_id_field(payload, "search_id"),
             result_count=int_field(payload, "result_count"),
-            used_rerank=bool_field(payload, "used_rerank"),
-            used_sidecar=bool_field(payload, "used_sidecar"),
             requested_rerank=bool_field(payload, "requested_rerank"),
             requested_sidecar=bool_field(payload, "requested_sidecar"),
             attempted_rerank=bool_field(payload, "attempted_rerank"),
@@ -105,7 +113,7 @@ def search_event_from_payload(payload: Mapping[str, object]) -> Event | None:
             succeeded=bool_field(payload, "succeeded", default=True),
             duration_ms=float_field(payload, "duration_ms"),
         )
-    if event_type == "rerank.applied":
+    if event_type == RERANK_APPLIED_EVENT:
         return RerankApplied(
             search_id=search_id_field(payload, "search_id"),
             provider=safe_optional_label_field(payload, "provider"),
@@ -131,7 +139,7 @@ def search_event_from_payload(payload: Mapping[str, object]) -> Event | None:
             search_score_min=optional_float_field(payload, "search_score_min"),
             search_score_max=optional_float_field(payload, "search_score_max"),
         )
-    if event_type == "sidecar.applied":
+    if event_type == SIDECAR_APPLIED_EVENT:
         return SidecarApplied(
             search_id=search_id_field(payload, "search_id"),
             provider=safe_optional_label_field(payload, "provider"),
@@ -144,7 +152,7 @@ def search_event_from_payload(payload: Mapping[str, object]) -> Event | None:
             succeeded=bool_field(payload, "succeeded", default=True),
             fallback_reason=safe_optional_label_field(payload, "fallback_reason"),
         )
-    if event_type == "stage.error":
+    if event_type == STAGE_ERROR_EVENT:
         return StageError(
             search_id=search_id_field(payload, "search_id"),
             stage=safe_label_field(payload, "stage"),

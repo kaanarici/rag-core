@@ -6,10 +6,39 @@
 - default local ingest support: `rag-core ingest`, `rag-core manifest`, and `local-search` accept file extensions that work without extra per-file OCR wiring
 
 The support matrix below mirrors the converter registry used by the library and CLI.
+Converters emit parser metadata (`metadata["parser"]`) because the public trace and
+payload contract names the extraction implementation, not the registry entry.
 
-Parser quality is visible in both parsed-document metadata and trace events. `parse_bytes`, `prepare_bytes`, and `ingest_bytes` attach structured `metadata["quality"]` with verdict, details, character count, meaningful-character ratio, mojibake ratio, text-to-page ratio, and page count when the converter reports a quality score. `parse.completed` events expose the same quality fields, plus OCR page counts, OCR page indices, and extraction ratio when the parser provides them.
+Extraction quality is visible in parsed-document metadata, trace events, indexed payloads, and context packs. `parse_bytes`, `prepare_bytes`, and `ingest_bytes` attach structured `metadata["quality"]` with verdict, details, character count, meaningful-character ratio, mojibake ratio, text-to-page ratio, and page count when the converter reports a quality score. `parse.completed` events expose the same quality fields, plus OCR page counts, OCR page indices, and extraction ratio when parser metadata is present. Indexed chunks flatten those values into `quality_*` metadata fields so search JSON and context-pack `retrieval_metadata["quality"]` can explain bad extraction without exposing converter internals.
 
-Markdown-style headings add `section_path` and `section_title` metadata to prepared chunks. `Slide N` and `Sheet: ... (Rows A-B)` headings also add `slide_number`, `sheet_name`, and `row_range` locators. Converter-emitted figure metadata can add `figure_id` and `figure_caption` to the matching prepared chunk. These locators flow into indexing payloads and context-pack citations when present.
+Markdown-style headings add `section_path` and `section_title` metadata to prepared chunks. `Slide N` and `Sheet: ... (Rows A-B)` headings also add `slide_number`, `sheet_name`, and `row_range` locators. Code chunking adds `line_start` and `line_end` locators. Converter-emitted figure metadata can add `figure_id` and `figure_caption` to the matching prepared chunk. These locators flow into indexing payloads, context-pack snippets, and source previews when present.
+
+## Proof Status
+
+Generated parser fixtures cover routing, corrupt-file rejection, OCR-required
+images, image-only Office files, figures/charts, row windows, code line locators,
+PDF page quality, and OCR metadata normalization.
+
+Externally authored Apache Tika fixtures cover ordinary PDF, DOCX, PPTX, and
+XLSX parsing, plus PDF section labels, slide locators, and sheet locators through
+index payloads and context packs.
+
+Not yet launch-proofed by external fixtures: scanned PDFs, table-heavy PDFs,
+image-heavy Office files, and larger real code corpora. These remain beta claims
+bounded by extraction quality metadata and future fixture coverage.
+
+## Launch Scope
+
+Default local ingest launch scope is the non-image formats marked `yes` in the
+matrix: text/markdown, code, HTML, CSV/TSV, JSON/JSONL/NDJSON, XML, PDF, DOCX,
+PPTX, and XLSX. PDF and Office formats remain `first_party_beta`; passing tests
+prove routing, metadata, quality signals, and representative fixture behavior,
+not guaranteed extraction quality on every document.
+
+Images are converter-recognized but outside default local ingest because they
+require an injected OCR provider. Scanned PDFs, table-heavy PDFs, image-heavy
+Office files, and larger real code corpora are launch-followup proof targets,
+not hidden launch guarantees.
 
 ## Support Matrix
 
@@ -29,9 +58,20 @@ Markdown-style headings add `section_path` and `section_title` metadata to prepa
 
 ## Important Boundaries
 
-Images are recognized by the converter registry, but default local ingest excludes them because image extraction requires an OCR provider. Use the library API with an injected OCR provider when you want image ingestion.
+Images are recognized by the converter registry, but default local ingest excludes them because image extraction requires an OCR provider. Use the library surface with an injected OCR provider when you want image ingestion.
 
-Remote fetch defaults allow the registered non-image converter MIME types above. Image MIME types remain excluded from the default remote fetch allowlist because image parsing requires an injected OCR provider; use explicit fetch limits and an OCR-capable ingest path when fetching images intentionally.
+OCR providers are document-understanding adapters, not a promise about model quality.
+They implement `OcrProvider`, receive file bytes plus optional page indices, and return
+markdown with processed-page metadata. This fits VLM/OCR systems such as Mistral OCR,
+Gemini command OCR, and simpler OCR providers as long as they can produce text or
+markdown for the same contract.
+
+Remote fetch defaults allow registered converter MIME types that do not require
+OCR. SVG (`image/svg+xml`) is allowed because it routes through the text
+converter. OCR-required image MIME types remain excluded from the default remote
+fetch allowlist because image parsing requires an injected OCR provider; use
+explicit fetch limits and an OCR-capable ingest path when fetching images
+intentionally.
 
 Binary Office extensions `.doc`, `.ppt`, and `.xls`, plus their binary Office MIME types, are unsupported.
 

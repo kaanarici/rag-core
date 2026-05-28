@@ -4,6 +4,7 @@ from rag_core.core_models import (
     CorpusManifest,
     CorpusManifestEntry,
     IngestedDocument,
+    PreparedDocument,
 )
 from rag_core.core_ocr_metadata import read_ocr_metadata
 from rag_core.manifest_entries import sanitize_manifest_metadata
@@ -24,6 +25,33 @@ def build_manifest_entry(document: IngestedDocument) -> CorpusManifestEntry:
         needs_ocr=bool(document.metadata.get("needs_ocr") or document.ocr.needed)
         or ocr.provider is not None,
         metadata=sanitize_manifest_metadata(document.metadata),
+    )
+
+
+def build_staged_manifest_entry(
+    *,
+    prepared: PreparedDocument,
+    document_id: str,
+    namespace: str,
+    corpus_id: str,
+    document_key: str | None,
+    content_sha256: str,
+    filename: str,
+    mime_type: str,
+    metadata: dict[str, str] | None,
+) -> CorpusManifestEntry:
+    return CorpusManifestEntry(
+        document_id=document_id,
+        namespace=namespace,
+        corpus_id=corpus_id,
+        document_key=document_key,
+        content_sha256=content_sha256,
+        filename=filename,
+        mime_type=mime_type,
+        chunk_count=len(prepared.chunks),
+        parser=_optional_str(prepared.metadata.get("parser")),
+        needs_ocr=bool(prepared.metadata.get("needs_ocr", False)),
+        metadata=dict(metadata or {}),
     )
 
 

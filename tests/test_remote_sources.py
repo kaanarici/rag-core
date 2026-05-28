@@ -7,6 +7,7 @@ import pytest
 
 import rag_core.remote_sources as remote_sources_module
 from rag_core.fetch_security import FetchLimits, FetchSecurityPolicy, validate_fetch_url
+from rag_core.fetch_security_url import safe_remote_document_key
 from rag_core.fetching import FetchError, FetchResponse
 from rag_core.remote_sources import RemoteUrlSourceReader, remote_source_document
 
@@ -372,6 +373,17 @@ def test_remote_source_payload_hides_query_identity_hash_by_default() -> None:
     assert private_payload["document_key"] == document.document_key
 
 
+def test_fetch_security_remote_document_key_uses_source_key_shape() -> None:
+    validated = validate_fetch_url("https://example.com/docs/guide?token=secret")
+
+    assert safe_remote_document_key(validated) == _url_key(
+        "https",
+        "example.com",
+        "/docs/guide",
+        query="token=secret",
+    )
+
+
 def test_remote_source_document_uses_safe_filename_fallbacks() -> None:
     assert (
         remote_source_document(
@@ -440,9 +452,10 @@ def _fetch_response(
 
 
 def _url_key(scheme: str, host: str, path: str, *, query: str | None = None) -> str:
-    redacted_query = "?redacted" if query is not None else ""
-    key = f"url:{scheme}://{host}{path}{redacted_query}"
-    if query is None:
-        return key
-    query_hash = hashlib.sha256(query.encode("utf-8")).hexdigest()
-    return f"{key}|query_sha256:{query_hash}"
+    query_string = f"?{query}" if query is not None else ""
+    return safe_remote_document_key(
+        validate_fetch_url(
+            f"{scheme}://{host}{path}{query_string}",
+            policy=ALLOW_HTTP_PRIVATE_POLICY,
+        )
+    )

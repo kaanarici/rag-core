@@ -1,9 +1,9 @@
 """Linear retrieval pipeline.
 
-The pipeline is the canonical seam for advanced and experimental retrieval
+The pipeline is the extension point for advanced and experimental retrieval
 techniques (HyDE, multi-query, MMR, reranker cascades, parent-child expansion,
-etc.). See `dev/DESIGN.md`. Stages are typed
-protocols; the runner is a frozen dataclass with five fields.
+etc.). Stages are typed protocols; the runner is a frozen dataclass with five
+fields.
 """
 
 from __future__ import annotations

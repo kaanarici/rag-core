@@ -45,6 +45,7 @@ class SearchTraceSummary:
     final_limit: int = 0
     channels: tuple[str, ...] = ()
     prefetch_limits: tuple[int, ...] = ()
+    search_profile: str = ""
     fusion: str = ""
     plan_rerank: str = ""
     boost: str = ""
@@ -55,8 +56,6 @@ class SearchTraceSummary:
     rerank_timeout_ms: float = 0.0
     rerank_max_output: int = 0
     rerank_fallback_on_error: bool = True
-    rerank_attempted: bool = False
-    rerank_applied: bool = False
     rerank_provider: str = ""
     rerank_model: str = ""
     rerank_input_count: int = 0
@@ -80,8 +79,6 @@ class SearchTraceSummary:
     rerank_duration_ms: float = 0.0
     rerank_succeeded: bool = False
     use_lexical_search: bool = False
-    sidecar_attempted: bool = False
-    sidecar_applied: bool = False
     sidecar_provider: str = ""
     sidecar_input_count: int = 0
     sidecar_provider_result_count: int = 0
@@ -98,8 +95,6 @@ class SearchTraceSummary:
     postprocesses: tuple[str, ...] = ()
     stages: tuple[SearchStageTraceSummary, ...] = ()
     result_count: int = 0
-    used_rerank: bool = False
-    used_sidecar: bool = False
     requested_rerank: bool = False
     requested_sidecar: bool = False
     attempted_rerank: bool = False

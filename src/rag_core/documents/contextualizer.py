@@ -14,6 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
+from rag_core.documents.contextualizer_provider_names import NOOP_CONTEXTUALIZER_ID
+
 
 @dataclass(frozen=True)
 class ChunkContextRequest:
@@ -56,7 +58,7 @@ class NoOpContextualizer:
     even when wrapped in a cache.
     """
 
-    contextualizer_id: str = "noop"
+    contextualizer_id: str = NOOP_CONTEXTUALIZER_ID
 
     async def contextualize(self, request: ChunkContextRequest) -> str:
         return ""
@@ -65,5 +67,6 @@ class NoOpContextualizer:
 __all__ = [
     "ChunkContextRequest",
     "ChunkContextualizer",
+    "NOOP_CONTEXTUALIZER_ID",
     "NoOpContextualizer",
 ]

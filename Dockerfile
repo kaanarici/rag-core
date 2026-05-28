@@ -9,6 +9,7 @@ RUN apt-get update \
 
 COPY pyproject.toml README.md LICENSE MANIFEST.in ./
 COPY src ./src
+COPY examples/demo_corpus ./examples/demo_corpus
 
 RUN pip install --no-cache-dir '.[runtime]'
 
@@ -22,6 +23,8 @@ CMD [
   "0.0.0.0",
   "--port",
   "8787",
+  "--ingest-root",
+  "/app/examples/demo_corpus",
   "--qdrant-url",
   "http://qdrant:6333",
   "--embedding-provider",

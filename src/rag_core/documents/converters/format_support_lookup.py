@@ -10,6 +10,7 @@ from .format_support_models import (
     normalize_extension,
     normalize_mime_type,
 )
+from .converter_keys import JSON_CONVERTER_KEY
 from .registry_maps import (
     EXTENSION_MAP,
     JSONL_MIME_TYPES,
@@ -62,7 +63,7 @@ def support_by_mime_type(
                 entry,
                 mime_type=mime_type,
             )
-        if entry.converter_key == "json":
+        if entry.converter_key == JSON_CONVERTER_KEY:
             for mime_type in _JSONL_ALIAS_MIME_TYPES:
                 support[mime_type] = _with_preferred_extension(
                     entry,

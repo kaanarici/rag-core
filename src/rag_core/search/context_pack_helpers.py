@@ -5,7 +5,7 @@ import math
 import re
 from math import ceil
 
-from rag_core.search.types import SearchResult
+from rag_core.search.vector_models import SEARCH_RESULT_TYPE_TEXT, SearchResult
 
 SourceDedupeKey = tuple[str, ...]
 
@@ -30,7 +30,7 @@ def base_source_id(result: SearchResult) -> str:
         qualifiers.append(f"chunk-{result.chunk_index}")
     if result.figure_id:
         qualifiers.append(f"figure-{stable_source_fragment(result.figure_id)}")
-    elif result.result_type and result.result_type != "text":
+    elif result.result_type and result.result_type != SEARCH_RESULT_TYPE_TEXT:
         qualifiers.append(f"type-{stable_source_fragment(result.result_type)}")
     elif result.chunk_index is None:
         if result.section_id:
@@ -62,7 +62,7 @@ def source_dedupe_key(result: SearchResult) -> SourceDedupeKey:
 def _result_dedupe_qualifier(result: SearchResult) -> SourceDedupeKey:
     if result.figure_id:
         return ("figure", result.figure_id)
-    if result.result_type and result.result_type != "text":
+    if result.result_type and result.result_type != SEARCH_RESULT_TYPE_TEXT:
         return ("result_type", result.result_type)
     return ()
 
@@ -137,9 +137,13 @@ def estimate_tokens(text: str, *, chars_per_token: int) -> int:
 
 
 def retrieval_metadata_from_result(result: SearchResult) -> dict[str, object] | None:
+    metadata: dict[str, object] = {}
+    quality = _quality_metadata_from_result(result)
+    if quality is not None:
+        metadata["quality"] = quality
     rerank = result.metadata.get("rerank")
     if not isinstance(rerank, dict):
-        return None
+        return metadata or None
     payload: dict[str, object] = {}
     for key in ("provider", "model"):
         value = rerank.get(key)
@@ -159,9 +163,32 @@ def retrieval_metadata_from_result(result: SearchResult) -> dict[str, object] | 
             continue
         if isinstance(value, int):
             payload[key] = value
-    if not payload:
-        return None
-    return {"rerank": payload}
+    if payload:
+        metadata["rerank"] = payload
+    return metadata or None
+
+
+def _quality_metadata_from_result(result: SearchResult) -> dict[str, object] | None:
+    payload: dict[str, object] = {}
+    for key in ("verdict", "details"):
+        value = result.metadata.get(f"quality_{key}")
+        if isinstance(value, str) and value.strip():
+            payload[key] = value
+    for key in ("char_count", "page_count"):
+        value = result.metadata.get(f"quality_{key}")
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int):
+            payload[key] = value
+    for key in ("meaningful_ratio", "mojibake_ratio", "text_to_page_ratio"):
+        value = result.metadata.get(f"quality_{key}")
+        if (
+            not isinstance(value, bool)
+            and isinstance(value, int | float)
+            and math.isfinite(float(value))
+        ):
+            payload[key] = float(value)
+    return payload or None
 
 
 def stable_source_fragment(value: str) -> str:

@@ -4,6 +4,10 @@ import json
 from dataclasses import asdict
 
 from rag_core.core_models import IngestedDocument
+from rag_core.remote_discovery_models import (
+    REMOTE_DISCOVERY_KIND_LLMS_TXT,
+    REMOTE_DISCOVERY_KIND_SITEMAP_INDEX,
+)
 from rag_core.remote_ingest_records import safe_remote_output_source_url
 from rag_core.remote_ingest_models import (
     RemoteUrlIngestFailure,
@@ -72,9 +76,9 @@ def emit_remote_discovery(payload: dict[str, object], *, as_json: bool) -> None:
 
 
 def _display_discovery_kind(kind: object) -> str:
-    if kind == "llms_txt":
+    if kind == REMOTE_DISCOVERY_KIND_LLMS_TXT:
         return "llms-txt"
-    if kind == "sitemap_index":
+    if kind == REMOTE_DISCOVERY_KIND_SITEMAP_INDEX:
         return "sitemap-index"
     return str(kind)
 

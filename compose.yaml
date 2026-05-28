@@ -33,6 +33,8 @@ services:
       - 0.0.0.0
       - --port
       - "8787"
+      - --ingest-root
+      - /app/examples/demo_corpus
       - --qdrant-url
       - http://qdrant:6333
       - --qdrant-collection

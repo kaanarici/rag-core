@@ -1,15 +1,16 @@
+"""Context-pack dataclasses and text projection for retrieval results.
+
+Citation naming:
+- ``to_payload`` / ``as_text`` — stable source ids for app and trace consumers.
+- ``to_prompt_payload`` / ``as_prompt_text`` — compact ``S{rank}`` citations for prompt-safe text.
+"""
+
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 
 from rag_core.search.context_pack_helpers import drop_none as _drop_none
-from rag_core.search.context_pack_rendering import (
-    format_header as _format_header,
-    format_location as _format_location,
-    model_safe_source_title as _model_safe_source_title,
-    render_snippets as _render_snippets,
-    source_title as _source_title,
-)
 
 
 @dataclass(frozen=True)
@@ -30,11 +31,13 @@ class SourceReference:
     source_type: str | None = None
     result_type: str | None = None
 
-    def to_model_payload(self) -> dict[str, object]:
+    def to_payload(self) -> dict[str, object]:
+        return _drop_none(asdict(self))
+
+    def to_prompt_payload(self, *, citation_id: str | None = None) -> dict[str, object]:
         return _drop_none(
             {
-                "source_id": self.source_id,
-                "result_id": self.result_id,
+                "citation_id": citation_id,
                 "title": self.title,
                 "section_title": self.section_title,
                 "section_path": self.section_path,
@@ -57,6 +60,8 @@ class SourceLocator:
     slide_number: int | None = None
     sheet_name: str | None = None
     row_range: str | None = None
+    line_start: int | None = None
+    line_end: int | None = None
     bbox: tuple[float, float, float, float] | None = None
     figure_id: str | None = None
     figure_caption: str | None = None
@@ -66,6 +71,11 @@ class SourceLocator:
         payload = asdict(self)
         if self.bbox is not None:
             payload["bbox"] = list(self.bbox)
+        return payload
+
+    def to_prompt_payload(self) -> dict[str, object]:
+        payload = self.to_payload()
+        payload.pop("source_hash", None)
         return payload
 
 
@@ -91,7 +101,7 @@ class SourcePreview:
     def to_payload(self) -> dict[str, object]:
         return asdict(self)
 
-    def to_model_payload(self) -> dict[str, object]:
+    def to_prompt_payload(self) -> dict[str, object]:
         return {
             "citation_id": self.citation_id,
             "title": self.title,
@@ -104,7 +114,7 @@ class SourcePreview:
 
 @dataclass(frozen=True)
 class ContextSnippet:
-    """One model-ready context block with its source reference."""
+    """One retrieved context snippet with app and prompt projections."""
 
     citation_id: str
     rank: int
@@ -119,22 +129,26 @@ class ContextSnippet:
 
     @property
     def header(self) -> str:
-        return _format_header(self.citation_id, self.source, self.locator)
+        return format_snippet_header(self.citation_id, self.source, self.locator)
 
     @property
-    def model_header(self) -> str:
-        return _format_header(
-            self.citation_id,
+    def prompt_header(self) -> str:
+        return format_snippet_header(
+            self.prompt_citation_id,
             self.source,
             self.locator,
-            model_safe=True,
+            prompt_safe=True,
         )
+
+    @property
+    def prompt_citation_id(self) -> str:
+        return f"S{self.rank}"
 
     def as_text(self) -> str:
         return f"{self.header}\n{self.text}"
 
-    def as_model_text(self) -> str:
-        return f"{self.model_header}\n{self.text}"
+    def as_prompt_text(self) -> str:
+        return f"{self.prompt_header}\n{self.text}"
 
     def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -142,7 +156,7 @@ class ContextSnippet:
             "rank": self.rank,
             "text": self.text,
             "score": self.score,
-            "source": _drop_none(asdict(self.source)),
+            "source": self.source.to_payload(),
             "locator": self.locator.to_payload(),
             "token_estimate": self.token_estimate,
             "char_count": self.char_count,
@@ -152,16 +166,17 @@ class ContextSnippet:
             payload["retrieval_metadata"] = self.retrieval_metadata
         return payload
 
-    def to_model_payload(self) -> dict[str, object]:
+    def to_prompt_payload(self) -> dict[str, object]:
+        rendered_text = self.as_prompt_text()
         payload: dict[str, object] = {
-            "citation_id": self.citation_id,
+            "citation_id": self.prompt_citation_id,
             "rank": self.rank,
             "text": self.text,
             "score": self.score,
-            "source": self.source.to_model_payload(),
-            "locator": self.locator.to_payload(),
+            "source": self.source.to_prompt_payload(citation_id=self.prompt_citation_id),
+            "locator": self.locator.to_prompt_payload(),
             "token_estimate": self.token_estimate,
-            "char_count": self.char_count,
+            "char_count": len(rendered_text),
             "truncated": self.truncated,
         }
         if self.retrieval_metadata is not None:
@@ -170,8 +185,8 @@ class ContextSnippet:
 
 
 @dataclass(frozen=True)
-class ModelContextPack:
-    """Deterministic retrieval context ready for a caller-owned model request."""
+class ContextPack:
+    """Deterministic retrieval context with separate app-facing and prompt views."""
 
     query: str
     snippets: tuple[ContextSnippet, ...]
@@ -192,32 +207,35 @@ class ModelContextPack:
         return tuple(source_preview_from_snippet(snippet) for snippet in self.snippets)
 
     @property
-    def model_source_previews(self) -> tuple[SourcePreview, ...]:
-        return tuple(model_source_preview_from_snippet(snippet) for snippet in self.snippets)
+    def prompt_source_previews(self) -> tuple[SourcePreview, ...]:
+        return tuple(prompt_source_preview_from_snippet(snippet) for snippet in self.snippets)
 
     @property
     def citation_summary(self) -> str:
         return "\n".join(preview.as_text() for preview in self.source_previews)
 
     @property
-    def model_citation_summary(self) -> str:
-        return "\n".join(preview.as_text() for preview in self.model_source_previews)
+    def prompt_citation_summary(self) -> str:
+        return "\n".join(preview.as_text() for preview in self.prompt_source_previews)
 
     def as_text(self) -> str:
-        return _render_snippets(self.snippets, max_chars=self.max_chars)
+        """Return app-facing text with stable source ids for traces and UI/debug views."""
+        return render_context_snippets(self.snippets, max_chars=self.max_chars)
 
-    def as_model_text(self) -> str:
-        rendered = "\n\n".join(snippet.as_model_text() for snippet in self.snippets)
+    def as_prompt_text(self) -> str:
+        """Return prompt-safe text with rank-local citation ids for model input."""
+        rendered = "\n\n".join(snippet.as_prompt_text() for snippet in self.snippets)
         if self.max_chars is not None:
             return rendered[: self.max_chars]
         return rendered
 
     def to_payload(self) -> dict[str, object]:
+        """Return the app-facing structured payload with stable source identity."""
         rendered_text = self.as_text()
         return {
             "query": self.query,
             "snippets": [snippet.to_payload() for snippet in self.snippets],
-            "citations": [_drop_none(asdict(source)) for source in self.citations],
+            "citations": [source.to_payload() for source in self.citations],
             "source_previews": [preview.to_payload() for preview in self.source_previews],
             "citation_summary": self.citation_summary,
             "dropped_count": self.dropped_count,
@@ -229,16 +247,20 @@ class ModelContextPack:
             "truncated": self.truncated,
         }
 
-    def to_model_payload(self) -> dict[str, object]:
-        rendered_text = self.as_model_text()
+    def to_prompt_payload(self) -> dict[str, object]:
+        """Return the prompt-safe structured payload for model tool responses."""
+        rendered_text = self.as_prompt_text()
         return {
             "query": self.query,
-            "snippets": [snippet.to_model_payload() for snippet in self.snippets],
-            "citations": [source.to_model_payload() for source in self.citations],
-            "source_previews": [
-                preview.to_model_payload() for preview in self.model_source_previews
+            "snippets": [snippet.to_prompt_payload() for snippet in self.snippets],
+            "citations": [
+                snippet.source.to_prompt_payload(citation_id=snippet.prompt_citation_id)
+                for snippet in self.snippets
             ],
-            "citation_summary": self.model_citation_summary,
+            "source_previews": [
+                preview.to_prompt_payload() for preview in self.prompt_source_previews
+            ],
+            "citation_summary": self.prompt_citation_summary,
             "dropped_count": self.dropped_count,
             "max_snippets": self.max_snippets,
             "max_chars": self.max_chars,
@@ -265,13 +287,86 @@ def source_preview_from_snippet(snippet: ContextSnippet) -> SourcePreview:
     )
 
 
-def model_source_preview_from_snippet(snippet: ContextSnippet) -> SourcePreview:
+def prompt_source_preview_from_snippet(snippet: ContextSnippet) -> SourcePreview:
     source = snippet.source
     return SourcePreview(
-        citation_id=snippet.citation_id,
-        title=_model_safe_source_title(source),
+        citation_id=snippet.prompt_citation_id,
+        title=_prompt_safe_source_title(source),
         locator_label=_format_location(snippet.locator) or None,
         source_type=source.source_type,
         result_type=source.result_type,
         truncated=snippet.truncated,
     )
+
+
+def format_snippet_header(
+    citation_id: str,
+    source: SourceReference,
+    locator: SourceLocator,
+    *,
+    prompt_safe: bool = False,
+) -> str:
+    title = _prompt_safe_source_title(source) if prompt_safe else _source_title(source)
+    location = _format_location(locator)
+    suffix = f" {location}" if location else ""
+    return f"[{citation_id}] {title}{suffix}"
+
+
+def _source_title(source: SourceReference) -> str:
+    return source.title or source.document_key or source.document_id or source.result_id
+
+
+def _prompt_safe_source_title(source: SourceReference) -> str:
+    return source.title or source.source_type or source.result_type or "source"
+
+
+def render_context_snippets(
+    snippets: Iterable[ContextSnippet], *, max_chars: int | None
+) -> str:
+    rendered = "\n\n".join(snippet.as_text() for snippet in snippets)
+    if max_chars is not None:
+        return rendered[:max_chars]
+    return rendered
+
+
+def _format_location(locator: SourceLocator) -> str:
+    parts: list[str] = []
+    if locator.section_path:
+        parts.append(locator.section_path)
+    elif locator.sheet_name:
+        parts.append(f"sheet {locator.sheet_name}")
+    if locator.slide_number is not None and not _contains_location(
+        locator.section_path,
+        "Slide %d" % locator.slide_number,
+    ):
+        parts.append(f"slide {locator.slide_number}")
+    if locator.page_number is not None and not _contains_location(
+        locator.section_path,
+        "Page %d" % locator.page_number,
+    ):
+        parts.append(f"page {locator.page_number}")
+    if locator.row_range and not _contains_location(
+        locator.section_path,
+        "Rows %s" % locator.row_range,
+    ):
+        parts.append(f"rows {locator.row_range}")
+    line_label = _line_label(locator)
+    if line_label and not _contains_location(locator.section_path, line_label):
+        parts.append(line_label)
+    if locator.chunk_index is not None:
+        parts.append(f"chunk {locator.chunk_index}")
+    return ", ".join(parts)
+
+
+def _line_label(locator: SourceLocator) -> str | None:
+    if locator.line_start is None:
+        return None
+    if locator.line_end is None or locator.line_end == locator.line_start:
+        return f"line {locator.line_start}"
+    return f"lines {locator.line_start}-{locator.line_end}"
+
+
+def _contains_location(section_path: str | None, value: str) -> bool:
+    if not section_path:
+        return False
+    return value.lower() in section_path.lower()

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any
+from typing import Any, Final, Literal, TypeAlias
 
 from rag_core.config.env_access import get_env as config_get_env
 from rag_core.search.providers.registry import SPARSE_EMBEDDERS
@@ -13,11 +13,29 @@ from rag_core.search.sparse_channels import (
     SECONDARY_SPARSE_CHANNEL,
     single_sparse_channel,
 )
-from rag_core.search.types import SparseEmbedder, SparseVector
+from rag_core.search.provider_protocols import SparseEmbedder
+from rag_core.search.vector_models import SparseVector
 
 logger = logging.getLogger(__name__)
 
-_FASTEMBED_PROVIDER = "fastembed"
+DEFAULT_SPARSE_EMBEDDER_PROVIDER = "fastembed"
+SPARSE_EMBEDDER_PROVIDER_ORDER = (DEFAULT_SPARSE_EMBEDDER_PROVIDER,)
+SparseLoadStatus: TypeAlias = Literal[
+    "not_loaded",
+    "disabled",
+    "loaded",
+    "load_failed",
+    "not_checked_by_doctor",
+    "unknown_until_sparse_embedding_runs",
+]
+SPARSE_LOAD_NOT_LOADED: Final[SparseLoadStatus] = "not_loaded"
+SPARSE_LOAD_DISABLED: Final[SparseLoadStatus] = "disabled"
+SPARSE_LOAD_LOADED: Final[SparseLoadStatus] = "loaded"
+SPARSE_LOAD_FAILED: Final[SparseLoadStatus] = "load_failed"
+SPARSE_LOAD_NOT_CHECKED_BY_DOCTOR: Final[SparseLoadStatus] = "not_checked_by_doctor"
+SPLADE_LOAD_UNKNOWN_UNTIL_RUN: Final[SparseLoadStatus] = (
+    "unknown_until_sparse_embedding_runs"
+)
 
 
 def _model_env(name: str, default: str) -> str:
@@ -58,7 +76,7 @@ class _SparseCardinalityError(ValueError):
 class FastEmbedSparseEmbedder:
     """Sparse embedder using FastEmbed with bm25 + optional SPLADE channels."""
 
-    provider_name = _FASTEMBED_PROVIDER
+    provider_name = DEFAULT_SPARSE_EMBEDDER_PROVIDER
 
     def __init__(
         self,
@@ -75,7 +93,9 @@ class FastEmbedSparseEmbedder:
         self._splade_model_name = splade_model_name
         self._splade_enabled = enable_splade
         self._splade_model: Any | None = None
-        self._splade_load_status = "not_loaded" if enable_splade else "disabled"
+        self._splade_load_status = (
+            SPARSE_LOAD_NOT_LOADED if enable_splade else SPARSE_LOAD_DISABLED
+        )
         self._lock = threading.Lock()
 
     def _embed_with_model(self, model: Any, texts: list[str]) -> list[SparseVector]:
@@ -93,30 +113,28 @@ class FastEmbedSparseEmbedder:
 
     def _ensure_splade_model(self) -> Any | None:
         if not self._splade_enabled:
-            self._splade_load_status = "disabled"
+            self._splade_load_status = SPARSE_LOAD_DISABLED
             return None
         if self._splade_model is not None:
-            self._splade_load_status = "loaded"
+            self._splade_load_status = SPARSE_LOAD_LOADED
             return self._splade_model
         try:
             sparse_text_embedding = _import_sparse_text_embedding()
             self._splade_model = sparse_text_embedding(self._splade_model_name)
-            self._splade_load_status = "loaded"
+            self._splade_load_status = SPARSE_LOAD_LOADED
             logger.info(
-                "Loaded sparse model: provider=%s backend=%s channel=%s",
-                _FASTEMBED_PROVIDER,
-                _FASTEMBED_PROVIDER,
+                "Loaded sparse model: provider=%s channel=%s",
+                DEFAULT_SPARSE_EMBEDDER_PROVIDER,
                 SECONDARY_SPARSE_CHANNEL,
             )
             return self._splade_model
         except Exception as exc:
             self._splade_enabled = False
-            self._splade_load_status = "load_failed"
+            self._splade_load_status = SPARSE_LOAD_FAILED
             logger.warning(
                 "Failed to load sparse model; using fallback: "
-                "provider=%s backend=%s channel=%s fallback_channel=%s error_type=%s",
-                _FASTEMBED_PROVIDER,
-                _FASTEMBED_PROVIDER,
+                "provider=%s channel=%s fallback_channel=%s error_type=%s",
+                DEFAULT_SPARSE_EMBEDDER_PROVIDER,
                 SECONDARY_SPARSE_CHANNEL,
                 PRIMARY_SPARSE_CHANNEL,
                 type(exc).__name__,
@@ -141,10 +159,9 @@ class FastEmbedSparseEmbedder:
         except _SparseCardinalityError as exc:
             logger.warning(
                 "Sparse vector count mismatch; using fallback: "
-                "provider=%s backend=%s channel=%s fallback_channel=%s "
+                "provider=%s channel=%s fallback_channel=%s "
                 "expected=%d actual=%d error_type=%s",
-                _FASTEMBED_PROVIDER,
-                _FASTEMBED_PROVIDER,
+                DEFAULT_SPARSE_EMBEDDER_PROVIDER,
                 SECONDARY_SPARSE_CHANNEL,
                 PRIMARY_SPARSE_CHANNEL,
                 exc.expected,
@@ -159,7 +176,7 @@ class FastEmbedSparseEmbedder:
 
     def diagnostics(self) -> dict[str, object]:
         return {
-            "provider": _FASTEMBED_PROVIDER,
+            "provider": DEFAULT_SPARSE_EMBEDDER_PROVIDER,
             "bm25_enabled": True,
             "splade_enabled": self._splade_enabled,
             "splade_load_status": self._splade_load_status,
@@ -183,17 +200,24 @@ def _import_sparse_text_embedding() -> Any:
         from fastembed import SparseTextEmbedding
     except ImportError as exc:
         raise ImportError(
-            "fastembed is required for sparse provider 'fastembed'"
+            f"fastembed is required for sparse provider "
+            f"{DEFAULT_SPARSE_EMBEDDER_PROVIDER!r}"
         ) from exc
     return SparseTextEmbedding
 
 
 def create_sparse_embedder(
     *,
-    provider: str = "fastembed",
+    provider: str = DEFAULT_SPARSE_EMBEDDER_PROVIDER,
     **kwargs: Any,
 ) -> SparseEmbedder:
-    return SPARSE_EMBEDDERS.create(provider or "fastembed", **kwargs)
+    return SPARSE_EMBEDDERS.create(
+        provider or DEFAULT_SPARSE_EMBEDDER_PROVIDER,
+        **kwargs,
+    )
 
 
-SPARSE_EMBEDDERS.register(_FASTEMBED_PROVIDER, _build_fastembed_sparse_embedder)
+SPARSE_EMBEDDERS.register(
+    DEFAULT_SPARSE_EMBEDDER_PROVIDER,
+    _build_fastembed_sparse_embedder,
+)

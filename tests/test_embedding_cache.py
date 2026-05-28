@@ -13,14 +13,27 @@ from rag_core.search.embedding_cache_diagnostics import (
     embed_query_with_cache_observation,
     embed_texts_with_cache_observation,
 )
-from rag_core.search.providers.cached_embedding import CachedEmbeddingProvider
+from rag_core.search.providers.cached_embedding import (
+    DEFAULT_EMBEDDING_NORMALIZATION,
+    CachedEmbeddingProvider,
+)
+from rag_core.search.providers.cached_embedding_observations import (
+    EMBEDDING_OPERATION_QUERY,
+    EMBEDDING_OPERATION_TEXTS,
+)
 from rag_core.search.providers.embedding_cache import (
-    EmbedCacheKey,
-    EmbeddingCache,
     InMemoryCache,
     NoCache,
     SqliteCache,
+)
+from rag_core.search.providers.embedding_cache_models import (
+    EmbedCacheKey,
+    EmbeddingCache,
     sha256_text,
+)
+from rag_core.search.providers.embedding_input_types import (
+    EMBEDDING_INPUT_DOCUMENT,
+    EMBEDDING_INPUT_QUERY,
 )
 from tests.support import FakeEmbeddingProvider
 
@@ -31,8 +44,8 @@ def _make_key(text: str = "alpha", *, model_id: str = "fake-embedding") -> Embed
         provider_config_fingerprint="",
         model=model_id,
         dimensions=4,
-        input_type="document",
-        normalization="text_sha256_utf8",
+        input_type=EMBEDDING_INPUT_DOCUMENT,
+        normalization=DEFAULT_EMBEDDING_NORMALIZATION,
         processing_fingerprint="pf:v1",
         content_sha256=sha256_text(text),
     )
@@ -143,8 +156,8 @@ def test_embed_cache_key_stringify_is_stable() -> None:
         provider_config_fingerprint="endpoint:a",
         model="text-embedding-3-small",
         dimensions=1536,
-        input_type="document",
-        normalization="text_sha256_utf8",
+        input_type=EMBEDDING_INPUT_DOCUMENT,
+        normalization=DEFAULT_EMBEDDING_NORMALIZATION,
         processing_fingerprint='{"base_version":"v1","source_type":"file"}',
         content_sha256="abc",
     )
@@ -152,9 +165,9 @@ def test_embed_cache_key_stringify_is_stable() -> None:
     assert json.loads(key.stringify()) == {
         "content_sha256": "abc",
         "dimensions": 1536,
-        "input_type": "document",
+        "input_type": EMBEDDING_INPUT_DOCUMENT,
         "model": "text-embedding-3-small",
-        "normalization": "text_sha256_utf8",
+        "normalization": DEFAULT_EMBEDDING_NORMALIZATION,
         "processing_fingerprint": '{"base_version":"v1","source_type":"file"}',
         "provider": "openai",
         "provider_config_fingerprint": "endpoint:a",
@@ -461,7 +474,7 @@ def test_cached_embedding_provider_treats_bad_text_cache_hit_as_miss() -> None:
     cached = CachedEmbeddingProvider(inner, cache)
     bad_key = cached._build_key(
         "fox",
-        input_type="document",
+        input_type=EMBEDDING_INPUT_DOCUMENT,
         processing_fingerprint="",
     )
     asyncio.run(cache.put(bad_key, [0.1]))
@@ -586,7 +599,7 @@ def test_cached_embedding_provider_treats_bad_query_cache_hit_as_miss() -> None:
     cached = CachedEmbeddingProvider(inner, cache, cache_queries=True)
     bad_key = cached._build_key(
         "fox",
-        input_type="query",
+        input_type=EMBEDDING_INPUT_QUERY,
         processing_fingerprint="",
     )
     asyncio.run(cache.put(bad_key, [0.1]))
@@ -616,7 +629,7 @@ def test_cached_embedding_provider_rejects_invalid_fresh_query_vector_before_cac
     cached = CachedEmbeddingProvider(inner, cache, cache_queries=True)
     key = cached._build_key(
         "fox",
-        input_type="query",
+        input_type=EMBEDDING_INPUT_QUERY,
         processing_fingerprint="",
     )
 
@@ -666,7 +679,7 @@ def test_cached_embedding_provider_reports_text_diagnostics() -> None:
     assert diagnostics.query_bypasses == 0
     observation = diagnostics.last_observation
     assert observation is not None
-    assert observation.operation == "embed_texts"
+    assert observation.operation == EMBEDDING_OPERATION_TEXTS
     assert observation.input_count == 3
     assert (observation.cache_hits, observation.cache_misses, observation.cache_writes) == (2, 1, 1)
     assert observation.cache_bypassed is False
@@ -704,7 +717,7 @@ def test_cached_embedding_provider_reports_query_diagnostics(
     )
     observation = diagnostics.last_observation
     assert observation is not None
-    assert observation.operation == "embed_query"
+    assert observation.operation == EMBEDDING_OPERATION_QUERY
     assert observation.cache_bypassed is expected_bypassed
 
 

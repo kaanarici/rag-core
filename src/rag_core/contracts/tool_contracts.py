@@ -8,7 +8,11 @@ from typing import Protocol, TypedDict
 
 from .tool_contract_requests import (
     SearchUserDocumentsRequest,
+    normalize_static_content_types,
+    normalize_static_retrieval_scope,
     parse_search_user_documents_request,
+    scope_document_ids,
+    validate_bound_namespace,
     validate_search_user_documents_bounds,
 )
 from .tool_contract_schemas import (
@@ -43,11 +47,15 @@ __all__ = (
     "SEARCH_USER_DOCUMENTS_OUTPUT_SCHEMA",
     "SEARCH_USER_DOCUMENTS_TOOL_NAME",
     "SearchUserDocumentsRequest",
-    "SupportsContextPackPayload",
+    "SupportsContextPackPromptPayload",
     "ToolContract",
+    "normalize_static_content_types",
+    "normalize_static_retrieval_scope",
     "parse_search_user_documents_request",
+    "scope_document_ids",
     "search_user_documents_tool_contract",
     "search_user_documents_tool_result",
+    "validate_bound_namespace",
     "validate_search_user_documents_bounds",
 )
 
@@ -58,16 +66,10 @@ class ToolContract(TypedDict):
     output_schema: JsonObject
 
 
-class SupportsContextPackPayload(Protocol):
-    def as_text(self) -> str: ...
+class SupportsContextPackPromptPayload(Protocol):
+    def as_prompt_text(self) -> str: ...
 
-    def to_payload(self) -> dict[str, object]: ...
-
-
-class SupportsModelContextPackPayload(SupportsContextPackPayload, Protocol):
-    def as_model_text(self) -> str: ...
-
-    def to_model_payload(self) -> dict[str, object]: ...
+    def to_prompt_payload(self) -> dict[str, object]: ...
 
 
 def search_user_documents_tool_contract() -> ToolContract:
@@ -79,35 +81,17 @@ def search_user_documents_tool_contract() -> ToolContract:
     }
 
 
-def search_user_documents_tool_result(pack: SupportsContextPackPayload) -> dict[str, object]:
-    """Return the canonical JSON tool output for a ``ModelContextPack``-like value."""
+def search_user_documents_tool_result(
+    pack: SupportsContextPackPromptPayload,
+) -> dict[str, object]:
+    """Return the canonical JSON tool output for a ``ContextPack``."""
     payload = {
-        **_context_pack_tool_payload(pack),
+        **pack.to_prompt_payload(),
         "ok": True,
-        "context_text": _context_pack_tool_text(pack),
+        "context_text": pack.as_prompt_text(),
     }
     _validate_schema_value(payload, SEARCH_USER_DOCUMENTS_OUTPUT_SCHEMA, path="payload")
     return payload
-
-
-def _context_pack_tool_payload(pack: SupportsContextPackPayload) -> dict[str, object]:
-    to_model_payload = getattr(pack, "to_model_payload", None)
-    if callable(to_model_payload):
-        payload = to_model_payload()
-        if not isinstance(payload, dict):
-            raise ValueError("context pack model payload must be an object")
-        return payload
-    return pack.to_payload()
-
-
-def _context_pack_tool_text(pack: SupportsContextPackPayload) -> str:
-    as_model_text = getattr(pack, "as_model_text", None)
-    if callable(as_model_text):
-        value = as_model_text()
-        if not isinstance(value, str):
-            raise ValueError("context pack model text must be a string")
-        return value
-    return pack.as_text()
 
 
 def _validate_schema_value(

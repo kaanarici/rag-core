@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 
+from rag_core.config.chunking_config import CODE_CHUNKING_STRATEGY
 from rag_core.core_models import PreparedChunk
 
 from .protocol import ChunkConfig
@@ -39,7 +40,7 @@ def build_code_chunk_metadata(
     resolved_language: str | None,
 ) -> dict[str, str]:
     metadata = {
-        "chunking_strategy": "code",
+        "chunking_strategy": CODE_CHUNKING_STRATEGY,
         "chunking_engine": chunking_engine,
     }
     if resolved_language:
@@ -128,6 +129,10 @@ def _flush_buffer(
         chunk_text,
         search_start=search_start,
     )
+    line_start, line_end = _line_range(text, start=start_char, end=end_char)
+    chunk_metadata: dict[str, object] = dict(metadata)
+    chunk_metadata["line_start"] = line_start
+    chunk_metadata["line_end"] = line_end
     word_count = len(chunk_text.split())
     chunks.append(
         PreparedChunk(
@@ -138,8 +143,8 @@ def _flush_buffer(
             start_char=start_char,
             end_char=end_char,
             token_count=word_count,
-            chunking_strategy="code",
-            metadata=dict(metadata),
+            chunking_strategy=CODE_CHUNKING_STRATEGY,
+            metadata=chunk_metadata,
         )
     )
     return index + 1, end_char
@@ -170,3 +175,10 @@ def _resolve_bounds(
 
     end = min(len(full_text), start + len(chunk_text))
     return start, end
+
+
+def _line_range(full_text: str, *, start: int, end: int) -> tuple[int, int]:
+    line_start = full_text.count("\n", 0, start) + 1
+    inclusive_end = max(start, end - 1)
+    line_end = full_text.count("\n", 0, inclusive_end) + 1
+    return line_start, line_end

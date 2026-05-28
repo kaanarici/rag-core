@@ -11,7 +11,7 @@ def add_doctor_command(
 ) -> None:
     doctor = subparsers.add_parser(
         "doctor",
-        help="Print the planned runtime shape and optionally verify the vector store.",
+        help="Print the planned RAGCore/provider shape and optionally verify the vector store.",
     )
     add_config_flags(doctor)
     doctor.add_argument(
@@ -29,8 +29,8 @@ def add_doctor_command(
     )
     doctor.add_argument("--json", action="store_true", help="Emit JSON output.")
     doctor.description = (
-        "Inspect collection/provider shape. This command reports config-level runtime "
-        "details, not every programmatic RAGCoreConfig field."
+        "Inspect collection/provider shape. This command reports config-level "
+        "RAGCore assembly details, not every programmatic RAGCoreConfig field."
     )
     apply_command_examples(doctor, "doctor")
 

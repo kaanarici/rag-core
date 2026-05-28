@@ -15,6 +15,7 @@ from rag_core.archive_sources import (
 )
 from rag_core.cli_ingest_output import emit_local_ingest_result
 from rag_core.cli_inputs import parse_metadata_fields
+from rag_core.config import INGEST_SOURCE_TYPE_ARCHIVE
 from rag_core.core_config_cli import with_ingest_source_type
 from rag_core.core_archive_ingest import reconcile_archive_source_plan
 from rag_core.core_models import RAGCoreConfig
@@ -68,7 +69,7 @@ async def run_ingest_archive_command(
 
     config = with_ingest_source_type(
         RAGCoreConfig.from_cli(args, manifest_dir=manifest_dir),
-        source_type="archive",
+        source_type=INGEST_SOURCE_TYPE_ARCHIVE,
     )
 
     async def run_archive(core: RAGCore) -> "LocalIngestResult":
@@ -110,7 +111,7 @@ def _archive_plan_payload(
 ) -> dict[str, object]:
     reconciliation_by_key = source_reconciliation_by_key(reconciliation)
     payload: dict[str, object] = {
-        "source_type": "archive",
+        "source_type": INGEST_SOURCE_TYPE_ARCHIVE,
         "archive_name": plan.archive_path.name,
         "namespace": namespace,
         "corpus_id": corpus_id,

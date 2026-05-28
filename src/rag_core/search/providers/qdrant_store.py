@@ -6,19 +6,15 @@ import logging
 from typing import Sequence
 
 from rag_core.search.policy import DEFAULT_POLICY, VectorStorePolicy
+from rag_core.search.provider_protocols import StoreCapabilities
 from rag_core.search.query_plan import QueryPlan
-from rag_core.search.query_plan_presets import (
-    default_query_plan,
-    query_plan_preset,
-)
-from rag_core.search.types import (
+from rag_core.search.request_models import (
     DeleteFilter,
-    MetadataFilterCapabilities,
-    QueryPlanCapabilities,
     SearchQuery,
-    SearchResult,
-    StoreCapabilities,
     StoredDocumentRecord,
+)
+from rag_core.search.vector_models import (
+    SearchResult,
     VectorPoint,
 )
 
@@ -40,15 +36,21 @@ from .qdrant_payloads import _score_result_value as _score_result_value
 from .qdrant_query_plan import (
     validate_qdrant_query_plan_sparse_channels,
 )
-from .qdrant_search import search_qdrant_points
+from .qdrant_search import (
+    qdrant_default_query_plan_for_sparse_channels,
+    search_qdrant_points,
+)
 from .qdrant_runtime import create_qdrant_adapter_runtime
 from .qdrant_store_guards import (
     validate_qdrant_delete_filter,
     validate_qdrant_query_plan_preflight,
     validate_qdrant_search_request,
 )
-from .qdrant_shared import _KNOWN_SPARSE_VECTOR_NAMES, _PRIMARY_SPARSE_VECTOR_NAME
-from .query_plan_capabilities import QDRANT_QUERY_PLAN_CAPABILITIES
+from .vector_store_capabilities import (
+    QDRANT_VECTOR_STORE_CAPABILITY_SPEC,
+    QDRANT_VECTOR_STORE_PROVIDER_SPEC,
+    qdrant_query_plan_capabilities_for_sparse_names,
+)
 from .qdrant_write import upsert_qdrant_point_batches
 from .registry import VECTOR_STORES
 from .vector_dimensions import (
@@ -96,29 +98,14 @@ class QdrantVectorStore:
 
     @property
     def capabilities(self) -> StoreCapabilities:
-        query_plan_capabilities = QDRANT_QUERY_PLAN_CAPABILITIES
-        known_sparse_names = (
-            self._collection_state.available_sparse_vector_names
-            & _KNOWN_SPARSE_VECTOR_NAMES
-        )
-        if (
-            self._collection_state.ready
-            and not known_sparse_names
-        ):
-            query_plan_capabilities = QueryPlanCapabilities(dense=True)
-        return StoreCapabilities(
-            per_point_delete=True,
-            document_record_lookup=True,
+        query_plan_capabilities = QDRANT_VECTOR_STORE_CAPABILITY_SPEC.query_plan
+        if self._collection_state.ready:
+            query_plan_capabilities = qdrant_query_plan_capabilities_for_sparse_names(
+                self._collection_state.available_sparse_vector_names,
+            )
+        return QDRANT_VECTOR_STORE_CAPABILITY_SPEC.to_store_capabilities(
             dense_vector_dimensions=self._config.dimensions,
             query_plan=query_plan_capabilities,
-            metadata_filter=MetadataFilterCapabilities(
-                term=True,
-                in_=True,
-                numeric_range=True,
-                string_range=False,
-                geo=True,
-                boolean=True,
-            ),
         )
 
     async def close(self) -> None:
@@ -145,23 +132,10 @@ class QdrantVectorStore:
         validate_qdrant_query_plan_preflight(plan)
 
     def default_query_plan(self, *, result_limit: int) -> QueryPlan:
-        known_sparse_names = tuple(
-            sorted(
-                self._collection_state.available_sparse_vector_names
-                & _KNOWN_SPARSE_VECTOR_NAMES
-            )
+        return qdrant_default_query_plan_for_sparse_channels(
+            result_limit=result_limit,
+            sparse_channels=self._collection_state.available_sparse_vector_names,
         )
-        if _PRIMARY_SPARSE_VECTOR_NAME in known_sparse_names:
-            return default_query_plan(
-                result_limit=result_limit,
-                sparse_channels=(_PRIMARY_SPARSE_VECTOR_NAME,),
-            )
-        if known_sparse_names:
-            return default_query_plan(
-                result_limit=result_limit,
-                sparse_channels=known_sparse_names,
-            )
-        return query_plan_preset("dense_only", limit=result_limit)
 
     async def prepare_query_plan(self, plan: QueryPlan) -> None:
         validate_qdrant_query_plan_preflight(plan)
@@ -177,7 +151,7 @@ class QdrantVectorStore:
         validate_point_dense_dimensions(
             points,
             dense_dimensions=self._config.dimensions,
-            backend="qdrant",
+            provider_name=QDRANT_VECTOR_STORE_PROVIDER_SPEC.name,
         )
         await self.ensure_collection()
 
@@ -256,4 +230,7 @@ class QdrantVectorStore:
         )
 
 
-VECTOR_STORES.register("qdrant", lambda **kw: QdrantVectorStore(**kw))
+VECTOR_STORES.register(
+    QDRANT_VECTOR_STORE_PROVIDER_SPEC.name,
+    lambda **kw: QdrantVectorStore(**kw),
+)

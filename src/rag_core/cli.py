@@ -14,6 +14,7 @@ from rag_core.cli_demo import run_demo_command
 from rag_core.cli_doctor import run_doctor_command
 from rag_core.cli_ingest import run_ingest_command
 from rag_core.cli_inputs import cli_safe_error_message
+from rag_core.cli_local_eval import run_local_eval_command
 from rag_core.cli_local_search import run_local_search_command
 from rag_core.cli_manifest import run_manifest_command, run_manifest_compact_command
 from rag_core.cli_parser import _build_parser
@@ -65,6 +66,11 @@ async def _run_command(
             return await _run_with_event_sink(
                 args,
                 lambda event_sink: run_local_search_command(args, event_sink=event_sink),
+            )
+        if args.command == "local-eval":
+            return await _run_with_event_sink(
+                args,
+                lambda event_sink: run_local_eval_command(args, event_sink=event_sink),
             )
         if args.command == "manifest":
             return await run_manifest_command(args)

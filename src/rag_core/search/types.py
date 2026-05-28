@@ -1,4 +1,4 @@
-"""Public search contract entrypoint."""
+"""Provider-author search contracts and shared result value objects."""
 
 from __future__ import annotations
 
@@ -32,6 +32,7 @@ from rag_core.search.request_models import (
 )
 from rag_core.search.vector_models import (
     ContentType as ContentType,
+    SEARCH_RESULT_TYPE_TEXT as SEARCH_RESULT_TYPE_TEXT,
     SearchResult as SearchResult,
     SparseVector as SparseVector,
     TextualRepresentation as TextualRepresentation,
@@ -54,6 +55,7 @@ __all__ = (
     "RerankBudget",
     "RerankResult",
     "RerankerProvider",
+    "SEARCH_RESULT_TYPE_TEXT",
     "SearchQuery",
     "SearchResult",
     "SearchSidecar",

@@ -16,7 +16,9 @@ from tests.support.fakes import (
 )
 from tests.support.log_sanitization import (
     TEST_API_SECRET,
+    assert_caplog_omits_private,
     assert_log_sanitized,
+    assert_log_record_contains,
     assert_no_log_exceptions,
 )
 
@@ -32,6 +34,8 @@ __all__ = [
     "KeywordSparseEmbedder",
     "RecordingVectorStore",
     "TEST_API_SECRET",
+    "assert_caplog_omits_private",
+    "assert_log_record_contains",
     "assert_log_sanitized",
     "assert_no_log_exceptions",
     "make_search_result",

@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from urllib.parse import unquote
 
+from rag_core.config import INGEST_SOURCE_TYPE_URL
 from rag_core.documents.converters.format_support import (
     format_support_for_extension,
     format_support_for_mime_type,
@@ -27,6 +28,7 @@ from rag_core.fetching_response import validate_fetch_response
 from rag_core.remote_discovery_policy import validate_fetch_response_policy
 from rag_core.remote_document_keys import (
     has_private_query_identity,
+    private_remote_document_key,
     public_remote_document_key,
 )
 
@@ -70,7 +72,7 @@ class RemoteSourceDocument:
     byte_count: int
     redirect_count: int
     file_bytes: bytes = field(repr=False)
-    source_type: str = "url"
+    source_type: str = INGEST_SOURCE_TYPE_URL
     requested_url: str | None = None
 
     def to_payload(self, *, include_private: bool = False) -> dict[str, object]:
@@ -161,10 +163,9 @@ def remote_source_document(response: FetchResponse) -> RemoteSourceDocument:
 
 
 def _document_key(url: ValidatedFetchUrl) -> str:
-    key = f"url:{safe_remote_source_url(url)}"
-    if isinstance(url.query_sha256, str) and url.query_sha256:
-        return f"{key}|query_sha256:{url.query_sha256}"
-    return key
+    return private_remote_document_key(
+        f"url:{safe_remote_source_url(url)}", url.query_sha256
+    )
 
 
 def _remote_filename(*, path: str, mime_type: str) -> str:

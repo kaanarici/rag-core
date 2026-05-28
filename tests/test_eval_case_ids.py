@@ -111,3 +111,5 @@ def test_eval_result_payload_includes_stable_case_id() -> None:
     payload = eval_result_payload(result)
 
     assert payload["case_id"] == "billing/refund-policy"
+    assert payload["expected_ids"] == ["refunds.md#chunk-1"]
+    assert payload["expected_chunk_ids"] == ["refunds.md#chunk-1"]

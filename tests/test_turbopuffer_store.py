@@ -276,7 +276,7 @@ def test_turbopuffer_store_batches_large_upserts() -> None:
     asyncio.run(_run())
 
 
-def test_turbopuffer_store_rejects_wrong_dense_dimensions_before_backend_write() -> None:
+def test_turbopuffer_store_rejects_wrong_dense_dimensions_before_provider_write() -> None:
     namespace = _RecordingNamespace()
     store = _store(namespace)
     point = VectorPoint(
@@ -295,7 +295,7 @@ def test_turbopuffer_store_rejects_wrong_dense_dimensions_before_backend_write()
     assert namespace.write_calls == []
 
 
-def test_turbopuffer_store_rejects_wrong_query_dimensions_before_backend_search() -> None:
+def test_turbopuffer_store_rejects_wrong_query_dimensions_before_provider_search() -> None:
     namespace = _RecordingNamespace()
     store = _store(namespace)
     query = SearchQuery(
@@ -404,7 +404,8 @@ def test_turbopuffer_store_health_uses_metadata() -> None:
         health = await store.check_health()
 
         assert health["healthy"] is True
-        assert health["backend"] == "turbopuffer"
+        assert health["adapter"] == "turbopuffer"
+        assert "backend" not in health
         assert health["points_count"] == 3
         assert health["logical_bytes"] == 99
         assert health["index_status"] == "up-to-date"
@@ -644,7 +645,7 @@ def test_turbopuffer_delete_by_filter_rejects_non_positive_continuation_limit() 
 
         with pytest.raises(
             ValueError,
-            match="delete continuation_limit must be positive",
+            match="delete_continuation_limit must be positive",
         ):
             await delete_turbopuffer_filter(
                 namespace_client=namespace,

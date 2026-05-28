@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 
-from rag_core.search.types import And, Filter, Geo, In, Not, Or, Range, Term
+from rag_core.search.filters import And, Filter, Geo, In, Not, Or, Range, Term
 
 
 def eval_filter(filter: Filter, payload: Mapping[str, object]) -> bool:

@@ -6,7 +6,13 @@ from typing import TYPE_CHECKING, Callable, Protocol
 from rag_core.cli_provider_errors import is_provider_bootstrap_error
 from rag_core.core_models import IngestedDocument
 from rag_core.fetch_security import FetchLimits, FetchSecurityPolicy
+from rag_core.ingest_progress_statuses import (
+    INGEST_PROGRESS_FAILED,
+    INGEST_PROGRESS_SUCCEEDED,
+    IngestProgressStatus,
+)
 from rag_core.manifest_persistence import ManifestReconciliation
+from rag_core.manifest_reconciliation_statuses import MANIFEST_STATUS_UNKNOWN
 from rag_core.remote_ingest_models import (
     RemoteUrlIngestFailure,
     RemoteUrlIngestPlan,
@@ -18,7 +24,6 @@ from rag_core.remote_ingest_manifest import (
     remote_manifest_status_for_content,
     remote_source_reconciliation_by_key,
 )
-from rag_core.remote_ingest_progress import RemoteIngestProgressStatus
 from rag_core.remote_ingest_progress import RemoteUrlIngestProgress
 from rag_core.remote_ingest_records import (
     remote_ingest_error_type,
@@ -100,7 +105,7 @@ async def ingest_remote_urls(
                     manifest_reason=manifest_reason,
                 )
             )
-            status: RemoteIngestProgressStatus = "failed"
+            status: IngestProgressStatus = INGEST_PROGRESS_FAILED
             content_sha256 = ""
             ingest_state = ""
             document_key = item.document_key
@@ -112,7 +117,10 @@ async def ingest_remote_urls(
                 content_sha256=ingested.content_sha256,
                 reconciliation_by_key=reconciliation_by_key,
             )
-            if manifest_status == "unknown" and document_key != item.document_key:
+            if (
+                manifest_status == MANIFEST_STATUS_UNKNOWN
+                and document_key != item.document_key
+            ):
                 manifest_status, manifest_reason = remote_manifest_status_for_content(
                     document_key=item.document_key,
                     content_sha256=ingested.content_sha256,
@@ -124,7 +132,7 @@ async def ingest_remote_urls(
                 manifest_status=manifest_status,
                 manifest_reason=manifest_reason,
             )
-            status = "succeeded"
+            status = INGEST_PROGRESS_SUCCEEDED
             content_sha256 = ingested.content_sha256 or ""
             ingest_state = ingested.ingest_state
             progress_error = ""

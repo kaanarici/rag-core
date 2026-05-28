@@ -6,6 +6,8 @@ import logging
 from typing import Any, Dict, List, Tuple
 
 from rag_core.documents.converters.registry_maps import is_registered_image_document
+from rag_core.documents.exception_names import root_exception_type
+from rag_core.documents.page_indices import normalize_page_indices
 
 logger = logging.getLogger(__name__)
 
@@ -18,20 +20,7 @@ def _is_pdf_document(*, filename: str, mime_type: str) -> bool:
 
 
 def _normalize_ocr_page_indices(raw_indices: Any) -> List[int]:
-    if not isinstance(raw_indices, list):
-        return []
-
-    normalized: List[int] = []
-    seen: set[int] = set()
-    for raw_index in raw_indices:
-        if isinstance(raw_index, bool) or not isinstance(raw_index, int) or raw_index < 0:
-            continue
-        if raw_index in seen:
-            continue
-        seen.add(raw_index)
-        normalized.append(raw_index)
-    normalized.sort()
-    return normalized
+    return normalize_page_indices(raw_indices, sort=True)
 
 
 def _allows_empty_ocr_only_output(
@@ -57,11 +46,6 @@ def _allows_empty_ocr_only_output(
 
 class LocalParseError(RuntimeError):
     """Raised when local parsing fails."""
-
-
-def _exception_type(exc: Exception) -> str:
-    root = exc.__cause__ if isinstance(exc.__cause__, Exception) else exc
-    return type(root).__name__
 
 
 def _quality_to_metadata(quality: Any) -> Dict[str, Any]:
@@ -117,7 +101,7 @@ async def parse_file_bytes(
     except LocalParseError:
         raise
     except Exception as exc:
-        error_type = _exception_type(exc)
+        error_type = root_exception_type(exc)
         logger.error("Converter system failed with %s", error_type)
         reason = _safe_parse_failure_reason(exc)
         if reason:

@@ -3,21 +3,36 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from rag_core.config.vector_store_config import (
+    QDRANT_VECTOR_STORE_PROVIDER,
+    TURBOPUFFER_NAMESPACE_ENV,
+    TURBOPUFFER_VECTOR_STORE_PROVIDER,
+)
+from rag_core.config.ingest_config import (
+    DEFAULT_INGEST_SOURCE_TYPE,
+    DEFAULT_PROCESSING_VERSION,
+    STANDARD_INGEST_SOURCE_TYPES,
+)
 from rag_core.core_models import ProcessingFingerprint, RAGCoreConfig
+from rag_core.documents.contextualizer_provider_names import NOOP_CONTEXTUALIZER_ID
 from rag_core.documents.pdf_inspector import describe_pdf_inspector_runtime
 from rag_core.runtime_metadata import describe_runtime_metadata
 from rag_core.search.providers.model_provider_diagnostics import (
     describe_model_provider_diagnostics,
 )
-from rag_core.search.query_plan_presets import describe_retrieval_profiles
-from rag_core.search.types import QueryPlanCapabilities, StoreCapabilities
+from rag_core.search.providers.provider_category_names import SPARSE_PROVIDER_CATEGORY
+from rag_core.search.providers.vector_store_capabilities import (
+    describe_metadata_filter_capabilities,
+    describe_query_plan_capabilities,
+)
+from rag_core.search.planning import describe_search_profile_catalog
+from rag_core.search.provider_protocols import StoreCapabilities
 
 # ``create_reranker`` attaches these optional diagnostics when it resolves a
 # configured provider. External rerankers can omit them.
 RERANKER_REQUESTED_ATTR = "_rag_core_provider_requested"
 RERANKER_EFFECTIVE_ATTR = "_rag_core_provider_effective"
 RERANKER_FALLBACK_REASON_ATTR = "_rag_core_fallback_reason"
-STANDARD_INGEST_SOURCE_TYPES = ("file", "url", "archive")
 
 
 def resolve_collection_name(
@@ -39,19 +54,19 @@ def resolve_runtime_collection_name(
     model_name: str,
     dimensions: int,
 ) -> str:
-    if config.vector_store.provider == "qdrant":
+    if config.vector_store.provider == QDRANT_VECTOR_STORE_PROVIDER:
         return resolve_collection_name(
             base_name=config.qdrant.collection,
             model_name=model_name,
             dimensions=dimensions,
             dimension_aware=config.qdrant.dimension_aware_collection,
         )
-    if config.vector_store.provider == "turbopuffer":
+    if config.vector_store.provider == TURBOPUFFER_VECTOR_STORE_PROVIDER:
         namespace = config.vector_store.turbopuffer.namespace
         if not namespace:
             raise ValueError(
                 "TurboPuffer requires --turbopuffer-namespace or "
-                "RAG_CORE_TURBOPUFFER_NAMESPACE"
+                f"{TURBOPUFFER_NAMESPACE_ENV}"
             )
         return namespace
     raise ValueError(
@@ -75,6 +90,7 @@ def build_runtime_description(
     chunk_context_cache: Any = None,
     embedding_cache: Any = None,
 ) -> dict[str, object]:
+    store_capabilities = vector_store.capabilities
     return {
         "runtime": describe_runtime_metadata(),
         "collection_name": collection_name,
@@ -87,14 +103,16 @@ def build_runtime_description(
             "model": getattr(embedding_provider, "model_name", None),
             "dimensions": getattr(embedding_provider, "dimensions", None),
         },
-        "sparse": {
+        SPARSE_PROVIDER_CATEGORY: {
             "provider": _provider_name(sparse_embedder),
         },
         "vector_store": {
             "provider": _provider_name(vector_store),
-            "capabilities": describe_store_capabilities(vector_store.capabilities),
+            "capabilities": describe_store_capabilities(store_capabilities),
         },
-        "retrieval": describe_retrieval_profiles(),
+        "search": describe_search_profile_catalog(
+            capabilities=store_capabilities.query_plan
+        ),
         "reranker": {
             "provider": _provider_name(reranker),
             "requested": getattr(reranker, RERANKER_REQUESTED_ATTR, None),
@@ -135,22 +153,9 @@ def describe_store_capabilities(
         "document_record_lookup": capabilities.document_record_lookup,
         "dense_vector_dimensions": capabilities.dense_vector_dimensions,
         "query_plan": describe_query_plan_capabilities(capabilities.query_plan),
-    }
-
-
-def describe_query_plan_capabilities(
-    capabilities: QueryPlanCapabilities,
-) -> dict[str, bool]:
-    return {
-        "dense": capabilities.dense,
-        "sparse": capabilities.sparse,
-        "hybrid": capabilities.hybrid,
-        "hybrid_rrf": capabilities.hybrid_rrf,
-        "hybrid_dbsf": capabilities.hybrid_dbsf,
-        "hybrid_weighted_rrf": capabilities.hybrid_weighted_rrf,
-        "mmr": capabilities.mmr,
-        "boost": capabilities.boost,
-        "nested_prefetch": capabilities.nested_prefetch,
+        "metadata_filter": describe_metadata_filter_capabilities(
+            capabilities.metadata_filter
+        ),
     }
 
 
@@ -160,8 +165,8 @@ def resolve_processing_version(
     source_type: str,
     contextualizer_id: str | None = None,
 ) -> ProcessingFingerprint:
-    base_version = (configured_version or "").strip() or "rag_core_processing_v1"
-    normalized_source_type = (source_type or "").strip() or "file"
+    base_version = (configured_version or "").strip() or DEFAULT_PROCESSING_VERSION
+    normalized_source_type = (source_type or "").strip() or DEFAULT_INGEST_SOURCE_TYPE
     normalized_contextualizer_id = _processing_contextualizer_id(contextualizer_id)
     return ProcessingFingerprint(
         base_version=base_version,
@@ -211,7 +216,7 @@ def _processing_contextualizer_id(contextualizer_id: str | None) -> str | None:
     if contextualizer_id is None:
         return None
     normalized = str(contextualizer_id).strip()
-    if not normalized or normalized == "noop":
+    if not normalized or normalized == NOOP_CONTEXTUALIZER_ID:
         return None
     return normalized
 

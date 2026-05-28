@@ -4,8 +4,14 @@ from typing import Any
 
 import pytest
 
+from rag_core.documents.ocr_provider_names import OCR_PROVIDER_ORDER
+from rag_core.search.lexical_sidecar import SEARCH_SIDECAR_PROVIDER_ORDER
 from rag_core.search.providers.embedding import create_embedding_provider
 import rag_core.search.providers.sparse as sparse_module
+from rag_core.search.providers.model_provider_diagnostics import (
+    EMBEDDING_PROVIDER_ORDER,
+    RERANKER_PROVIDER_ORDER,
+)
 from rag_core.search.providers.registry import (
     CHUNK_CONTEXT_CACHES,
     EMBEDDING_CACHES,
@@ -16,6 +22,8 @@ from rag_core.search.providers.registry import (
     SPARSE_EMBEDDERS,
     ProviderRegistry,
 )
+from rag_core.search.providers.cache_provider_names import CACHE_PROVIDER_ORDER
+from rag_core.search.providers.sparse import SPARSE_EMBEDDER_PROVIDER_ORDER
 
 
 class _FakeProvider:
@@ -114,13 +122,13 @@ def test_registry_retries_builtin_import_after_failure(
 @pytest.mark.parametrize(
     "registry,expected",
     [
-        (EMBEDDING_PROVIDERS, ("openai", "voyage", "zeroentropy")),
-        (RERANKER_PROVIDERS, ("none", "cohere", "voyage", "zeroentropy")),
-        (SPARSE_EMBEDDERS, ("fastembed",)),
-        (OCR_PROVIDERS, ("mistral", "gemini")),
-        (SEARCH_SIDECARS, ("portable_lexical",)),
-        (EMBEDDING_CACHES, ("none", "in_memory", "sqlite")),
-        (CHUNK_CONTEXT_CACHES, ("none", "in_memory", "sqlite")),
+        (EMBEDDING_PROVIDERS, EMBEDDING_PROVIDER_ORDER),
+        (RERANKER_PROVIDERS, RERANKER_PROVIDER_ORDER),
+        (SPARSE_EMBEDDERS, SPARSE_EMBEDDER_PROVIDER_ORDER),
+        (OCR_PROVIDERS, OCR_PROVIDER_ORDER),
+        (SEARCH_SIDECARS, SEARCH_SIDECAR_PROVIDER_ORDER),
+        (EMBEDDING_CACHES, CACHE_PROVIDER_ORDER),
+        (CHUNK_CONTEXT_CACHES, CACHE_PROVIDER_ORDER),
     ],
     ids=[
         "embedding",

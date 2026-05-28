@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Literal
 
-from rag_core.manifest_persistence import ManifestReconciliationStatus
+from rag_core.ingest_result_payloads import (
+    failure_records,
+    ingest_result_payload,
+    skipped_records,
+    success_records,
+    written_records,
+)
+from rag_core.manifest_reconciliation_reasons import MANIFEST_REASON_NOT_CHECKED
+from rag_core.manifest_reconciliation_statuses import (
+    MANIFEST_STATUS_UNKNOWN,
+    RemoteManifestStatus,
+)
 from rag_core.remote_document_keys import (
     has_private_query_identity,
     public_remote_document_key,
 )
-
-RemoteManifestStatus = ManifestReconciliationStatus | Literal[
-    "unknown",
-    "unknown_until_fetch",
-]
 
 
 @dataclass(frozen=True)
@@ -28,8 +33,8 @@ class RemoteUrlIngestSuccess:
     chunk_count: int
     ingest_state: str
     replaced_existing: bool
-    manifest_status: RemoteManifestStatus = "unknown"
-    manifest_reason: str = "manifest_not_checked"
+    manifest_status: RemoteManifestStatus = MANIFEST_STATUS_UNKNOWN
+    manifest_reason: str = MANIFEST_REASON_NOT_CHECKED
 
     def to_payload(self, *, include_private: bool = False) -> dict[str, object]:
         payload = {"ok": True, **asdict(self)}
@@ -45,8 +50,8 @@ class RemoteUrlIngestFailure:
     requested_url: str
     document_key: str
     error: str
-    manifest_status: RemoteManifestStatus = "unknown"
-    manifest_reason: str = "manifest_not_checked"
+    manifest_status: RemoteManifestStatus = MANIFEST_STATUS_UNKNOWN
+    manifest_reason: str = MANIFEST_REASON_NOT_CHECKED
 
     def to_payload(self, *, include_private: bool = False) -> dict[str, object]:
         payload = {"ok": False, **asdict(self)}
@@ -69,31 +74,19 @@ class RemoteUrlIngestResult:
 
     @property
     def succeeded(self) -> tuple[RemoteUrlIngestSuccess, ...]:
-        return tuple(
-            record
-            for record in self.records
-            if isinstance(record, RemoteUrlIngestSuccess)
-        )
+        return success_records(self.records, RemoteUrlIngestSuccess)
 
     @property
     def written(self) -> tuple[RemoteUrlIngestSuccess, ...]:
-        return tuple(
-            record for record in self.succeeded if record.ingest_state != "unchanged"
-        )
+        return written_records(self.succeeded)
 
     @property
     def skipped(self) -> tuple[RemoteUrlIngestSuccess, ...]:
-        return tuple(
-            record for record in self.succeeded if record.ingest_state == "unchanged"
-        )
+        return skipped_records(self.succeeded)
 
     @property
     def failed(self) -> tuple[RemoteUrlIngestFailure, ...]:
-        return tuple(
-            record
-            for record in self.records
-            if isinstance(record, RemoteUrlIngestFailure)
-        )
+        return failure_records(self.records, RemoteUrlIngestFailure)
 
     @property
     def succeeded_count(self) -> int:
@@ -112,35 +105,16 @@ class RemoteUrlIngestResult:
         return len(self.failed)
 
     def to_payload(self, *, include_private: bool = False) -> dict[str, object]:
-        return {
-            "namespace": self.namespace,
-            "corpus_id": self.corpus_id,
-            "planned_count": self.planned_count,
-            "succeeded_count": self.succeeded_count,
-            "written_count": self.written_count,
-            "skipped_count": self.skipped_count,
-            "failed_count": self.failed_count,
-            "records": [
-                record.to_payload(include_private=include_private)
-                for record in self.records
-            ],
-            "succeeded": [
-                record.to_payload(include_private=include_private)
-                for record in self.succeeded
-            ],
-            "written": [
-                record.to_payload(include_private=include_private)
-                for record in self.written
-            ],
-            "skipped": [
-                record.to_payload(include_private=include_private)
-                for record in self.skipped
-            ],
-            "failed": [
-                record.to_payload(include_private=include_private)
-                for record in self.failed
-            ],
-        }
+        return ingest_result_payload(
+            namespace=self.namespace,
+            corpus_id=self.corpus_id,
+            records=self.records,
+            succeeded=self.succeeded,
+            written=self.written,
+            skipped=self.skipped,
+            failed=self.failed,
+            include_private=include_private,
+        )
 
 
 __all__ = [

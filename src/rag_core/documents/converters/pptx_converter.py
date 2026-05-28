@@ -16,6 +16,7 @@ from .base import (
     render_markdown_table,
     score_text_quality,
 )
+from .converter_keys import PPTX_CONVERTER_KEY
 from .quality import QualityVerdict, is_char_count_only_quality_failure
 
 logger = logging.getLogger(__name__)
@@ -69,7 +70,10 @@ def _extract_slide_figure_items(slide: Any, slide_index: int) -> List[Dict[str, 
     for shape in slide.shapes:
         is_picture = False
         try:
-            if picture_shape_type is not None and shape.shape_type == picture_shape_type:
+            if (
+                picture_shape_type is not None
+                and shape.shape_type == picture_shape_type
+            ):
                 is_picture = True
         except Exception:
             # Some shapes expose shape_type inconsistently; fall back to image detection.
@@ -110,7 +114,7 @@ def _extract_slide_figure_items(slide: Any, slide_index: int) -> List[Dict[str, 
 class PptxConverter(HybridConverter):
     """Converts PPTX files to markdown with slide structure and speaker notes."""
 
-    format_name = "pptx"
+    format_name = PPTX_CONVERTER_KEY
 
     async def convert(
         self,

@@ -6,17 +6,17 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
 from rag_core.cli_core_runtime import run_with_ready_core
-from rag_core.cli_inputs import parse_metadata_fields
+from rag_core.cli_inputs import parse_metadata_fields, parse_non_empty_values
 from rag_core.cli_output import float_value, search_hit_payload
 from rag_core.cli_search_options import query_plan_from_args
 from rag_core.core_models import RAGCoreConfig
-from rag_core.search.types import And, Filter, Term
+from rag_core.search import And, Filter, Term
+from rag_core.search.context_pack import context_pack_response_payload
 
 if TYPE_CHECKING:
     from rag_core.core import RAGCore
     from rag_core.events.sink import EventSink
-    from rag_core.search.context_pack_models import ModelContextPack
-    from rag_core.search.types import SearchResult
+    from rag_core.search import ContextPack, SearchResult
 
 
 async def run_search_command(
@@ -39,11 +39,13 @@ async def run_search_command(
         raise ValueError("--limit must be positive")
     plan = query_plan_from_args(args, limit=args.limit)
     metadata_filter = _metadata_filter_from_fields(args.metadata_filter)
+    content_types = parse_non_empty_values(args.content_type, field="--content-type")
+    document_ids = parse_non_empty_values(args.document_id, field="--document-id")
     config = RAGCoreConfig.from_cli(args)
     if args.context_json:
         action = "retrieve-context"
 
-        async def run_context(core: RAGCore) -> "ModelContextPack":
+        async def run_context(core: RAGCore) -> "ContextPack":
             return await core.retrieve_context(
                 query=args.text,
                 namespace=args.namespace,
@@ -51,6 +53,8 @@ async def run_search_command(
                 limit=args.limit,
                 rerank=args.rerank,
                 query_plan=plan,
+                content_types=content_types,
+                document_ids=document_ids,
                 metadata_filter=metadata_filter,
                 max_chars=args.max_context_chars,
                 max_tokens=args.max_context_tokens,
@@ -72,6 +76,8 @@ async def run_search_command(
                 limit=args.limit,
                 rerank=args.rerank,
                 query_plan=plan,
+                content_types=content_types,
+                document_ids=document_ids,
                 metadata_filter=metadata_filter,
             )
 
@@ -84,7 +90,7 @@ async def run_search_command(
     if args.context_json:
         print(
             json.dumps(
-                {"context_text": pack.as_text(), **pack.to_payload()},
+                context_pack_response_payload(pack),
                 indent=2,
                 sort_keys=True,
                 allow_nan=False,

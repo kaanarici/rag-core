@@ -7,14 +7,22 @@ from typing import TYPE_CHECKING
 from typing import Any
 from typing import Optional
 
+from rag_core.config.embedding_config import (
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_EMBEDDING_PROVIDER,
+    DEMO_EMBEDDING_MODEL,
+    DEMO_EMBEDDING_PROVIDER,
+)
+from rag_core.search.provider_protocols import EmbeddingProvider
 from rag_core.search.providers.registry import EMBEDDING_PROVIDERS
-from rag_core.search.types import EmbeddingProvider
 
 from .embedding_models import get_embedding_model_spec, resolve_embedding_dimensions
 from .openai_embedding import build_openai_client
 from .openai_embedding import embed_openai_texts
 from .openai_embedding import fingerprint_provider_config as _fingerprint_provider_config
 from .openai_embedding import import_async_openai as _import_async_openai
+from .voyage import DEFAULT_VOYAGE_EMBEDDING_MODEL, VOYAGE_PROVIDER
+from .zeroentropy import DEFAULT_ZEROENTROPY_EMBEDDING_MODEL, ZEROENTROPY_PROVIDER
 
 if TYPE_CHECKING:
     from .voyage import VoyageEmbeddingProvider
@@ -40,12 +48,12 @@ class OpenAIEmbeddingProvider:
 
     def __init__(
         self,
-        model: str = "text-embedding-3-large",
+        model: str = DEFAULT_EMBEDDING_MODEL,
         dimensions: int | None = None,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
     ) -> None:
-        self._provider = "openai"
+        self._provider = DEFAULT_EMBEDDING_PROVIDER
         self._model = model
         self._cache_identity = _fingerprint_provider_config(base_url=base_url)
         spec = get_embedding_model_spec(self._provider, model)
@@ -97,7 +105,7 @@ class OpenAIEmbeddingProvider:
 
 def _build_openai_provider(
     *,
-    model: str = "text-embedding-3-large",
+    model: str = DEFAULT_EMBEDDING_MODEL,
     dimensions: int | None = None,
     api_key: Optional[str] = None,
     base_url: Optional[str] = None,
@@ -112,7 +120,7 @@ def _build_openai_provider(
 
 def _build_voyage_provider(
     *,
-    model: str = "voyage-4",
+    model: str = DEFAULT_VOYAGE_EMBEDDING_MODEL,
     dimensions: int | None = None,
     api_key: Optional[str] = None,
     **_: Any,
@@ -121,7 +129,7 @@ def _build_voyage_provider(
     return voyage_cls(
         model=model,
         dimensions=resolve_embedding_dimensions(
-            provider="voyage",
+            provider=VOYAGE_PROVIDER,
             model=model,
             dimensions=dimensions,
         ),
@@ -131,15 +139,15 @@ def _build_voyage_provider(
 
 def _build_demo_provider(
     *,
-    model: str = "demo-dense-v1",
+    model: str = DEMO_EMBEDDING_MODEL,
     dimensions: int | None = None,
     **_: Any,
 ) -> EmbeddingProvider:
     from rag_core.demo import DemoEmbeddingProvider, _DEMO_EMBEDDING_DIMENSIONS
 
-    if model != "demo-dense-v1":
+    if model != DEMO_EMBEDDING_MODEL:
         raise ValueError(
-            "demo embedding provider only supports model 'demo-dense-v1'; "
+            f"demo embedding provider only supports model {DEMO_EMBEDDING_MODEL!r}; "
             f"got {model!r}"
         )
     resolved = dimensions if dimensions is not None else _DEMO_EMBEDDING_DIMENSIONS
@@ -148,7 +156,7 @@ def _build_demo_provider(
 
 def _build_zeroentropy_provider(
     *,
-    model: str = "zembed-1",
+    model: str = DEFAULT_ZEROENTROPY_EMBEDDING_MODEL,
     dimensions: int | None = None,
     api_key: Optional[str] = None,
     **_: Any,
@@ -157,7 +165,7 @@ def _build_zeroentropy_provider(
     return zeroentropy_cls(
         model=model,
         dimensions=resolve_embedding_dimensions(
-            provider="zeroentropy",
+            provider=ZEROENTROPY_PROVIDER,
             model=model,
             dimensions=dimensions,
         ),
@@ -167,13 +175,16 @@ def _build_zeroentropy_provider(
 
 def create_embedding_provider(
     *,
-    provider: str = "openai",
+    provider: str = DEFAULT_EMBEDDING_PROVIDER,
     **kwargs: Any,
 ) -> EmbeddingProvider:
-    return EMBEDDING_PROVIDERS.create(provider or "openai", **kwargs)
+    return EMBEDDING_PROVIDERS.create(
+        provider or DEFAULT_EMBEDDING_PROVIDER,
+        **kwargs,
+    )
 
 
-EMBEDDING_PROVIDERS.register("openai", _build_openai_provider)
-EMBEDDING_PROVIDERS.register("demo", _build_demo_provider)
-EMBEDDING_PROVIDERS.register("voyage", _build_voyage_provider)
-EMBEDDING_PROVIDERS.register("zeroentropy", _build_zeroentropy_provider)
+EMBEDDING_PROVIDERS.register(DEFAULT_EMBEDDING_PROVIDER, _build_openai_provider)
+EMBEDDING_PROVIDERS.register(DEMO_EMBEDDING_PROVIDER, _build_demo_provider)
+EMBEDDING_PROVIDERS.register(VOYAGE_PROVIDER, _build_voyage_provider)
+EMBEDDING_PROVIDERS.register(ZEROENTROPY_PROVIDER, _build_zeroentropy_provider)

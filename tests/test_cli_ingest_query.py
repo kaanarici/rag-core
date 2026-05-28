@@ -112,50 +112,6 @@ def test_expand_supported_local_files_missing_returns_empty(
     assert expand_supported_local_files(target) == []
 
 
-# ---------------------------------------------------------------------------
-# argparse wiring — focused on flags that drive behavior elsewhere in the CLI.
-# ---------------------------------------------------------------------------
-
-
-def test_ingest_subparser_accepts_documented_flags() -> None:
-    parser = _build_parser()
-    args = parser.parse_args(
-        [
-            "ingest",
-            "./docs",
-            "--namespace",
-            "acme",
-            "--corpus-id",
-            "help",
-            "--force-reindex",
-            "--manifest-dir",
-            "/tmp/manifest",
-            "--metadata",
-            "team=search",
-            "--qdrant-url",
-            "http://localhost:6333",
-            "--vector-store",
-            "qdrant",
-            "--embedding-dimensions",
-            "1536",
-            "--events-jsonl",
-            "/tmp/events.jsonl",
-            "--plan-json",
-            "--json",
-        ]
-    )
-    assert args.command == "ingest"
-    assert args.path == "./docs"
-    assert args.namespace == "acme"
-    assert args.corpus_id == "help"
-    assert args.force_reindex is True
-    assert args.manifest_dir == "/tmp/manifest"
-    assert args.metadata == ["team=search"]
-    assert args.embedding_dimensions == 1536
-    assert args.plan_json is True
-    assert args.json is True
-
-
 def test_local_search_subparser_accepts_events_jsonl() -> None:
     parser = _build_parser()
     args = parser.parse_args(

@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from qdrant_client import AsyncQdrantClient
 from qdrant_client import models as rest
 
-from rag_core.search.types import VectorPoint
+from rag_core.search.vector_models import VectorPoint
 
 from .qdrant_shared import WriteLatencyTracker
 from .qdrant_write_batches import build_qdrant_point_batches

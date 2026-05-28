@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from rag_core.search.pipeline.types import PipelineContext, PipelineQuery
-from rag_core.search.types import SearchResult
+from rag_core.search.vector_models import SearchResult
 
 
 class IdentityQueryTransform:

@@ -5,6 +5,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from rag_core.events.event_types import (
+    RERANK_APPLIED_EVENT,
+    SEARCH_COMPLETED_EVENT,
+    SEARCH_PLANNED_EVENT,
+    SEARCH_STAGE_COMPLETED_EVENT,
+    SEARCH_STARTED_EVENT,
+    SIDECAR_APPLIED_EVENT,
+    STAGE_ERROR_EVENT,
+)
+from rag_core.events.trace_payload_fields import TRACE_ABSENT_LABEL
+from rag_core.events.trace_payload_fields import RETRIEVE_SEARCH_STAGE
+
 
 @dataclass(frozen=True)
 class SearchStarted:
@@ -14,7 +26,7 @@ class SearchStarted:
     limit: int = 0
     corpus_count: int = 0
     search_id: str = ""
-    event_type: Literal["search.started"] = "search.started"
+    event_type: Literal["search.started"] = SEARCH_STARTED_EVENT
 
     def __post_init__(self) -> None:
         if self.corpus_count == 0 and self.corpus_ids:
@@ -30,6 +42,7 @@ class SearchPlanned:
     corpus_count: int = 0
     channels: tuple[str, ...] = ()
     prefetch_limits: tuple[int, ...] = ()
+    search_profile: str = ""
     fusion: str = ""
     plan_rerank: str = ""
     boost: str = ""
@@ -47,7 +60,7 @@ class SearchPlanned:
     rerank_stage: str = ""
     postprocesses: tuple[str, ...] = ()
     search_id: str = ""
-    event_type: Literal["search.planned"] = "search.planned"
+    event_type: Literal["search.planned"] = SEARCH_PLANNED_EVENT
 
     def __post_init__(self) -> None:
         if self.corpus_count == 0 and self.corpus_ids:
@@ -63,7 +76,7 @@ class SearchStageCompleted:
         "rerank",
         "postprocess",
         "context_pack",
-    ] = "retrieve"
+    ] = RETRIEVE_SEARCH_STAGE
     stage_name: str = ""
     candidate_count: int = 0
     result_count: int = 0
@@ -77,15 +90,13 @@ class SearchStageCompleted:
     source_preview_count: int = 0
     duration_ms: float = 0.0
     search_id: str = ""
-    event_type: Literal["search.stage.completed"] = "search.stage.completed"
+    event_type: Literal["search.stage.completed"] = SEARCH_STAGE_COMPLETED_EVENT
 
 
 @dataclass(frozen=True)
 class SearchCompleted:
     namespace: str = ""
     result_count: int = 0
-    used_rerank: bool = False
-    used_sidecar: bool = False
     requested_rerank: bool = False
     requested_sidecar: bool = False
     attempted_rerank: bool = False
@@ -95,7 +106,7 @@ class SearchCompleted:
     succeeded: bool = True
     duration_ms: float = 0.0
     search_id: str = ""
-    event_type: Literal["search.completed"] = "search.completed"
+    event_type: Literal["search.completed"] = SEARCH_COMPLETED_EVENT
 
 
 @dataclass(frozen=True)
@@ -107,10 +118,10 @@ class RerankApplied:
     result_count: int = 0
     top_k: int = 0
     fallback_reason: str = ""
-    truncation_reason: str = "none"
+    truncation_reason: str = TRACE_ABSENT_LABEL
     duration_ms: float = 0.0
     succeeded: bool = True
-    event_type: Literal["rerank.applied"] = "rerank.applied"
+    event_type: Literal["rerank.applied"] = RERANK_APPLIED_EVENT
     provider_result_count: int = 0
     accepted_count: int = 0
     dropped_count: int = 0
@@ -138,7 +149,7 @@ class SidecarApplied:
     succeeded: bool = True
     fallback_reason: str = ""
     search_id: str = ""
-    event_type: Literal["sidecar.applied"] = "sidecar.applied"
+    event_type: Literal["sidecar.applied"] = SIDECAR_APPLIED_EVENT
 
 
 @dataclass(frozen=True)
@@ -147,4 +158,4 @@ class StageError:
     error_type: str = ""
     message: str = ""
     search_id: str = ""
-    event_type: Literal["stage.error"] = "stage.error"
+    event_type: Literal["stage.error"] = STAGE_ERROR_EVENT

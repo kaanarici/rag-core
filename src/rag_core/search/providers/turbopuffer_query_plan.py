@@ -3,22 +3,30 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Final, Literal, cast
 
 from rag_core.search.query_plan import (
+    FUSION_KIND_RRF,
+    PRIMARY_DENSE_QUERY_VECTOR,
     DenseChannel,
     QueryPlan,
     SparseChannel,
     UnsupportedQueryStage,
 )
+from rag_core.search.request_models import SearchQuery
 from rag_core.search.sparse_channels import KNOWN_SPARSE_CHANNELS, PRIMARY_SPARSE_CHANNEL
-from rag_core.search.types import SearchQuery, SparseVector
+from rag_core.search.vector_models import SparseVector
+
+TurboPufferSearchMode = Literal["dense", "hybrid_rrf", "sparse_knn"]
+TURBOPUFFER_SEARCH_MODE_DENSE: Final[TurboPufferSearchMode] = "dense"
+TURBOPUFFER_SEARCH_MODE_HYBRID_RRF: Final[TurboPufferSearchMode] = "hybrid_rrf"
+TURBOPUFFER_SEARCH_MODE_SPARSE_KNN: Final[TurboPufferSearchMode] = "sparse_knn"
 
 
 @dataclass(frozen=True)
 class TurboPufferSearchExecution:
     final_limit: int
-    mode: Literal["dense", "hybrid_rrf", "sparse_knn"]
+    mode: TurboPufferSearchMode
     dense_limit: int | None = None
     sparse_limit: int | None = None
     sparse_channel: str | None = None
@@ -29,7 +37,10 @@ def resolve_turbopuffer_search_execution(
 ) -> TurboPufferSearchExecution:
     plan = query.query_plan
     if plan is None:
-        return TurboPufferSearchExecution(final_limit=query.limit, mode="dense")
+        return TurboPufferSearchExecution(
+            final_limit=query.limit,
+            mode=TURBOPUFFER_SEARCH_MODE_DENSE,
+        )
     return _execution_from_plan(plan)
 
 
@@ -46,7 +57,7 @@ def _execution_from_plan(plan: QueryPlan) -> TurboPufferSearchExecution:
         raise UnsupportedQueryStage(
             "turbopuffer adapter cannot honor boost query plans"
         )
-    if plan.fuse is not None and plan.fuse.kind != "rrf":
+    if plan.fuse is not None and plan.fuse.kind != FUSION_KIND_RRF:
         raise UnsupportedQueryStage(
             "turbopuffer adapter supports only reciprocal-rank fusion"
         )
@@ -95,7 +106,7 @@ def _execution_from_plan(plan: QueryPlan) -> TurboPufferSearchExecution:
         _validate_sparse_channel(cast(SparseChannel, sparse_prefetches[0].channel))
         return TurboPufferSearchExecution(
             final_limit=plan.final_limit,
-            mode="hybrid_rrf",
+            mode=TURBOPUFFER_SEARCH_MODE_HYBRID_RRF,
             dense_limit=dense_limit,
             sparse_limit=sparse_limit,
             sparse_channel=sparse_channel,
@@ -109,7 +120,7 @@ def _execution_from_plan(plan: QueryPlan) -> TurboPufferSearchExecution:
         _validate_dense_channel(cast(DenseChannel, dense_prefetches[0].channel))
         return TurboPufferSearchExecution(
             final_limit=plan.final_limit,
-            mode="dense",
+            mode=TURBOPUFFER_SEARCH_MODE_DENSE,
             dense_limit=dense_limit,
         )
 
@@ -120,14 +131,14 @@ def _execution_from_plan(plan: QueryPlan) -> TurboPufferSearchExecution:
     _validate_sparse_channel(cast(SparseChannel, sparse_prefetches[0].channel))
     return TurboPufferSearchExecution(
         final_limit=plan.final_limit,
-        mode="sparse_knn",
+        mode=TURBOPUFFER_SEARCH_MODE_SPARSE_KNN,
         sparse_limit=sparse_limit,
         sparse_channel=sparse_channel or PRIMARY_SPARSE_CHANNEL,
     )
 
 
 def _validate_dense_channel(channel: DenseChannel) -> None:
-    if channel.vector_field or channel.using_query_vector != "primary":
+    if channel.vector_field or channel.using_query_vector != PRIMARY_DENSE_QUERY_VECTOR:
         raise UnsupportedQueryStage(
             "turbopuffer adapter supports only the primary dense query vector"
         )

@@ -106,11 +106,11 @@ pythonpath = ['src']
 markers = [
   "eval: PR retrieval regression on fixture embeddings (`tests/evals/test_retrieval_eval_pr.py`)",
   "eval_harness: metric/rerank plumbing tests that may use fake stores",
-  "integration: local integration tests that exercise process, HTTP, or real in-memory backends",
-  "meta: docs, packaging, exports, or repository-shape tests; not runtime proof",
+  "integration: local integration tests that exercise process, HTTP, or real in-memory adapters",
+  "meta: docs, packaging, public-surface checks, or repository-shape tests; not runtime proof",
   "live: tests that require external provider credentials or services",
   "provider_contract: recorded provider SDK replay; no network in CI",
-  "plumbing: demo/fake embedders or wiring-only orchestration checks",
+  "plumbing: demo/fake embedders or wiring-only checks",
 ]
 
 [tool.ruff]

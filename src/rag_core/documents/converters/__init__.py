@@ -6,6 +6,14 @@ import logging
 import os
 
 from .base import BaseConverter, ConversionResult, QualityVerdict
+from .converter_keys import (
+    DOCX_CONVERTER_KEY,
+    IMAGE_CONVERTER_KEY,
+    PDF_CONVERTER_KEY,
+    PPTX_CONVERTER_KEY,
+    TEXT_CONVERTER_KEY,
+    XLSX_CONVERTER_KEY,
+)
 from .format_support import (
     is_unsupported_binary_extension,
     is_unsupported_binary_mime_type,
@@ -15,14 +23,23 @@ from .registry_maps import EXTENSION_MAP, MIME_TYPE_MAP
 
 logger = logging.getLogger(__name__)
 
-_TEXT_FALLBACK_KEY = "text"
-_STRICT_MAPPED_KEYS = frozenset({"pdf", "docx", "pptx", "xlsx", "image"})
+_STRICT_MAPPED_KEYS = frozenset(
+    {
+        PDF_CONVERTER_KEY,
+        DOCX_CONVERTER_KEY,
+        PPTX_CONVERTER_KEY,
+        XLSX_CONVERTER_KEY,
+        IMAGE_CONVERTER_KEY,
+    }
+)
 
 
 def _resolve_text_fallback(converters: dict[str, BaseConverter]) -> BaseConverter:
-    text_converter = converters.get(_TEXT_FALLBACK_KEY)
+    text_converter = converters.get(TEXT_CONVERTER_KEY)
     if text_converter is None:
-        raise RuntimeError("Text converter is required for fallback resolution but is unavailable")
+        raise RuntimeError(
+            "Text converter is required for fallback resolution but is unavailable"
+        )
     return text_converter
 
 
@@ -70,15 +87,19 @@ def get_converter(
     mt = (mime_type or "").strip().lower()
     _, ext = os.path.splitext((filename or "").lower())
     if is_unsupported_binary_extension(ext):
-        raise ValueError(f"Unsupported format for {filename or mime_type!r}: extension {ext!r}")
+        raise ValueError(
+            f"Unsupported format for {filename or mime_type!r}: extension {ext!r}"
+        )
     if is_unsupported_binary_mime_type(mt):
-        raise ValueError(f"Unsupported format for {filename or mime_type!r}: MIME type {mt!r}")
+        raise ValueError(
+            f"Unsupported format for {filename or mime_type!r}: MIME type {mt!r}"
+        )
 
     mime_key = MIME_TYPE_MAP.get(mt)
     extension_key = EXTENSION_MAP.get(ext)
-    if (
-        extension_key
-        and (mime_key is None or (mime_key == _TEXT_FALLBACK_KEY and extension_key != _TEXT_FALLBACK_KEY))
+    if extension_key and (
+        mime_key is None
+        or (mime_key == TEXT_CONVERTER_KEY and extension_key != TEXT_CONVERTER_KEY)
     ):
         extension_converter = _resolve_mapped_converter_or_none(
             converters=converters,

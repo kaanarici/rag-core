@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import replace
 
 from rag_core.search.result_filters import result_matches_sidecar_query
-from rag_core.search.types import SearchResult, SearchSidecarQuery
+from rag_core.search.request_models import SearchSidecarQuery
+from rag_core.search.vector_models import SearchResult
 
 LexicalMatch = tuple[float, SearchResult]
 _BestFieldMatch = tuple[float, str, str, str]

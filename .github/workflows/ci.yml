@@ -31,6 +31,10 @@ jobs:
         if: matrix.python-version == '3.12'
         run: ./scripts/dx_smoke.sh
 
+      - name: Vercel AI SDK example smoke (Journey B)
+        if: matrix.python-version == '3.12'
+        run: ./scripts/verify_vercel_ai_sdk_example.sh
+
       - name: Self-host HTTP smoke (Journey C)
         if: matrix.python-version == '3.12'
         run: ./scripts/ci_self_host_smoke.sh

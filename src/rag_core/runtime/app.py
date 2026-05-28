@@ -8,13 +8,28 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from rag_core.cli_output import search_hit_payload
-from rag_core.runtime.errors import api_error, parse_json_object
+from rag_core.runtime_defaults import DEFAULT_RUNTIME_JOB_DB_PATH
+from rag_core.runtime.errors import RuntimeRequestError, api_error, parse_json_object
 from rag_core.runtime.health import (
     liveness_payload,
     readiness_payload,
     readiness_status_code,
 )
-from rag_core.runtime.jobs import IngestJobStore
+from rag_core.runtime.jobs import (
+    INGEST_JOB_STATUS_COMPLETED,
+    INGEST_JOB_STATUS_FAILED,
+    INGEST_JOB_STATUS_RUNNING,
+    IngestJobStore,
+)
+from rag_core.runtime.paths import normalize_ingest_roots, validate_ingest_path
+from rag_core.runtime.requests import (
+    DEFAULT_RUNTIME_CONTEXT_LIMIT,
+    DEFAULT_RUNTIME_SEARCH_LIMIT,
+    parse_ingest_request,
+    parse_retrieval_request,
+)
+from rag_core.search.context_pack import context_pack_response_payload
+from starlette.responses import JSONResponse
 
 if TYPE_CHECKING:
     from rag_core.core import RAGCore
@@ -26,15 +41,16 @@ def create_app(
     config: RAGCoreConfig,
     core_factory: Callable[..., RAGCore],
     job_db_path: Path | None = None,
+    ingest_roots: tuple[Path, ...] | None = None,
 ) -> Any:
     from starlette.applications import Starlette
     from starlette.background import BackgroundTask
     from starlette.exceptions import HTTPException
     from starlette.requests import Request
-    from starlette.responses import JSONResponse
     from starlette.routing import Route
 
-    jobs = IngestJobStore(job_db_path or Path(".rag-core/runtime/jobs.sqlite3"))
+    jobs = IngestJobStore(job_db_path or DEFAULT_RUNTIME_JOB_DB_PATH)
+    allowed_ingest_roots = normalize_ingest_roots(ingest_roots)
     shared_core: RAGCore | None = None
 
     async def _get_or_create_core() -> RAGCore:
@@ -54,9 +70,7 @@ def create_app(
             checks["core"] = {"status": "ok"}
             store_health = await core.check_health()
             checks["vector_store"] = store_health
-            ready = bool(
-                store_health.get("ok", store_health.get("healthy", False))
-            )
+            ready = bool(store_health.get("ok", store_health.get("healthy", False)))
             payload = readiness_payload(ready=ready, checks=checks)
             return JSONResponse(payload, status_code=readiness_status_code(ready=ready))
         except Exception as exc:
@@ -76,26 +90,19 @@ def create_app(
         body = await parse_json_object(request)
         if isinstance(body, JSONResponse):
             return body
-        path = str(body.get("path") or "")
-        namespace = str(body.get("namespace") or "")
-        corpus_id = str(body.get("corpus_id") or body.get("corpusId") or "")
-        missing = [
-            field
-            for field, value in (
-                ("path", path),
-                ("namespace", namespace),
-                ("corpus_id", corpus_id),
+        try:
+            ingest_request = parse_ingest_request(body)
+            ingest_path = validate_ingest_path(
+                ingest_request.path,
+                roots=allowed_ingest_roots,
             )
-            if not value
-        ]
-        if missing:
-            return api_error(
-                code="invalid_request",
-                message="path, namespace, and corpus_id are required",
-                status_code=400,
-                details={"missing_fields": missing},
-            )
-        record = jobs.create(path=path, namespace=namespace, corpus_id=corpus_id)
+        except RuntimeRequestError as exc:
+            return _invalid_request(exc)
+        record = jobs.create(
+            path=str(ingest_path),
+            namespace=ingest_request.namespace,
+            corpus_id=ingest_request.corpus_id,
+        )
         task = BackgroundTask(
             _run_ingest_job,
             jobs=jobs,
@@ -135,43 +142,31 @@ def create_app(
         body = await parse_json_object(request)
         if isinstance(body, JSONResponse):
             return body
-        query = str(body.get("query") or "")
-        namespace = str(body.get("namespace") or "")
-        corpus_ids = body.get("corpus_ids") or body.get("corpusIds") or []
-        if not query or not namespace or not isinstance(corpus_ids, list):
-            return api_error(
-                code="invalid_request",
-                message="query, namespace, and corpus_ids are required",
-                status_code=400,
-                details={
-                    "missing_fields": [
-                        name
-                        for name, ok in (
-                            ("query", bool(query)),
-                            ("namespace", bool(namespace)),
-                            ("corpus_ids", isinstance(corpus_ids, list) and bool(corpus_ids)),
-                        )
-                        if not ok
-                    ]
-                },
-            )
         try:
-            limit = int(body.get("limit") or 10)
-        except (TypeError, ValueError):
-            return api_error(
-                code="invalid_request",
-                message="limit must be an integer",
-                status_code=400,
-                details={"field": "limit"},
+            retrieval_request = parse_retrieval_request(
+                body,
+                default_limit=DEFAULT_RUNTIME_SEARCH_LIMIT,
             )
-        rerank = bool(body.get("rerank") or False)
+        except RuntimeRequestError as exc:
+            return _invalid_request(exc)
         core = await _get_or_create_core()
         hits = await core.search(
-            query=query,
-            namespace=namespace,
-            corpus_ids=[str(value) for value in corpus_ids],
-            limit=limit,
-            rerank=rerank,
+            query=retrieval_request.query,
+            namespace=retrieval_request.namespace,
+            corpus_ids=list(retrieval_request.corpus_ids),
+            limit=retrieval_request.limit,
+            content_types=(
+                list(retrieval_request.content_types)
+                if retrieval_request.content_types is not None
+                else None
+            ),
+            document_ids=(
+                list(retrieval_request.document_ids)
+                if retrieval_request.document_ids is not None
+                else None
+            ),
+            rerank=retrieval_request.rerank,
+            use_lexical_search=retrieval_request.use_lexical_search,
         )
         return JSONResponse([search_hit_payload(hit) for hit in hits])
 
@@ -179,34 +174,36 @@ def create_app(
         body = await parse_json_object(request)
         if isinstance(body, JSONResponse):
             return body
-        query = str(body.get("query") or "")
-        namespace = str(body.get("namespace") or "")
-        corpus_ids = body.get("corpus_ids") or body.get("corpusIds") or []
-        if not query or not namespace or not isinstance(corpus_ids, list):
-            return api_error(
-                code="invalid_request",
-                message="query, namespace, and corpus_ids are required",
-                status_code=400,
-            )
         try:
-            limit = int(body.get("limit") or 10)
-        except (TypeError, ValueError):
-            return api_error(
-                code="invalid_request",
-                message="limit must be an integer",
-                status_code=400,
-                details={"field": "limit"},
+            retrieval_request = parse_retrieval_request(
+                body,
+                default_limit=DEFAULT_RUNTIME_CONTEXT_LIMIT,
+                allow_context_budget=True,
             )
-        rerank = bool(body.get("rerank") or False)
+        except RuntimeRequestError as exc:
+            return _invalid_request(exc)
         core = await _get_or_create_core()
         pack = await core.retrieve_context(
-            query=query,
-            namespace=namespace,
-            corpus_ids=[str(value) for value in corpus_ids],
-            limit=limit,
-            rerank=rerank,
+            query=retrieval_request.query,
+            namespace=retrieval_request.namespace,
+            corpus_ids=list(retrieval_request.corpus_ids),
+            limit=retrieval_request.limit,
+            content_types=(
+                list(retrieval_request.content_types)
+                if retrieval_request.content_types is not None
+                else None
+            ),
+            document_ids=(
+                list(retrieval_request.document_ids)
+                if retrieval_request.document_ids is not None
+                else None
+            ),
+            rerank=retrieval_request.rerank,
+            use_lexical_search=retrieval_request.use_lexical_search,
+            max_chars=retrieval_request.max_chars,
+            max_tokens=retrieval_request.max_tokens,
         )
-        return JSONResponse({"context_text": pack.as_text(), **pack.to_payload()})
+        return JSONResponse(context_pack_response_payload(pack))
 
     @asynccontextmanager
     async def lifespan(_: Any) -> AsyncIterator[None]:
@@ -258,13 +255,22 @@ def create_app(
     )
 
 
+def _invalid_request(exc: RuntimeRequestError) -> JSONResponse:
+    return api_error(
+        code="invalid_request",
+        message=exc.message,
+        status_code=400,
+        details=exc.details,
+    )
+
+
 async def _run_ingest_job(
     *,
     jobs: IngestJobStore,
     record: Any,
     core: Callable[[], Awaitable[RAGCore]],
 ) -> None:
-    jobs.update(record.job_id, status="running")
+    jobs.update(record.job_id, status=INGEST_JOB_STATUS_RUNNING)
     try:
         rag = await core()
         document = await rag.ingest_file(
@@ -274,7 +280,7 @@ async def _run_ingest_job(
         )
         jobs.update(
             record.job_id,
-            status="completed",
+            status=INGEST_JOB_STATUS_COMPLETED,
             result={
                 "document_id": document.document_id,
                 "chunk_count": document.chunk_count,
@@ -284,6 +290,6 @@ async def _run_ingest_job(
     except Exception as exc:
         jobs.update(
             record.job_id,
-            status="failed",
+            status=INGEST_JOB_STATUS_FAILED,
             error=f"{type(exc).__name__}: {exc}"[:500],
         )

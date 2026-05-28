@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from rag_core.cli_inputs import cli_safe_error_message
 from rag_core.core_models import RAGCoreConfig
 from rag_core.search.providers.embedding_models import resolve_embedding_dimensions
-from rag_core.search.types import SparseVector
+from rag_core.search.vector_models import SparseVector
 
 if TYPE_CHECKING:
     from rag_core.core import RAGCore

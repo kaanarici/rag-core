@@ -6,12 +6,15 @@ import hashlib
 import logging
 from typing import Protocol
 
-from rag_core.core_runtime import describe_query_plan_capabilities
-from rag_core.search.types import QueryPlanCapabilities
+from rag_core.search.provider_protocols import QueryPlanCapabilities
 
 from .qdrant_collection import extract_sparse_vector_names
-from .query_plan_capabilities import QDRANT_QUERY_PLAN_CAPABILITIES
-from .qdrant_shared import _KNOWN_SPARSE_VECTOR_NAMES, WriteLatencyTracker
+from .vector_store_capabilities import (
+    QDRANT_VECTOR_STORE_PROVIDER_SPEC,
+    describe_query_plan_capabilities,
+    qdrant_query_plan_capabilities_for_sparse_names,
+)
+from .qdrant_shared import WriteLatencyTracker
 
 
 class _QdrantHealthClient(Protocol):
@@ -34,8 +37,9 @@ async def check_qdrant_health(
         info = await client.get_collection(collection_name=collection_name)
     except Exception as exc:
         logger.warning(
-            "Qdrant health check failed: backend=qdrant error_type=%s "
+            "Qdrant health check failed: provider=%s error_type=%s "
             "collection_fingerprint=%s",
+            QDRANT_VECTOR_STORE_PROVIDER_SPEC.name,
             type(exc).__name__,
             _collection_fingerprint(collection_name),
         )
@@ -54,7 +58,7 @@ def _collection_fingerprint(collection_name: str) -> str:
 def _build_base_health(*, collection_name: str, dimensions: int) -> dict[str, object]:
     return {
         "healthy": False,
-        "backend": "qdrant",
+        "adapter": QDRANT_VECTOR_STORE_PROVIDER_SPEC.name,
         "collection": collection_name,
         "dimensions": dimensions,
     }
@@ -95,12 +99,7 @@ def _build_healthy_health(
 
 def _collection_query_plan_capabilities(collection_info: object) -> QueryPlanCapabilities:
     sparse_names = extract_sparse_vector_names(collection_info)
-    known_sparse_names = (
-        sparse_names & _KNOWN_SPARSE_VECTOR_NAMES if sparse_names is not None else None
-    )
-    if not known_sparse_names:
-        return QueryPlanCapabilities(dense=True)
-    return QDRANT_QUERY_PLAN_CAPABILITIES
+    return qdrant_query_plan_capabilities_for_sparse_names(sparse_names)
 
 
 def _build_unhealthy_health(

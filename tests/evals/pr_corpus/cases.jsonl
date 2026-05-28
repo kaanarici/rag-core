@@ -1,7 +1,7 @@
-{"case_id":"billing_payment_exact","query":"how can invoices be paid by ach card","namespace":"pr_eval","corpus_ids":["docs"],"expected_chunk_ids":["billing_payments"],"expected_grades":{"billing_payments":3}}
-{"case_id":"shipping_customs_exact","query":"international shipping customs carrier tracking","namespace":"pr_eval","corpus_ids":["docs"],"expected_chunk_ids":["shipping_customs"],"expected_grades":{"shipping_customs":3}}
-{"case_id":"webhook_signature","query":"verify webhook hmac signature header","namespace":"pr_eval","corpus_ids":["docs"],"expected_chunk_ids":["webhook_security"],"expected_grades":{"webhook_security":3}}
-{"case_id":"audit_export_retention","query":"audit log retention export ndjson archive","namespace":"pr_eval","corpus_ids":["docs"],"expected_chunk_ids":["audit_exports"],"expected_grades":{"audit_exports":3}}
-{"case_id":"encryption_rotation","query":"aes encryption key rotation enterprise tenants","namespace":"pr_eval","corpus_ids":["docs"],"expected_chunk_ids":["encryption_keys"],"expected_grades":{"encryption_keys":3}}
-{"case_id":"pagination_next_cursor","query":"next cursor pagination page tokens list response","namespace":"pr_eval","corpus_ids":["docs"],"expected_chunk_ids":["pagination_cursors"],"expected_grades":{"pagination_cursors":3}}
-{"case_id":"rate_limit_retry","query":"rate limit retry header http 429 minute","namespace":"pr_eval","corpus_ids":["docs"],"expected_chunk_ids":["rate_limits"],"expected_grades":{"rate_limits":3}}
+{"case_id":"billing_payment_exact","query":"how can invoices be paid by ach card","namespace":"pr_eval","corpus_ids":["docs"],"expected_ids":["billing_payments"],"expected_grades":{"billing_payments":3}}
+{"case_id":"shipping_customs_exact","query":"international shipping customs carrier tracking","namespace":"pr_eval","corpus_ids":["docs"],"expected_ids":["shipping_customs"],"expected_grades":{"shipping_customs":3}}
+{"case_id":"webhook_signature","query":"verify webhook hmac signature header","namespace":"pr_eval","corpus_ids":["docs"],"expected_ids":["webhook_security"],"expected_grades":{"webhook_security":3}}
+{"case_id":"audit_export_retention","query":"audit log retention export ndjson archive","namespace":"pr_eval","corpus_ids":["docs"],"expected_ids":["audit_exports"],"expected_grades":{"audit_exports":3}}
+{"case_id":"encryption_rotation","query":"aes encryption key rotation enterprise tenants","namespace":"pr_eval","corpus_ids":["docs"],"expected_ids":["encryption_keys"],"expected_grades":{"encryption_keys":3}}
+{"case_id":"pagination_next_cursor","query":"next cursor pagination page tokens list response","namespace":"pr_eval","corpus_ids":["docs"],"expected_ids":["pagination_cursors"],"expected_grades":{"pagination_cursors":3}}
+{"case_id":"rate_limit_retry","query":"rate limit retry header http 429 minute","namespace":"pr_eval","corpus_ids":["docs"],"expected_ids":["rate_limits"],"expected_grades":{"rate_limits":3}}

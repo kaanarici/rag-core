@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from rag_core.events.emit import emit_event
 from rag_core.events.types import IngestBatchProgress
+from rag_core.ingest_progress_statuses import IngestProgressStatus
 from rag_core.remote_ingest_models import (
     RemoteManifestStatus,
     RemoteUrlIngestFailure,
@@ -15,9 +16,6 @@ from rag_core.remote_ingest_models import (
 
 if TYPE_CHECKING:
     from rag_core.events.sink import EventSink
-
-
-RemoteIngestProgressStatus = Literal["succeeded", "failed"]
 
 
 class RemoteUrlIngestProgress:
@@ -43,7 +41,7 @@ class RemoteUrlIngestProgress:
         content_sha256: str,
         manifest_status: RemoteManifestStatus,
         manifest_reason: str,
-        status: RemoteIngestProgressStatus,
+        status: IngestProgressStatus,
         ingest_state: str,
         error: str,
     ) -> None:

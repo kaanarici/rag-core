@@ -17,14 +17,17 @@ from .contextualizer import (
 )
 from .contextualizer_anthropic_runtime import (
     _ANTHROPIC_CONTEXT_PROMPT_VERSION,
-    _DEFAULT_ANTHROPIC_MODEL,
     build_context_messages,
     create_anthropic_client,
     extract_anthropic_text,
 )
+from .contextualizer_provider_names import (
+    ANTHROPIC_CONTEXTUALIZER_ID,
+    DEFAULT_ANTHROPIC_CONTEXTUALIZER_MODEL,
+)
 
 if TYPE_CHECKING:
-    from rag_core.search.providers.embedding_cache import ChunkContextCache
+    from rag_core.search.providers.chunk_context_cache import ChunkContextCache
 
 logger = logging.getLogger(__name__)
 
@@ -38,11 +41,11 @@ class AnthropicChunkContextualizer:
     same cached prefix.
     """
 
-    contextualizer_id_prefix = "anthropic"
+    contextualizer_id_prefix = ANTHROPIC_CONTEXTUALIZER_ID
 
     def __init__(
         self,
-        model: str = _DEFAULT_ANTHROPIC_MODEL,
+        model: str = DEFAULT_ANTHROPIC_CONTEXTUALIZER_MODEL,
         *,
         max_tokens: int = 200,
         api_key: str | None = None,
@@ -106,7 +109,7 @@ class CachingContextualizer:
         *,
         document_sha256_resolver: Any | None = None,
     ) -> None:
-        from rag_core.search.providers.embedding_cache import sha256_text
+        from rag_core.search.providers.embedding_cache_models import sha256_text
 
         self._inner = inner
         self._cache = cache
@@ -117,7 +120,8 @@ class CachingContextualizer:
         return self._inner.contextualizer_id
 
     async def contextualize(self, request: ChunkContextRequest) -> str:
-        from rag_core.search.providers.embedding_cache import ChunkContextKey, sha256_text
+        from rag_core.search.providers.chunk_context_cache import ChunkContextKey
+        from rag_core.search.providers.embedding_cache_models import sha256_text
 
         document_sha = self._document_sha256(request.document_markdown)
         key = ChunkContextKey(
@@ -147,6 +151,7 @@ def _should_cache_context(inner: ChunkContextualizer, context: str) -> bool:
     return True
 
 __all__ = [
+    "ANTHROPIC_CONTEXTUALIZER_ID",
     "AnthropicChunkContextualizer",
     "CachingContextualizer",
 ]

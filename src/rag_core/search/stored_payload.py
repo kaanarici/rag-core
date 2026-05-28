@@ -12,7 +12,11 @@ from rag_core.search.stored_payload_fields import (
     required_payload_str,
     result_metadata,
 )
-from rag_core.search.types import ContentType, SearchResult
+from rag_core.search.vector_models import (
+    SEARCH_RESULT_TYPE_TEXT,
+    ContentType,
+    SearchResult,
+)
 
 SECTION_PAYLOAD_KEYS = (
     "result_type",
@@ -31,6 +35,8 @@ SECTION_PAYLOAD_KEYS = (
     "paragraph_index",
     "sheet_name",
     "row_range",
+    "line_start",
+    "line_end",
     "is_full_page",
     "anchor_chunk_index",
 )
@@ -93,7 +99,7 @@ def build_stored_payload(
         "chunk_word_count": chunk_word_count,
         "chunk_token_estimate": chunk_token_estimate,
         "chunker_strategy": chunker_strategy,
-        "result_type": "text",
+        "result_type": SEARCH_RESULT_TYPE_TEXT,
     }
     if embedding_model:
         payload["embedding_model"] = embedding_model
@@ -145,9 +151,41 @@ def _filterable_metadata(
             continue
         if not key.strip():
             continue
+        if key == "quality" and isinstance(value, Mapping):
+            filterable.update(_quality_filter_fields(value))
+            continue
         if _is_filterable_value(value):
             filterable[key] = value
     return filterable
+
+
+def _quality_filter_fields(quality: Mapping[Any, object]) -> dict[str, object]:
+    fields: dict[str, object] = {}
+    for source_key, target_key in (
+        ("verdict", "quality_verdict"),
+        ("details", "quality_details"),
+    ):
+        value = quality.get(source_key)
+        if isinstance(value, str) and value.strip():
+            fields[target_key] = value
+    for source_key, target_key in (
+        ("char_count", "quality_char_count"),
+        ("page_count", "quality_page_count"),
+    ):
+        value = quality.get(source_key)
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int):
+            fields[target_key] = value
+    for source_key, target_key in (
+        ("meaningful_ratio", "quality_meaningful_ratio"),
+        ("mojibake_ratio", "quality_mojibake_ratio"),
+        ("text_to_page_ratio", "quality_text_to_page_ratio"),
+    ):
+        value = _finite_plain_float(quality.get(source_key))
+        if value is not None:
+            fields[target_key] = value
+    return fields
 
 
 def _is_filterable_value(value: object) -> bool:

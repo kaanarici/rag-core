@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from rag_core.search.types import EmbeddingProvider, VectorStore
+from rag_core.search.provider_protocols import EmbeddingProvider, VectorStore
 
 
 def validate_index_namespace(namespace: str) -> str:

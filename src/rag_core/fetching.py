@@ -31,8 +31,17 @@ from rag_core.fetching_response import (
     is_fetch_redirect,
     read_success_fetch_body,
 )
+from rag_core.runtime_metadata import DISTRIBUTION_NAME, package_version
 
-DEFAULT_FETCH_USER_AGENT = "rag-core/0.1"
+
+def _default_fetch_user_agent() -> str:
+    version = package_version()
+    if version is None:
+        return DISTRIBUTION_NAME
+    return f"{DISTRIBUTION_NAME}/{version}"
+
+
+DEFAULT_FETCH_USER_AGENT = _default_fetch_user_agent()
 
 
 class HttpFetchClient:

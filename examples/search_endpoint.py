@@ -8,8 +8,12 @@ from collections.abc import Mapping, Sequence
 
 from rag_core import RAGCore
 from rag_core.contracts import (
+    normalize_static_content_types,
+    normalize_static_retrieval_scope,
     parse_search_user_documents_request,
+    scope_document_ids,
     search_user_documents_tool_result,
+    validate_bound_namespace,
 )
 from rag_core.demo import build_demo_core
 
@@ -43,19 +47,30 @@ async def search_user_documents_endpoint(
     namespace: str,
     corpus_ids: Sequence[str],
     authorized_document_ids: Sequence[str] | None = None,
+    authorized_content_types: Sequence[str] | None = None,
 ) -> dict[str, object]:
     if authorized_document_ids is None:
         raise ValueError("authorized_document_ids must be bound by the app endpoint")
     request = parse_search_user_documents_request(payload)
-    document_ids = _authorized_document_ids(
-        request.document_ids,
-        authorized_document_ids=authorized_document_ids,
+    normalized_namespace = validate_bound_namespace(namespace)
+    corpus_ids_tuple, authorized_document_ids_tuple = normalize_static_retrieval_scope(
+        corpus_ids=corpus_ids,
+        document_ids=authorized_document_ids,
+        limit=request.limit,
+    )
+    content_types_tuple = normalize_static_content_types(authorized_content_types)
+    document_ids = scope_document_ids(
+        requested=request.document_ids,
+        configured=authorized_document_ids_tuple,
     )
     pack = await core.retrieve_context(
         query=request.query,
-        namespace=namespace,
-        corpus_ids=list(corpus_ids),
+        namespace=normalized_namespace,
+        corpus_ids=list(corpus_ids_tuple),
         limit=request.limit,
+        content_types=(
+            list(content_types_tuple) if content_types_tuple is not None else None
+        ),
         document_ids=document_ids,
         rerank=request.rerank,
         use_lexical_search=request.use_lexical_search,
@@ -63,21 +78,6 @@ async def search_user_documents_endpoint(
         max_tokens=request.max_tokens,
     )
     return search_user_documents_tool_result(pack)
-
-
-def _authorized_document_ids(
-    requested_document_ids: Sequence[str] | None,
-    *,
-    authorized_document_ids: Sequence[str],
-) -> list[str]:
-    if requested_document_ids is None:
-        return list(authorized_document_ids)
-
-    allowed = set(authorized_document_ids)
-    selected = [document_id for document_id in requested_document_ids if document_id in allowed]
-    if len(selected) != len(requested_document_ids):
-        raise ValueError("document_ids include unauthorized documents")
-    return selected
 
 
 async def run_demo() -> dict[str, object]:

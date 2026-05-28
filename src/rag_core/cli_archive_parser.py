@@ -5,6 +5,15 @@ import argparse
 from rag_core.archive_sources import ArchiveLimits
 from rag_core.cli_config_parser import add_config_flags
 from rag_core.cli_events_parser import add_events_jsonl_flag
+from rag_core.cli_source_flags import (
+    add_force_reindex_flag,
+    add_json_flag,
+    add_manifest_dir_flag,
+    add_max_concurrency_flag,
+    add_metadata_flag,
+    add_plan_json_flag,
+    add_scope_flags,
+)
 
 
 def add_ingest_archive_command(
@@ -25,18 +34,14 @@ def add_ingest_archive_command(
     )
     add_config_flags(ingest_archive)
     ingest_archive.add_argument("archive_path", help="ZIP archive to ingest.")
-    ingest_archive.add_argument("--namespace", required=True)
-    ingest_archive.add_argument("--corpus-id", required=True)
-    ingest_archive.add_argument(
-        "--force-reindex",
-        action="store_true",
+    add_scope_flags(ingest_archive)
+    add_force_reindex_flag(
+        ingest_archive,
         help="Reindex archive members even when content is unchanged.",
     )
-    ingest_archive.add_argument(
-        "--max-concurrency",
-        type=int,
-        default=1,
-        help="Maximum archive members to ingest concurrently. Default: 1.",
+    add_max_concurrency_flag(
+        ingest_archive,
+        help="Maximum archive members to ingest concurrently.",
     )
     ingest_archive.add_argument(
         "--archive-max-entries",
@@ -62,33 +67,24 @@ def add_ingest_archive_command(
             f"Default: {limits.max_total_bytes}."
         ),
     )
-    ingest_archive.add_argument(
-        "--manifest-dir",
-        default=manifest_dir_default,
-        help=(
-            "Directory under which JSONL manifests are written. "
-            f"Default: {manifest_dir_help_default}"
-        ),
+    add_manifest_dir_flag(
+        ingest_archive,
+        manifest_dir_default=manifest_dir_default,
+        manifest_dir_help_default=manifest_dir_help_default,
     )
-    ingest_archive.add_argument(
-        "--plan-json",
-        action="store_true",
+    add_plan_json_flag(
+        ingest_archive,
         help=(
             "Print the fingerprinted archive source-item plan and manifest "
-            "reconciliation, then exit without constructing the runtime."
+            "reconciliation, then exit without assembling RAGCore."
         ),
     )
-    ingest_archive.add_argument(
-        "--metadata",
-        action="append",
-        default=[],
-        metavar="KEY=VALUE",
+    add_metadata_flag(
+        ingest_archive,
         help="Repeatable metadata field applied to every ingested archive member.",
     )
     add_events_jsonl_flag(ingest_archive)
-    ingest_archive.add_argument(
-        "--json", action="store_true", help="Emit one JSON object per archive member."
-    )
+    add_json_flag(ingest_archive, help="Emit one JSON object per archive member.")
 
 
 __all__ = ["add_ingest_archive_command"]

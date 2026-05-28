@@ -14,6 +14,9 @@ from rag_core.documents.contextualizer import (
     NoOpContextualizer,
 )
 from rag_core.documents.contextualizer_adapters import AnthropicChunkContextualizer
+from rag_core.documents.contextualizer_provider_names import (
+    DEFAULT_ANTHROPIC_CONTEXTUALIZER_MODEL,
+)
 
 
 def _make_request(
@@ -136,7 +139,7 @@ def test_anthropic_contextualizer_escapes_prompt_wrappers(
 @pytest.mark.parametrize(
     "model, expected_model, expected_id",
     [
-        (None, "claude-haiku-4-5", None),
+        (None, DEFAULT_ANTHROPIC_CONTEXTUALIZER_MODEL, None),
         (
             "claude-sonnet-4-5",
             "claude-sonnet-4-5",

@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from dataclasses import replace
 
-from rag_core.search.types import SearchResult
+from rag_core.search.vector_models import SearchResult
 
 
 def finite_score_or_zero(score: object) -> float:

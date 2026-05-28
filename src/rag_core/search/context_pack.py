@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
+from rag_core.retrieval_defaults import DEFAULT_CONTEXT_LIMIT
 from rag_core.search.context_pack_helpers import (
     SourceDedupeKey as _SourceDedupeKey,
     base_source_id as _base_source_id,
@@ -12,34 +13,37 @@ from rag_core.search.context_pack_helpers import (
 )
 from rag_core.search.context_pack_models import (
     ContextSnippet,
-    ModelContextPack,
+    ContextPack,
     SourceLocator,
     SourcePreview,
     SourceReference,
+    format_snippet_header,
+    render_context_snippets,
     source_preview_from_snippet,
-)
-from rag_core.search.context_pack_rendering import (
-    format_header as _format_header,
-    render_snippets as _render_snippets,
 )
 from rag_core.search.context_pack_sources import (
     source_locator_from_result,
     source_reference_from_result,
 )
 from rag_core.search.result_scores import finite_score_or_zero
-from rag_core.search.types import SearchResult
+from rag_core.search.vector_models import SearchResult
+
+
+def context_pack_response_payload(pack: ContextPack) -> dict[str, object]:
+    """Return app-facing payload plus prompt-safe text for CLI/HTTP."""
+    return {**pack.to_payload(), "context_text": pack.as_prompt_text()}
 
 
 def build_context_pack(
     results: Iterable[SearchResult],
     *,
     query: str,
-    max_snippets: int = 8,
+    max_snippets: int = DEFAULT_CONTEXT_LIMIT,
     max_chars: int | None = None,
     max_tokens: int | None = None,
     chars_per_token: int = 4,
-) -> ModelContextPack:
-    """Convert ranked search hits into a deterministic model context pack."""
+) -> ContextPack:
+    """Convert ranked search hits into a deterministic ContextPack."""
 
     if max_snippets <= 0:
         raise ValueError("max_snippets must be positive")
@@ -90,7 +94,7 @@ def build_context_pack(
             require_stable_suffix=_base_source_id(result) in colliding_source_ids,
         )
         locator = source_locator_from_result(result)
-        header = _format_header(source.source_id, source, locator)
+        header = format_snippet_header(source.source_id, source, locator)
         text_budget = (
             None if remaining_chars is None else remaining_chars - len(header) - 1
         )
@@ -127,7 +131,7 @@ def build_context_pack(
         if remaining_chars is not None:
             remaining_chars -= rendered_char_count
 
-    return ModelContextPack(
+    return ContextPack(
         query=query,
         snippets=tuple(snippets),
         dropped_count=max(0, dropped_count),
@@ -135,7 +139,7 @@ def build_context_pack(
         max_chars=char_budget,
         max_tokens=max_tokens,
         token_estimate=sum(snippet.token_estimate for snippet in snippets),
-        char_count=len(_render_snippets(snippets, max_chars=char_budget)),
+        char_count=len(render_context_snippets(snippets, max_chars=char_budget)),
         truncated=truncated,
     )
 
@@ -162,11 +166,12 @@ def _deduped_results(results: list[SearchResult]) -> list[SearchResult]:
 
 __all__ = [
     "ContextSnippet",
-    "ModelContextPack",
+    "ContextPack",
     "SourceLocator",
     "SourcePreview",
     "SourceReference",
     "build_context_pack",
+    "context_pack_response_payload",
     "source_locator_from_result",
     "source_preview_from_snippet",
     "source_reference_from_result",

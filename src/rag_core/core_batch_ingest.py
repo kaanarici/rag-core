@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from rag_core.config.ingest_config import DEFAULT_INGEST_MAX_CONCURRENCY
 from rag_core.local_ingest import run_local_ingest_with_core
 from rag_core.local_ingest_models import LocalIngestRequest
 from rag_core.remote_ingest import (
@@ -33,7 +34,7 @@ async def ingest_files_with_core(
     corpus_id: str,
     metadata: dict[str, str] | None = None,
     force_reindex: bool = False,
-    max_concurrency: int = 1,
+    max_concurrency: int = DEFAULT_INGEST_MAX_CONCURRENCY,
     manifest_dir: str | Path | None = None,
 ) -> "LocalIngestResult":
     return await run_local_ingest_with_core(
@@ -62,7 +63,7 @@ async def ingest_urls_with_core(
     corpus_id: str,
     metadata: dict[str, str] | None = None,
     force_reindex: bool = False,
-    max_concurrency: int = 1,
+    max_concurrency: int = DEFAULT_INGEST_MAX_CONCURRENCY,
     fetch_client: "FetchClient | None" = None,
     fetch_policy: "FetchSecurityPolicy | None" = None,
     fetch_limits: "FetchLimits | None" = None,

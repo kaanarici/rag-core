@@ -8,6 +8,7 @@ from rag_core.archive_sources import (
     ArchiveSourceItem,
     ZipArchiveSourceReader,
 )
+from rag_core.config.ingest_config import DEFAULT_INGEST_MAX_CONCURRENCY
 from rag_core.core_archive_runner import (
     ArchiveIngestCore,
     archive_record_counts,
@@ -45,7 +46,7 @@ async def ingest_zip_archive_with_core(
     corpus_id: str,
     metadata: dict[str, str] | None = None,
     force_reindex: bool = False,
-    max_concurrency: int = 1,
+    max_concurrency: int = DEFAULT_INGEST_MAX_CONCURRENCY,
     limits: ArchiveLimits | None = None,
     manifest_dir: str | Path | None = None,
     event_sink: "EventSink | None" = None,

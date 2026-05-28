@@ -15,16 +15,34 @@ from typing import Any, Callable, cast
 import pytest
 
 from rag_core.cli import main
+from rag_core.config import DEFAULT_RERANKER_PROVIDER
 from rag_core.core_lifecycle import compute_content_sha256
-from rag_core.core_models import CorpusManifestEntry, IngestedDocument
+from rag_core.core_models import CorpusManifestEntry, IngestedDocument, RAGCoreConfig
+from rag_core.documents.contextualizer_provider_names import NOOP_CONTEXTUALIZER_ID
+from rag_core.events.sinks import DEFAULT_EVENT_SINK_PROVIDER
 from rag_core.manifest_persistence import write_entry
 from rag_core.sources import document_key as local_document_key
+from rag_core.search.context_pack import build_context_pack
 from rag_core.search.planning import search_profile
+from rag_core.search.providers.cache_provider_names import NO_CACHE_PROVIDER
+from rag_core.search.providers.diagnostic_support import (
+    READINESS_PACKAGE_AND_ENV,
+    SUPPORT_DEFAULT,
+    SUPPORT_FIRST_PARTY_OPTIONAL,
+    SUPPORT_FIRST_PARTY_UTILITY,
+)
+from rag_core.search.providers.sparse import SPLADE_LOAD_UNKNOWN_UNTIL_RUN
+from rag_core.search.providers.vector_store_diagnostics import (
+    VECTOR_STORE_RUNTIME_FAILED,
+    VECTOR_STORE_RUNTIME_HEALTHY,
+    VECTOR_STORE_RUNTIME_NOT_REQUESTED,
+)
 from rag_core.search.types import And, Term
 from tests.support import make_search_result
 
 
 _SearchHandler = Callable[..., Any]
+_RetrieveContextHandler = Callable[..., Any]
 _IngestHandler = Callable[..., Any]
 
 
@@ -38,6 +56,7 @@ class _FakeRAGCore:
     """
 
     search_handler: _SearchHandler | None = None
+    retrieve_context_handler: _RetrieveContextHandler | None = None
     ingest_handler: _IngestHandler | None = None
     instances: list["_FakeRAGCore"] = []
 
@@ -45,6 +64,7 @@ class _FakeRAGCore:
         self.closed = False
         self.event_sink = kwargs.get("event_sink")
         self.search_calls: list[dict[str, Any]] = []
+        self.retrieve_context_calls: list[dict[str, Any]] = []
         self.ingest_calls: list[dict[str, Any]] = []
         type(self)._last_instance = self  # type: ignore[attr-defined]
         type(self).instances.append(self)
@@ -58,6 +78,24 @@ class _FakeRAGCore:
         if handler is not None:
             return cast(list[object], handler(self, **kwargs))
         return [make_search_result(document_id="doc-1")]
+
+    async def retrieve_context(self, **kwargs: Any) -> object:
+        self.retrieve_context_calls.append(kwargs)
+        handler = type(self).retrieve_context_handler
+        if handler is not None:
+            return handler(self, **kwargs)
+        return build_context_pack(
+            [
+                make_search_result(
+                    id="private-hit-1",
+                    document_id="internal-doc-id",
+                    document_key="private/billing.md",
+                    title=None,
+                    text="billing context",
+                )
+            ],
+            query=cast(str, kwargs.get("query", "")),
+        )
 
     async def ingest_file(self, path: Path, **kwargs: Any) -> IngestedDocument:
         self.ingest_calls.append({"path": path, **kwargs})
@@ -153,7 +191,7 @@ def test_query_commands_reject_non_positive_limit_before_runtime_setup(
     assert unexpected_core.constructed is False
 
 
-def test_doctor_json_reports_planned_runtime(capsys: pytest.CaptureFixture[str]) -> None:
+def test_doctor_json_reports_planned_core(capsys: pytest.CaptureFixture[str]) -> None:
     exit_code = main(
         [
             "doctor",
@@ -168,46 +206,85 @@ def test_doctor_json_reports_planned_runtime(capsys: pytest.CaptureFixture[str])
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["collection_name"] == "rag_core_chunks__text_embedding_3_small_1536d"
+    assert "retrieval" not in payload
+    assert payload["search"]["default_search_profile"] == "balanced"
     assert payload["embedding"]["model"] == "text-embedding-3-small"
     assert payload["embedding"]["dimensions"] == 1536
-    assert payload["reranker"]["effective"] == "none"
+    assert payload["reranker"]["effective"] == DEFAULT_RERANKER_PROVIDER
     assert payload["vector_store"]["configured"] == "qdrant"
-    assert {"qdrant", "turbopuffer"}.issubset(payload["vector_store"]["registered"])
+    assert {"qdrant", "turbopuffer", "memory"}.issubset(
+        payload["vector_store"]["registered"]
+    )
     qdrant = payload["vector_store"]["providers"]["qdrant"]
-    assert qdrant["support_level"] == "default"
+    assert qdrant["support_level"] == SUPPORT_DEFAULT
     assert qdrant["configured"] is True
-    assert qdrant["package_present"] is True
+    assert qdrant["package_available"] is True
     assert qdrant["credential_required"] is False
-    assert qdrant["credential_present"] is False
+    assert qdrant["api_key_configured"] is False
     assert qdrant["runtime_validated"] is False
-    assert qdrant["runtime_validation"] == "not_requested"
+    assert qdrant["runtime_validation"] == VECTOR_STORE_RUNTIME_NOT_REQUESTED
     assert qdrant["dimension_aware_collection"] is True
+    assert qdrant["per_point_delete"] is True
+    assert qdrant["document_record_lookup"] is True
     turbopuffer = payload["vector_store"]["providers"]["turbopuffer"]
-    assert turbopuffer["support_level"] == "first_party_optional"
+    assert turbopuffer["support_level"] == SUPPORT_FIRST_PARTY_OPTIONAL
     assert turbopuffer["configured"] is False
-    assert isinstance(turbopuffer["package_present"], bool)
+    assert isinstance(turbopuffer["package_available"], bool)
     assert turbopuffer["credential_required"] is True
-    assert turbopuffer["credential_present"] is False
+    assert turbopuffer["api_key_configured"] is False
     assert turbopuffer["runtime_validated"] is False
-    assert turbopuffer["runtime_validation"] == "not_requested"
+    assert turbopuffer["runtime_validation"] == VECTOR_STORE_RUNTIME_NOT_REQUESTED
+    memory = payload["vector_store"]["providers"]["memory"]
+    assert memory["support_level"] == SUPPORT_FIRST_PARTY_UTILITY
+    assert memory["configured"] is False
+    assert memory["package_available"] is True
+    assert memory["credential_required"] is False
+    assert memory["check_store_supported"] is False
+    assert memory["query_plan"]["hybrid_rrf"] is True
     provider_categories = payload["providers"]
     assert provider_categories["sparse"]["configured"] == "fastembed"
     fastembed = provider_categories["sparse"]["providers"]["fastembed"]
-    assert fastembed["readiness_scope"] == "package_and_env"
+    assert fastembed["readiness_scope"] == READINESS_PACKAGE_AND_ENV
     assert fastembed["channels"]["splade"]["live_ready"] is None
-    assert fastembed["channels"]["splade"]["load_status"] == (
-        "unknown_until_sparse_embedding_runs"
-    )
+    assert fastembed["channels"]["splade"]["load_status"] == SPLADE_LOAD_UNKNOWN_UNTIL_RUN
     assert provider_categories["ocr"]["providers"]["mistral"]["support_level"] == (
-        "first_party_optional"
+        SUPPORT_FIRST_PARTY_OPTIONAL
     )
-    assert provider_categories["contextualizer"]["configured"] == "none"
-    assert provider_categories["embedding_cache"]["configured"] == "none"
-    assert provider_categories["chunk_context_cache"]["configured"] == "none"
+    assert provider_categories["contextualizer"]["configured"] == NOOP_CONTEXTUALIZER_ID
+    assert provider_categories["embedding_cache"]["configured"] == NO_CACHE_PROVIDER
+    assert provider_categories["chunk_context_cache"]["configured"] == NO_CACHE_PROVIDER
     assert provider_categories["search_sidecar"]["configured"] is None
     assert "" not in provider_categories["search_sidecar"]["providers"]
-    assert provider_categories["event_sink"]["configured"] == "none"
+    assert provider_categories["event_sink"]["configured"] == DEFAULT_EVENT_SINK_PROVIDER
     assert "pdf_inspector" in payload
+
+
+def test_cli_demo_embedding_provider_defaults_to_demo_model() -> None:
+    from rag_core.cli_parser import _build_parser
+
+    parser = _build_parser()
+    args = parser.parse_args(
+        [
+            "ingest",
+            "examples/demo_corpus",
+            "--namespace",
+            "acme",
+            "--corpus-id",
+            "help",
+            "--qdrant-location",
+            ":memory:",
+            "--embedding-provider",
+            "demo",
+            "--embedding-dimensions",
+            "64",
+        ]
+    )
+
+    config = RAGCoreConfig.from_cli(args)
+
+    assert config.embedding.provider == "demo"
+    assert config.embedding.model == "demo-dense-v1"
+    assert config.embedding.dimensions == 64
 
 
 def test_doctor_json_reports_turbopuffer_env_without_secret(
@@ -235,7 +312,6 @@ def test_doctor_json_reports_turbopuffer_env_without_secret(
     payload = json.loads(output)
     turbopuffer = payload["vector_store"]["providers"]["turbopuffer"]
     assert turbopuffer["api_key_configured"] is True
-    assert turbopuffer["credential_present"] is True
     assert turbopuffer["region"] == "aws-us-west-2"
     assert turbopuffer["base_url_configured"] is True
     assert turbopuffer["configured"] is False
@@ -272,7 +348,6 @@ def test_doctor_json_reports_turbopuffer_selection_without_secret(
     assert turbopuffer["configured"] is True
     assert turbopuffer["namespace"] == "prod-docs"
     assert turbopuffer["api_key_configured"] is True
-    assert turbopuffer["credential_present"] is True
 
 
 def test_doctor_json_redacts_qdrant_url_sensitive_parts(
@@ -376,7 +451,7 @@ def test_doctor_check_store_creates_local_collection(capsys: pytest.CaptureFixtu
     assert payload["store_health"]["collection"] == "rag_core_chunks__text_embedding_3_small_1536d"
     qdrant = payload["vector_store"]["providers"]["qdrant"]
     assert qdrant["runtime_validated"] is True
-    assert qdrant["runtime_validation"] == "healthy"
+    assert qdrant["runtime_validation"] == VECTOR_STORE_RUNTIME_HEALTHY
 
 
 def test_doctor_check_store_exits_nonzero_when_health_is_unhealthy(
@@ -411,7 +486,7 @@ def test_doctor_check_store_exits_nonzero_when_health_is_unhealthy(
     assert payload["store_health"]["healthy"] is False
     qdrant = payload["vector_store"]["providers"]["qdrant"]
     assert qdrant["runtime_validated"] is False
-    assert qdrant["runtime_validation"] == "failed"
+    assert qdrant["runtime_validation"] == VECTOR_STORE_RUNTIME_FAILED
 
 
 def test_doctor_default_output_is_human_readable(capsys: pytest.CaptureFixture[str]) -> None:
@@ -585,8 +660,149 @@ def test_local_search_reports_empty_supported_files(
     assert payload["skipped_unsupported_count"] == 0
 
 
+def test_local_search_human_output_explains_skips_and_truncation(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "a.txt").write_text("rag retrieval smoke text", encoding="utf-8")
+    (docs / "b.txt").write_text("second retrieval smoke text", encoding="utf-8")
+    (docs / "empty.md").write_text("", encoding="utf-8")
+    (docs / "archive.bin").write_bytes(b"\x00\x01")
+
+    exit_code = main(["local-search", str(docs), "retrieval", "--max-files", "1"])
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "Indexed: 1 files" in output
+    assert "Skipped: 2 files (unsupported=1, empty=1, failed=0)" in output
+    assert "Truncated: yes; rerun with --max-files" in output
+    assert "Top hits:" in output
+
+
 def test_local_search_missing_file_reports_cli_error(capsys: pytest.CaptureFixture[str]) -> None:
     _expect_cli_error(["local-search", "does-not-exist", "query"], "file not found", capsys)
+
+
+def test_local_eval_indexes_folder_and_returns_redacted_report(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "billing.md").write_text(
+        "Invoices can be paid by card or ACH every month.", encoding="utf-8"
+    )
+    (docs / "support.txt").write_text(
+        "Support tickets are reviewed on weekdays.", encoding="utf-8"
+    )
+    cases = tmp_path / "cases.jsonl"
+    cases.write_text(
+        json.dumps(
+            {
+                "case_id": "billing-payment-methods",
+                "query": "How do customers pay invoices?",
+                "namespace": "acme",
+                "corpus_ids": ["help-center"],
+                "expected_ids": ["billing.md"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "local-eval",
+            str(docs),
+            str(cases),
+            "--min-recall-at-5",
+            "1",
+            "--min-mrr",
+            "1",
+            "--json",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["case_count"] == 1
+    assert payload["metrics"]["recall_at_5"] == 1.0
+    assert payload["metrics"]["mrr"] == 1.0
+    assert payload["quality_gate"]["passed"] is True
+    assert payload["run"]["mode"] == "local_eval"
+    assert payload["run"]["namespace"] == "acme"
+    assert payload["run"]["corpus_id"] == "help-center"
+    assert payload["run"]["indexed_count"] == 2
+    assert payload["cases"][0]["case_label"] == "case-1"
+    assert "case_id" not in payload["cases"][0]
+    assert "query" not in payload["cases"][0]
+    assert "expected_ids" not in payload["cases"][0]
+
+
+def test_local_eval_quality_gate_failure_sets_exit_code(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "billing.md").write_text(
+        "Invoices can be paid by card or ACH every month.", encoding="utf-8"
+    )
+    cases = tmp_path / "cases.jsonl"
+    cases.write_text(
+        json.dumps(
+            {
+                "query": "How do customers pay invoices?",
+                "namespace": "acme",
+                "corpus_ids": ["help-center"],
+                "expected_ids": ["missing.md"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "local-eval",
+            str(docs),
+            str(cases),
+            "--min-recall-at-5",
+            "1",
+            "--json",
+        ]
+    )
+
+    assert exit_code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["quality_gate"]["passed"] is False
+    assert payload["quality_gate"]["failures"][0]["metric"] == "recall_at_5"
+
+
+def test_local_eval_rejects_invalid_threshold(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "billing.md").write_text("Invoices can be paid by card.", encoding="utf-8")
+    cases = tmp_path / "cases.jsonl"
+    cases.write_text(
+        json.dumps(
+            {
+                "query": "How do customers pay invoices?",
+                "namespace": "acme",
+                "corpus_ids": ["help-center"],
+                "expected_ids": ["billing.md"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    _expect_cli_error(
+        ["local-eval", str(docs), str(cases), "--min-mrr", "2"],
+        "--min-mrr must be between 0 and 1",
+        capsys,
+    )
 
 
 def test_manifest_json_previews_file(
@@ -711,6 +927,14 @@ def test_query_metadata_filter_passes_exact_terms_to_core(
             "team=support",
             "--metadata-filter",
             "tier=enterprise",
+            "--content-type",
+            "document",
+            "--content-type",
+            "code",
+            "--document-id",
+            "doc-1",
+            "--document-id",
+            "doc-2",
             "--json",
         ]
     )
@@ -722,6 +946,8 @@ def test_query_metadata_filter_passes_exact_terms_to_core(
     call = instance.search_calls[0]
     assert call["limit"] == 7
     assert call["query_plan"] is None
+    assert call["content_types"] == ["document", "code"]
+    assert call["document_ids"] == ["doc-1", "doc-2"]
     assert call["metadata_filter"] == And(
         filters=(
             Term(field="team", value="support"),
@@ -759,6 +985,36 @@ def test_query_search_profile_passes_query_plan_to_core(
     assert payload[0]["document_id"] == "doc-1"
     instance = cast(_FakeRAGCore, fake_core._last_instance)  # type: ignore[attr-defined]
     assert instance.search_calls[0]["query_plan"] == expected_plan
+
+
+def test_retrieve_context_json_uses_prompt_safe_context_text(
+    fake_core: type[_FakeRAGCore],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = main(
+        [
+            "retrieve-context",
+            "billing policy",
+            "--namespace",
+            "acme",
+            "--corpus-id",
+            "help",
+            "--qdrant-location",
+            ":memory:",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["context_text"].startswith("[S1] file")
+    assert "billing context" in payload["context_text"]
+    assert "internal-doc-id" not in payload["context_text"]
+    snippets = payload["snippets"]
+    assert isinstance(snippets, list)
+    source = snippets[0]["source"]
+    assert isinstance(source, dict)
+    assert "source_id" in source
+    assert "result_id" in source
 
 
 def test_query_event_sink_failure_does_not_emit_success_payload(
@@ -823,6 +1079,38 @@ def test_query_bad_metadata_filter_reports_cli_error(
             "broken",
         ],
         "metadata entries must use KEY=VALUE",
+        capsys,
+    )
+    assert unexpected_core.constructed is False
+
+
+@pytest.mark.parametrize(
+    ("flag", "message"),
+    [
+        ("--content-type", "--content-type values must be non-empty"),
+        ("--document-id", "--document-id values must be non-empty"),
+    ],
+)
+def test_query_scope_filters_reject_blank_values_before_runtime_setup(
+    flag: str,
+    message: str,
+    unexpected_core: type[_UnexpectedRAGCore],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _expect_cli_error(
+        [
+            "search",
+            "billing",
+            "--namespace",
+            "acme",
+            "--corpus-id",
+            "help",
+            "--qdrant-location",
+            ":memory:",
+            flag,
+            " ",
+        ],
+        message,
         capsys,
     )
     assert unexpected_core.constructed is False
@@ -1321,7 +1609,7 @@ def test_doctor_fix_reports_dimension_mismatch_without_mutating(
     # Real dimension drift requires a persisted collection across two runs,
     # which in-memory Qdrant does not provide. Simulate the adapter's exact
     # failure message (owned by qdrant_collection.py) to exercise the CLI's
-    # structured reaction without forking a second storage backend.
+    # structured reaction without forking a second storage adapter.
     from rag_core.core import RAGCore as _RAGCore
 
     async def _fail_with_mismatch(self: Any) -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from rag_core.search.policy import VectorStorePolicy
-from rag_core.search.types import StoredDocumentRecord
+from rag_core.search.request_models import StoredDocumentRecord
 
 from .memory_query_scoring import MemoryPoint
 

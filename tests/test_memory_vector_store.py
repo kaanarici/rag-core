@@ -1,6 +1,6 @@
 """Behavior that the in-memory store implements on its own.
 
-The cross-backend contract lives in ``test_vector_store_contract.py``; these
+The cross-vector-store contract lives in ``test_vector_store_contract.py``; these
 tests cover memory-store specifics: payload-driven filtering (corpus,
 document, content type), sparse-only search ranking, namespace input
 validation, missing-record fallthrough, and that ``close`` resets state.
@@ -15,6 +15,7 @@ import pytest
 from rag_core.search.planning import query_plan_preset
 from rag_core.search.providers.memory_store import InMemoryVectorStore
 from rag_core.search.types import (
+    ContentType,
     SearchQuery,
     SparseVector,
     VectorPoint,
@@ -27,7 +28,7 @@ def _make_point(
     namespace: str = "team-space",
     corpus_id: str = "corpus-a",
     document_id: str = "doc-1",
-    content_type: str = "document",
+    content_type: object = "document",
     dense: list[float] | None = None,
     sparse_indices: list[int] | None = None,
     sparse_values: list[float] | None = None,
@@ -130,6 +131,19 @@ def test_memory_store_sparse_only_search_finds_matching_points() -> None:
             },
             ["p2"],
         ),
+        (
+            "content_type_enum_payload",
+            [
+                {"point_id": "p1", "content_type": ContentType.DOCUMENT},
+                {"point_id": "p2", "content_type": ContentType.CODE},
+            ],
+            {
+                "namespace": "team-space",
+                "corpus_ids": ["corpus-a"],
+                "content_types": ["document"],
+            },
+            ["p1"],
+        ),
     ],
     ids=lambda value: value if isinstance(value, str) else None,
 )
@@ -187,13 +201,14 @@ def test_memory_store_get_document_record_returns_none_when_missing() -> None:
     asyncio.run(_run())
 
 
-def test_memory_store_check_health_reports_backend_and_point_count() -> None:
+def test_memory_store_check_health_reports_adapter_and_point_count() -> None:
     async def _run() -> None:
         store = InMemoryVectorStore()
         await store.upsert([_make_point(point_id="p1")])
         health = await store.check_health()
         assert health["healthy"] is True
-        assert health["backend"] == "memory"
+        assert health["adapter"] == "memory"
+        assert "backend" not in health
         assert health["points_count"] == 1
 
     asyncio.run(_run())

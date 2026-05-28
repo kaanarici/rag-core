@@ -6,11 +6,11 @@ from typing import Any
 
 import pytest
 
-from rag_core import ModelContextPack, RAGCore
+from rag_core import ContextPack, RAGCore
 from rag_core.events import EventBuffer, summarize_search_trace_payload_runs
 from rag_core.core_retrieval import retrieve_context_with_core
 from rag_core.events.types import SearchStageCompleted, StageError
-from rag_core.search.searcher import SearchRequest, SearchRunResult
+from rag_core.search.pipeline_runner import SearchRequest, SearchRunResult
 
 from tests.support import (
     FakeEmbeddingProvider,
@@ -22,7 +22,7 @@ from tests.support import (
 
 
 def test_retrieve_context_trace_includes_safe_context_pack_summary() -> None:
-    async def run() -> tuple[SearchStageCompleted, ModelContextPack, list[Any]]:
+    async def run() -> tuple[SearchStageCompleted, ContextPack, list[Any]]:
         events = EventBuffer()
         core = RAGCore(
             make_test_config(

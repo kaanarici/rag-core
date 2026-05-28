@@ -8,12 +8,9 @@ from dataclasses import dataclass
 from rag_core.search.providers.rerank_results import (
     rerank_provider_result_count as rerank_provider_result_count,
 )
-from rag_core.search.types import (
-    RerankBudget,
-    RerankerProvider,
-    RerankResult,
-    SearchResult,
-)
+from rag_core.search.provider_protocols import RerankerProvider
+from rag_core.search.request_models import RerankBudget, RerankResult
+from rag_core.search.vector_models import SearchResult
 
 
 @dataclass(frozen=True)

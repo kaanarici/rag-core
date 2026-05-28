@@ -8,6 +8,7 @@ import pytest
 from rag_core.documents.converters.code_converter import CodeConverter
 from rag_core.documents.converters.json_converter import JsonConverter
 from rag_core.documents.converters.xml_converter import XmlConverter
+from tests.support import assert_caplog_omits_private
 
 
 def test_json_invalid_fallback_warning_is_sanitized(
@@ -35,12 +36,12 @@ def test_json_invalid_fallback_warning_is_sanitized(
 
     assert "json" in caplog.text
     assert "JSONDecodeError" in caplog.text
-    assert "private-roadmap.json" not in caplog.text
-    assert raw_error not in caplog.text
-    assert raw_json not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(
+        caplog,
+        "private-roadmap.json",
+        raw_error,
+        raw_json,
+    )
 
 
 def test_xml_malformed_fallback_debug_log_is_sanitized(
@@ -68,12 +69,12 @@ def test_xml_malformed_fallback_debug_log_is_sanitized(
     log_text = caplog.text.lower()
     assert "xml" in log_text
     assert "expaterror" in log_text
-    assert "private-roadmap.xml" not in caplog.text
-    assert "mismatched tag" not in caplog.text
-    assert raw_xml not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(
+        caplog,
+        "private-roadmap.xml",
+        "mismatched tag",
+        raw_xml,
+    )
 
 
 def test_code_binary_replacement_warning_is_sanitized(
@@ -102,7 +103,4 @@ def test_code_binary_replacement_warning_is_sanitized(
 
     assert "code" in caplog.text
     assert "2 replacement chars" in caplog.text
-    assert "private-tool.py" not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(caplog, "private-tool.py")

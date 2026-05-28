@@ -4,14 +4,24 @@ from __future__ import annotations
 
 from typing import TypeVar
 
+from rag_core.config import DEFAULT_RERANKER_PROVIDER
 from rag_core.config.env_access import get_env as config_get_env
+from rag_core.provider_api_keys import (
+    COHERE_API_KEY_ENVS,
+    VOYAGE_API_KEY_ENVS,
+    ZEROENTROPY_API_KEY_ENVS,
+    first_configured_api_key,
+)
+from rag_core.search.providers.cohere import COHERE_RERANKER_PROVIDER
 from rag_core.search.providers.registry import RERANKER_PROVIDERS
+from rag_core.search.providers.voyage import VOYAGE_PROVIDER
+from rag_core.search.providers.zeroentropy import ZEROENTROPY_PROVIDER
 
 _R = TypeVar("_R", bound=object)
 _RERANKER_API_KEY_ENVS = {
-    "cohere": ("COHERE_API_KEY", "CO_API_KEY"),
-    "voyage": ("VOYAGE_API_KEY",),
-    "zeroentropy": ("ZEROENTROPY_API_KEY",),
+    COHERE_RERANKER_PROVIDER: COHERE_API_KEY_ENVS,
+    VOYAGE_PROVIDER: VOYAGE_API_KEY_ENVS,
+    ZEROENTROPY_PROVIDER: ZEROENTROPY_API_KEY_ENVS,
 }
 
 
@@ -31,25 +41,34 @@ def resolve_reranker_provider(
 ) -> tuple[str, str | None]:
     """Resolve a requested reranker provider to an effective provider."""
 
-    requested = (provider or "none").strip().lower()
-    if requested == "none":
-        return "none", None
+    requested = (provider or DEFAULT_RERANKER_PROVIDER).strip().lower()
+    if requested == DEFAULT_RERANKER_PROVIDER:
+        return DEFAULT_RERANKER_PROVIDER, None
 
-    if requested == "cohere":
-        key = _resolve_api_key(api_key, env_names=reranker_api_key_env_names("cohere"))
+    if requested == COHERE_RERANKER_PROVIDER:
+        key = _resolve_api_key(
+            api_key,
+            env_names=reranker_api_key_env_names(COHERE_RERANKER_PROVIDER),
+        )
         if key:
-            return "cohere", None
-        return "none", "missing_cohere_api_key"
-    if requested == "voyage":
-        key = _resolve_api_key(api_key, env_names=reranker_api_key_env_names("voyage"))
+            return COHERE_RERANKER_PROVIDER, None
+        return DEFAULT_RERANKER_PROVIDER, "missing_cohere_api_key"
+    if requested == VOYAGE_PROVIDER:
+        key = _resolve_api_key(
+            api_key,
+            env_names=reranker_api_key_env_names(VOYAGE_PROVIDER),
+        )
         if key:
-            return "voyage", None
-        return "none", "missing_voyage_api_key"
-    if requested == "zeroentropy":
-        key = _resolve_api_key(api_key, env_names=reranker_api_key_env_names("zeroentropy"))
+            return VOYAGE_PROVIDER, None
+        return DEFAULT_RERANKER_PROVIDER, "missing_voyage_api_key"
+    if requested == ZEROENTROPY_PROVIDER:
+        key = _resolve_api_key(
+            api_key,
+            env_names=reranker_api_key_env_names(ZEROENTROPY_PROVIDER),
+        )
         if key:
-            return "zeroentropy", None
-        return "none", "missing_zeroentropy_api_key"
+            return ZEROENTROPY_PROVIDER, None
+        return DEFAULT_RERANKER_PROVIDER, "missing_zeroentropy_api_key"
 
     if requested in RERANKER_PROVIDERS:
         return requested, None
@@ -62,23 +81,11 @@ def reranker_api_key_env_names(provider: str) -> tuple[str, ...]:
 
 
 def _resolve_api_key(api_key: str | None, *, env_names: tuple[str, ...]) -> str:
-    explicit = _normalize_optional_str(api_key)
-    if explicit:
-        return explicit
-    for env_name in env_names:
-        key = _normalize_optional_str(config_get_env(env_name))
-        if key:
-            return key
-    return ""
-
-
-def _normalize_optional_str(value: str | None) -> str | None:
-    if value is None:
-        return None
-    stripped = value.strip()
-    if not stripped:
-        return None
-    return stripped
+    return first_configured_api_key(
+        env_names,
+        explicit_key=api_key,
+        get_env=config_get_env,
+    )
 
 
 def attach_runtime_metadata(

@@ -8,6 +8,13 @@ from rag_core.documents.ocr_provider_runtime import (
     build_mistral_ocr_command,
     run_command_provider_ocr,
 )
+from rag_core.documents.ocr_provider_names import (
+    COMMAND_OCR_PROVIDER,
+    DEFAULT_GEMINI_OCR_MODEL,
+    DEFAULT_MISTRAL_OCR_MODEL,
+    GEMINI_OCR_PROVIDER,
+    MISTRAL_OCR_PROVIDER,
+)
 from rag_core.search.providers.registry import OCR_PROVIDERS
 
 
@@ -50,7 +57,7 @@ class CommandOcrProvider:
         self,
         *,
         command: list[str],
-        provider_name: str = "command",
+        provider_name: str = COMMAND_OCR_PROVIDER,
         model_name: str | None = None,
         supports_page_selection: bool = True,
         timeout_seconds: float = 120.0,
@@ -104,7 +111,7 @@ class CommandOcrProvider:
 
 def build_mistral_ocr_provider(
     *,
-    model_name: str = "mistral-ocr-latest",
+    model_name: str = DEFAULT_MISTRAL_OCR_MODEL,
     python_executable: str | None = None,
     timeout_seconds: float = 300.0,
     extra_env: dict[str, str] | None = None,
@@ -115,7 +122,7 @@ def build_mistral_ocr_provider(
     )
     return CommandOcrProvider(
         command=command,
-        provider_name="mistral",
+        provider_name=MISTRAL_OCR_PROVIDER,
         model_name=model_name,
         supports_page_selection=True,
         timeout_seconds=timeout_seconds,
@@ -125,7 +132,7 @@ def build_mistral_ocr_provider(
 
 def build_gemini_ocr_provider(
     *,
-    model_name: str = "gemini-2.5-flash",
+    model_name: str = DEFAULT_GEMINI_OCR_MODEL,
     python_executable: str | None = None,
     timeout_seconds: float = 300.0,
     extra_env: dict[str, str] | None = None,
@@ -136,7 +143,7 @@ def build_gemini_ocr_provider(
     )
     return CommandOcrProvider(
         command=command,
-        provider_name="gemini",
+        provider_name=GEMINI_OCR_PROVIDER,
         model_name=model_name,
         supports_page_selection=False,
         timeout_seconds=timeout_seconds,
@@ -155,5 +162,5 @@ def create_ocr_provider(*, provider: str, **kwargs: Any) -> OcrProvider:
     return OCR_PROVIDERS.create(provider, **kwargs)
 
 
-OCR_PROVIDERS.register("mistral", _build_mistral_ocr)
-OCR_PROVIDERS.register("gemini", _build_gemini_ocr)
+OCR_PROVIDERS.register(MISTRAL_OCR_PROVIDER, _build_mistral_ocr)
+OCR_PROVIDERS.register(GEMINI_OCR_PROVIDER, _build_gemini_ocr)

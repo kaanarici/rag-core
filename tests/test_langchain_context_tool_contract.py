@@ -11,13 +11,23 @@ from rag_core.contracts import (
     SEARCH_USER_DOCUMENTS_TOOL_NAME,
 )
 from rag_core.integrations import langchain as langchain_integration
+from rag_core.search import QueryPlan
 
 
 class _Pack:
     def as_text(self) -> str:
-        return "context text"
+        return "app context text"
+
+    def as_prompt_text(self) -> str:
+        return "safe context text"
 
     def to_payload(self) -> dict[str, object]:
+        return {
+            "query": "billing",
+            "snippets": [{"source": {"source_id": "private", "result_id": "hit"}}],
+        }
+
+    def to_prompt_payload(self) -> dict[str, object]:
         return {
             "query": "billing",
             "snippets": [],
@@ -45,10 +55,11 @@ class _Core:
         namespace: str,
         corpus_ids: list[str],
         limit: int,
+        content_types: list[str] | None,
         document_ids: list[str] | None,
         rerank: bool,
         use_lexical_search: bool,
-        query_plan: object | None,
+        query_plan: QueryPlan | None,
         max_chars: int | None,
         max_tokens: int | None,
     ) -> _Pack:
@@ -58,6 +69,7 @@ class _Core:
                 "namespace": namespace,
                 "corpus_ids": corpus_ids,
                 "limit": limit,
+                "content_types": content_types,
                 "document_ids": document_ids,
                 "rerank": rerank,
                 "use_lexical_search": use_lexical_search,
@@ -110,10 +122,10 @@ def test_langchain_context_tool_defaults_to_public_search_tool_contract(
 
     content, artifact = asyncio.run(tool_fn(" billing policy "))
 
-    assert content == "context text"
+    assert content == "safe context text"
     assert artifact == {
         "ok": True,
-        "context_text": "context text",
+        "context_text": "safe context text",
         "query": "billing",
         "snippets": [],
         "citations": [],
@@ -135,6 +147,7 @@ def test_langchain_context_tool_defaults_to_public_search_tool_contract(
             "namespace": "acme",
             "corpus_ids": ["help"],
             "limit": SEARCH_USER_DOCUMENTS_DEFAULT_LIMIT,
+            "content_types": None,
             "document_ids": None,
             "rerank": False,
             "use_lexical_search": True,
@@ -214,6 +227,7 @@ def test_langchain_context_tool_exposes_public_search_request_fields(
             "namespace": "acme",
             "corpus_ids": ["help"],
             "limit": 2,
+            "content_types": None,
             "document_ids": ["doc-1"],
             "rerank": True,
             "use_lexical_search": True,
@@ -222,6 +236,24 @@ def test_langchain_context_tool_exposes_public_search_request_fields(
             "max_tokens": 256,
         }
     ]
+
+
+def test_langchain_context_tool_binds_app_owned_content_types(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    _install_fake_langchain_tool(monkeypatch, captured=captured)
+    core = _Core()
+    tool_fn = langchain_integration.create_langchain_context_tool(
+        cast(Any, core),
+        namespace="acme",
+        corpus_ids=["help"],
+        content_types=[" document "],
+    )
+
+    asyncio.run(tool_fn("billing"))
+
+    assert core.calls[0]["content_types"] == ["document"]
 
 
 def test_langchain_context_tool_rejects_document_ids_outside_static_scope(

@@ -5,19 +5,30 @@ from pathlib import Path
 
 import pytest
 
-from rag_core.search.providers.embedding_cache import (
+from rag_core.search.providers.chunk_context_cache import (
     ChunkContextCache,
     ChunkContextKey,
-    EmbedCacheKey,
-    EmbeddingCache,
-    InMemoryCache,
     InMemoryChunkContextCache,
-    NoCache,
     NoChunkContextCache,
-    SqliteCache,
     SqliteChunkContextCache,
     create_chunk_context_cache,
+)
+from rag_core.search.providers.cache_provider_names import (
+    CACHE_PROVIDER_ORDER,
+    IN_MEMORY_CACHE_PROVIDER,
+    NO_CACHE_PROVIDER,
+    SQLITE_CACHE_PROVIDER,
+)
+from rag_core.search.providers.embedding_cache import (
+    DEFAULT_EMBEDDING_CACHE_PROVIDER,
+    InMemoryCache,
+    NoCache,
+    SqliteCache,
     create_embedding_cache,
+)
+from rag_core.search.providers.embedding_cache_models import (
+    EmbedCacheKey,
+    EmbeddingCache,
 )
 from rag_core.search.providers.registry import (
     CHUNK_CONTEXT_CACHES,
@@ -39,11 +50,60 @@ def _embed_key() -> EmbedCacheKey:
     )
 
 
+def test_cache_provider_defaults_are_owned_by_cache_factory_module() -> None:
+    assert (
+        DEFAULT_EMBEDDING_CACHE_PROVIDER
+        == NO_CACHE_PROVIDER
+        == NoCache.provider_name
+    )
+    assert InMemoryCache.provider_name == IN_MEMORY_CACHE_PROVIDER
+    assert SqliteCache.provider_name == SQLITE_CACHE_PROVIDER
+    assert NoChunkContextCache.provider_name == NO_CACHE_PROVIDER
+    assert InMemoryChunkContextCache.provider_name == IN_MEMORY_CACHE_PROVIDER
+    assert SqliteChunkContextCache.provider_name == SQLITE_CACHE_PROVIDER
+    assert CACHE_PROVIDER_ORDER == (
+        NO_CACHE_PROVIDER,
+        IN_MEMORY_CACHE_PROVIDER,
+        SQLITE_CACHE_PROVIDER,
+    )
+
+
+def test_chunk_context_cache_factory_is_owned_by_chunk_context_module() -> None:
+    registry_source = Path("src/rag_core/search/providers/registry.py").read_text(
+        encoding="utf-8"
+    )
+    embedding_cache_source = Path(
+        "src/rag_core/search/providers/embedding_cache.py"
+    ).read_text(encoding="utf-8")
+
+    assert "rag_core.search.providers.chunk_context_cache" in registry_source
+    assert (
+        "CHUNK_CONTEXT_CACHES: ProviderRegistry"
+        in registry_source
+        and "rag_core.search.providers.embedding_cache" not in registry_source.split(
+            "CHUNK_CONTEXT_CACHES: ProviderRegistry",
+            1,
+        )[1]
+    )
+    assert "CHUNK_CONTEXT_CACHES.register" not in embedding_cache_source
+    assert "create_chunk_context_cache" not in embedding_cache_source
+
+
+def test_provider_category_diagnostics_use_shared_cache_provider_names() -> None:
+    diagnostics_source = Path(
+        "src/rag_core/search/providers/provider_category_diagnostics.py"
+    ).read_text(encoding="utf-8")
+
+    assert "from .cache_provider_names import CACHE_PROVIDER_ORDER" in diagnostics_source
+    assert "NO_CACHE_PROVIDER" in diagnostics_source
+    assert "from .embedding_cache import" not in diagnostics_source
+
+
 @pytest.mark.parametrize(
     "registry, expected_names",
     [
-        (EMBEDDING_CACHES, {"none", "in_memory", "sqlite"}),
-        (CHUNK_CONTEXT_CACHES, {"none", "in_memory", "sqlite"}),
+        (EMBEDDING_CACHES, set(CACHE_PROVIDER_ORDER)),
+        (CHUNK_CONTEXT_CACHES, set(CACHE_PROVIDER_ORDER)),
     ],
     ids=["embedding-caches", "chunk-context-caches"],
 )
@@ -57,9 +117,9 @@ def test_cache_registries_expose_builtin_names(
 @pytest.mark.parametrize(
     "name, sqlite_path, expected",
     [
-        ("none", None, NoCache),
-        ("in_memory", None, InMemoryCache),
-        ("sqlite", "cache.sqlite", SqliteCache),
+        (NO_CACHE_PROVIDER, None, NoCache),
+        (IN_MEMORY_CACHE_PROVIDER, None, InMemoryCache),
+        (SQLITE_CACHE_PROVIDER, "cache.sqlite", SqliteCache),
         (None, None, NoCache),
     ],
     ids=["none", "in-memory", "sqlite", "implicit-none"],
@@ -74,9 +134,9 @@ def test_create_embedding_cache_returns_concrete_types(
 @pytest.mark.parametrize(
     "name, sqlite_path, expected",
     [
-        ("none", None, NoChunkContextCache),
-        ("in_memory", None, InMemoryChunkContextCache),
-        ("sqlite", "context.sqlite", SqliteChunkContextCache),
+        (NO_CACHE_PROVIDER, None, NoChunkContextCache),
+        (IN_MEMORY_CACHE_PROVIDER, None, InMemoryChunkContextCache),
+        (SQLITE_CACHE_PROVIDER, "context.sqlite", SqliteChunkContextCache),
         (None, None, NoChunkContextCache),
     ],
     ids=["none", "in-memory", "sqlite", "implicit-none"],
@@ -167,7 +227,7 @@ def test_rag_core_resolves_embedding_cache_provider_from_config() -> None:
             source_type=base.ingest.source_type,
             enable_lexical_search=base.ingest.enable_lexical_search,
             manifest_directory=base.ingest.manifest_directory,
-            embedding_cache_provider="in_memory",
+            embedding_cache_provider=IN_MEMORY_CACHE_PROVIDER,
         ),
         policy=base.policy,
     )
@@ -217,7 +277,7 @@ def test_rag_core_resolves_sqlite_embedding_cache_path_from_config(
             source_type=base.ingest.source_type,
             enable_lexical_search=base.ingest.enable_lexical_search,
             manifest_directory=base.ingest.manifest_directory,
-            embedding_cache_provider="sqlite",
+            embedding_cache_provider=SQLITE_CACHE_PROVIDER,
             embedding_cache_path=tmp_path / "embeddings.sqlite",
         ),
         policy=base.policy,
@@ -260,7 +320,7 @@ def test_rag_core_rejects_sqlite_embedding_cache_without_path() -> None:
             source_type=base.ingest.source_type,
             enable_lexical_search=base.ingest.enable_lexical_search,
             manifest_directory=base.ingest.manifest_directory,
-            embedding_cache_provider="sqlite",
+            embedding_cache_provider=SQLITE_CACHE_PROVIDER,
         ),
         policy=base.policy,
     )

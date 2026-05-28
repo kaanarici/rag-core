@@ -8,8 +8,10 @@ import pytest
 from rag_core.search.providers.embedding import OpenAIEmbeddingProvider
 from rag_core.search.providers.cached_embedding import CachedEmbeddingProvider
 from rag_core.search.providers.embedding_cache import (
-    EmbedCacheKey,
     InMemoryCache,
+)
+from rag_core.search.providers.embedding_cache_models import (
+    EmbedCacheKey,
     sha256_text,
 )
 from rag_core.search.providers.embedding_results import (

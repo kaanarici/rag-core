@@ -1,3 +1,3 @@
-{"case_id": "help/billing-payment-methods", "query": "How can customers pay invoices?", "namespace": "acme", "corpus_ids": ["help-center"], "expected_chunk_ids": ["billing.md"]}
-{"case_id": "help/corpus-lifecycle", "query": "What happens after source files are parsed?", "namespace": "acme", "corpus_ids": ["help-center"], "expected_chunk_ids": ["corpus_lifecycle.md"]}
-{"case_id": "help/security-scope", "query": "How should workspace data be scoped?", "namespace": "acme", "corpus_ids": ["help-center"], "expected_chunk_ids": ["security.md"], "expected_grades": {"security.md": 3}}
+{"case_id": "help/billing-payment-methods", "query": "How can customers pay invoices?", "namespace": "acme", "corpus_ids": ["help-center"], "expected_ids": ["billing.md"]}
+{"case_id": "help/corpus-lifecycle", "query": "What happens after source files are parsed?", "namespace": "acme", "corpus_ids": ["help-center"], "expected_ids": ["corpus_lifecycle.md"]}
+{"case_id": "help/security-scope", "query": "How should workspace data be scoped?", "namespace": "acme", "corpus_ids": ["help-center"], "expected_ids": ["security.md"], "expected_grades": {"security.md": 3}}

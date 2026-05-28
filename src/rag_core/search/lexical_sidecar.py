@@ -11,7 +11,9 @@ from rag_core.search.lexical_sidecar_matching import (
     normalized_lexical_query,
 )
 from rag_core.search.providers.registry import SEARCH_SIDECARS
-from rag_core.search.types import SearchResult, SearchSidecar, SearchSidecarQuery
+from rag_core.search.provider_protocols import SearchSidecar
+from rag_core.search.request_models import SearchSidecarQuery
+from rag_core.search.vector_models import SearchResult
 
 
 @dataclass(frozen=True)
@@ -24,6 +26,8 @@ class LexicalSidecarRecord:
 
 class PortableLexicalSidecar(SearchSidecar):
     """Small in-memory sidecar for exact and trigram-style retrieval."""
+
+    provider_name = "portable_lexical"
 
     def __init__(
         self,
@@ -102,4 +106,10 @@ def create_search_sidecar(
     return SEARCH_SIDECARS.create(provider, **kwargs)
 
 
-SEARCH_SIDECARS.register("portable_lexical", _build_portable_lexical_sidecar)
+PORTABLE_LEXICAL_SIDECAR_PROVIDER = PortableLexicalSidecar.provider_name
+SEARCH_SIDECAR_PROVIDER_ORDER = (PORTABLE_LEXICAL_SIDECAR_PROVIDER,)
+
+SEARCH_SIDECARS.register(
+    PORTABLE_LEXICAL_SIDECAR_PROVIDER,
+    _build_portable_lexical_sidecar,
+)

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol, Sequence, cast
-from rag_core.core import RAGCore
-from rag_core.search.types import SearchResult
+from typing import Protocol, Sequence
+
+from rag_core import RAGCore
+from rag_core.search import QueryPlan, SearchResult
 
 
 class LangChainSearchConfig(Protocol):
@@ -18,6 +19,9 @@ class LangChainSearchConfig(Protocol):
     def limit(self) -> int: ...
 
     @property
+    def content_types(self) -> Sequence[str] | None: ...
+
+    @property
     def document_ids(self) -> Sequence[str] | None: ...
 
     @property
@@ -27,7 +31,7 @@ class LangChainSearchConfig(Protocol):
     def use_lexical_search(self) -> bool: ...
 
     @property
-    def query_plan(self) -> object | None: ...
+    def query_plan(self) -> QueryPlan | None: ...
 
 
 async def search_langchain_documents(
@@ -41,6 +45,11 @@ async def search_langchain_documents(
         namespace=config.namespace,
         corpus_ids=list(config.corpus_ids),
         limit=config.limit,
+        content_types=(
+            list(config.content_types)
+            if config.content_types is not None
+            else None
+        ),
         document_ids=(
             list(config.document_ids)
             if config.document_ids is not None
@@ -48,5 +57,5 @@ async def search_langchain_documents(
         ),
         rerank=config.rerank,
         use_lexical_search=config.use_lexical_search,
-        query_plan=cast(Any, config.query_plan),
+        query_plan=config.query_plan,
     )

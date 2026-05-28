@@ -11,6 +11,7 @@ from rag_core.documents.converters import registry_loader
 from rag_core.documents.converters.base import ConversionResult
 from rag_core.documents.converters.pdf_converter_extraction import _extract_page
 from rag_core.documents.converters.registry_specs import ConverterSpec
+from tests.support import TEST_API_SECRET, assert_caplog_omits_private
 
 
 class ProviderSecretError(RuntimeError):
@@ -38,10 +39,7 @@ def test_pdf_page_extraction_warning_is_sanitized(
     assert extraction.page_num == 7
     assert extraction.needs_ocr is True
     assert "ProviderSecretError" in caplog.text
-    assert "raw page detail" not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(caplog, "raw page detail")
 
 
 def test_optional_converter_skip_warning_is_sanitized(
@@ -86,10 +84,11 @@ def test_optional_converter_skip_warning_is_sanitized(
     assert "optional" in caplog.text
     assert "ProviderSecretError" in caplog.text
     assert "raw optional converter detail" not in caplog.text
-    assert "wrapped private optional converter detail" not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(
+        caplog,
+        "raw optional converter detail",
+        "wrapped private optional converter detail",
+    )
 
 
 def test_required_converter_initialization_error_is_sanitized(
@@ -112,7 +111,7 @@ def test_required_converter_initialization_error_is_sanitized(
     assert exc_info.value.__cause__ is None
     assert exc_info.value.__context__ is None
     assert "raw required converter detail" not in message
-    assert "sk-test-secret" not in message
+    assert TEST_API_SECRET not in message
     assert "Traceback" not in message
 
 
@@ -146,12 +145,12 @@ def test_local_parse_failure_log_is_sanitized(
     assert "sensitive-roadmap.md" in error_message
     assert "ProviderSecretError" in error_message
     assert "raw converter detail with api key sk-test-secret" not in error_message
-    assert "sk-test-secret" not in error_message
+    assert TEST_API_SECRET not in error_message
     assert exc_info.value.__cause__ is None
     assert exc_info.value.__context__ is None
     assert "ProviderSecretError" in caplog.text
-    assert "raw converter detail" not in caplog.text
-    assert "sk-test-secret" not in caplog.text
-    assert "sensitive-roadmap.md" not in caplog.text
-    assert "Traceback" not in caplog.text
-    assert all(record.exc_info is None for record in caplog.records)
+    assert_caplog_omits_private(
+        caplog,
+        "raw converter detail",
+        "sensitive-roadmap.md",
+    )

@@ -7,6 +7,7 @@ from dataclasses import asdict
 
 from rag_core import CorpusManifestEntry, RAGCore, SearchResult
 from rag_core.demo import build_demo_core
+from rag_core.retrieval_defaults import DEFAULT_RERANK, DEFAULT_SEARCH_LIMIT
 
 
 def manifest_key(*, namespace: str, corpus_id: str, document_key: str) -> str:
@@ -48,8 +49,8 @@ async def search_corpus(
     *,
     entry: CorpusManifestEntry,
     query: str,
-    limit: int = 5,
-    rerank: bool = False,
+    limit: int = DEFAULT_SEARCH_LIMIT,
+    rerank: bool = DEFAULT_RERANK,
 ) -> list[SearchResult]:
     return await core.search(
         query=query,

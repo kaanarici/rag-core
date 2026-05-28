@@ -2,17 +2,26 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from qdrant_client import AsyncQdrantClient
 
-from rag_core.search.planning import default_query_plan, query_plan_preset
+from rag_core.search.planning import (
+    DEFAULT_SEARCH_PROFILE,
+    QUERY_PLAN_PRESET_DENSE_ONLY,
+    default_query_plan,
+    query_plan_preset,
+    search_profile,
+)
 from rag_core.search.policy import VectorStorePolicy
+from rag_core.search.request_models import SearchQuery
 from rag_core.search.query_plan import QueryPlan
-from rag_core.search.types import SearchQuery, SearchResult
+from rag_core.search.vector_models import SearchResult
 
 from .qdrant_filters import build_search_filter
 from .qdrant_payloads import _point_to_result
 from .qdrant_query_plan import translate_query_plan
-from .qdrant_shared import _KNOWN_SPARSE_VECTOR_NAMES
+from .qdrant_shared import _KNOWN_SPARSE_VECTOR_NAMES, _PRIMARY_SPARSE_VECTOR_NAME
 
 
 async def search_qdrant_points(
@@ -63,16 +72,27 @@ def _default_query_plan_for_available_sparse_channels(
     available_sparse_vector_names: frozenset[str] | set[str],
 ) -> QueryPlan:
     query_sparse_names = set(query.all_sparse_vectors())
-    sparse_channels = tuple(
-        sorted(
-            name
-            for name in available_sparse_vector_names
-            if name in _KNOWN_SPARSE_VECTOR_NAMES and name in query_sparse_names
-        )
+    return qdrant_default_query_plan_for_sparse_channels(
+        result_limit=result_limit,
+        sparse_channels=(
+            name for name in available_sparse_vector_names if name in query_sparse_names
+        ),
     )
-    if sparse_channels:
+
+
+def qdrant_default_query_plan_for_sparse_channels(
+    *,
+    result_limit: int,
+    sparse_channels: Iterable[str],
+) -> QueryPlan:
+    known_sparse_channels = tuple(
+        sorted(name for name in sparse_channels if name in _KNOWN_SPARSE_VECTOR_NAMES)
+    )
+    if _PRIMARY_SPARSE_VECTOR_NAME in known_sparse_channels:
+        return search_profile(DEFAULT_SEARCH_PROFILE, limit=result_limit)
+    if known_sparse_channels:
         return default_query_plan(
             result_limit=result_limit,
-            sparse_channels=sparse_channels,
+            sparse_channels=known_sparse_channels,
         )
-    return query_plan_preset("dense_only", limit=result_limit)
+    return query_plan_preset(QUERY_PLAN_PRESET_DENSE_ONLY, limit=result_limit)

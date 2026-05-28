@@ -10,6 +10,7 @@ from rag_core.config import (
     ChunkingConfig,
     EmbeddingConfig,
     IngestConfig,
+    MARKDOWN_CHUNKING_STRATEGY,
     QdrantConfig,
     RerankerConfig,
     VectorStoreConfig,
@@ -21,6 +22,7 @@ __all__ = [
     "CorpusManifest",
     "CorpusManifestEntry",
     "DEFAULT_PROCESSING_VERSION",
+    "DeleteDocumentResult",
     "IngestedDocument",
     "OcrMetadata",
     "OcrRoutingSignal",
@@ -87,6 +89,16 @@ class IngestedDocument:
 
 
 @dataclass(frozen=True)
+class DeleteDocumentResult:
+    document_id: str
+    namespace: str
+    corpus_id: str
+    index_deleted: bool
+    sidecar_deleted: bool | None = None
+    manifest_entry_deleted: bool | None = None
+
+
+@dataclass(frozen=True)
 class CorpusManifestEntry:
     document_id: str
     namespace: str
@@ -112,7 +124,7 @@ class PreparedChunk:
     start_char: int = 0
     end_char: int = 0
     token_count: int = 0
-    chunking_strategy: str = "markdown"
+    chunking_strategy: str = MARKDOWN_CHUNKING_STRATEGY
     metadata: Mapping[str, object] = field(default_factory=dict)
 
 

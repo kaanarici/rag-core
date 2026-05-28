@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import hashlib
 import ipaddress
+from pathlib import Path
 
 import pytest
 
@@ -16,6 +17,7 @@ from rag_core.fetch_security import (
     validate_fetch_url,
     validate_resolved_fetch_addresses,
 )
+from rag_core.fetch_security_url import safe_remote_event_url
 
 ALLOW_HTTP_POLICY = FetchSecurityPolicy(allowed_schemes=("https", "http"))
 ALLOW_HTTP_PRIVATE_POLICY = FetchSecurityPolicy(
@@ -104,6 +106,13 @@ def test_validate_fetch_url_canonicalizes_safe_path_dot_segments(
 
     assert validated.path == path
     assert validated.redacted_url == redacted_url
+
+
+def test_safe_remote_event_url_omits_document_path() -> None:
+    validated = validate_fetch_url("https://example.com/docs/guide?private=alpha")
+
+    assert safe_remote_event_url(validated) == "https://example.com/?redacted"
+    assert validated.redacted_url == "https://example.com/docs/guide?redacted"
 
 
 @pytest.mark.parametrize(
@@ -234,6 +243,16 @@ def test_default_fetch_content_types_cover_registered_non_ocr_mime_types() -> No
             assert (
                 is_allowed_fetch_content_type(mime_type, limits=limits) is expected
             ), mime_type
+
+
+def test_remote_fetch_docs_name_svg_text_converter_exception() -> None:
+    docs = Path("docs/parsing/formats.md").read_text(encoding="utf-8")
+
+    assert is_allowed_fetch_content_type("image/svg+xml") is True
+    assert is_allowed_fetch_content_type("image/png") is False
+    assert "SVG (`image/svg+xml`) is allowed because it routes through the text" in docs
+    assert "OCR-required image MIME types remain excluded" in docs
+    assert "Image MIME types remain excluded" not in docs
 
 
 @pytest.mark.parametrize("timeout", [float("nan"), float("inf"), -float("inf")])

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from rag_core.config import DEFAULT_RERANKER_PROVIDER
 from rag_core.search.providers.reranker import NoOpReranker, create_reranker
 from rag_core.search.providers.reranker_resolution import resolve_reranker_provider
 
@@ -17,7 +18,7 @@ def test_invalid_strict_provider_env_preserves_fallback_default(
 
     assert isinstance(reranker, NoOpReranker)
     assert getattr(reranker, "_rag_core_provider_requested") == "cohere"
-    assert getattr(reranker, "_rag_core_provider_effective") == "none"
+    assert getattr(reranker, "_rag_core_provider_effective") == DEFAULT_RERANKER_PROVIDER
     assert getattr(reranker, "_rag_core_fallback_reason") == "missing_cohere_api_key"
 
 

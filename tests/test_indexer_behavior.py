@@ -369,7 +369,7 @@ def test_index_document_preserves_redacted_url_document_path() -> None:
                 source_type="url",
                 path="https://example.com/docs?redacted",
                 document_path="https://example.com/docs?redacted",
-                document_key="url:https://example.com/docs#query:abc",
+                document_key="url:https://example.com/docs?redacted|query_sha256:abc",
                 pre_chunked_texts=["remote note"],
             )
         )

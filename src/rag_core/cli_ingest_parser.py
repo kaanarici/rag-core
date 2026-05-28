@@ -5,6 +5,15 @@ import argparse
 from rag_core.cli_config_parser import add_config_flags
 from rag_core.cli_events_parser import add_events_jsonl_flag
 from rag_core.cli_help_examples import apply_command_examples
+from rag_core.cli_source_flags import (
+    add_force_reindex_flag,
+    add_json_flag,
+    add_manifest_dir_flag,
+    add_max_concurrency_flag,
+    add_metadata_flag,
+    add_plan_json_flag,
+    add_scope_flags,
+)
 
 
 def add_ingest_command(
@@ -28,53 +37,39 @@ def add_ingest_command(
             "Glob patterns are expanded recursively."
         ),
     )
-    ingest.add_argument("--namespace", required=True)
-    ingest.add_argument(
-        "--corpus-id",
-        required=True,
-        help=(
+    add_scope_flags(
+        ingest,
+        corpus_id_help=(
             "Corpus partition for ingested documents. ingest writes under one corpus "
             "per invocation; rerun the command for additional corpora."
         ),
     )
-    ingest.add_argument(
-        "--force-reindex",
-        action="store_true",
+    add_force_reindex_flag(
+        ingest,
         help="Reindex matching files even when content is unchanged.",
     )
-    ingest.add_argument(
-        "--max-concurrency",
-        type=int,
-        default=1,
-        help="Maximum files to ingest concurrently. Default: 1.",
+    add_max_concurrency_flag(
+        ingest,
+        help="Maximum files to ingest concurrently.",
     )
-    ingest.add_argument(
-        "--manifest-dir",
-        default=manifest_dir_default,
-        help=(
-            "Directory under which JSONL manifests are written. "
-            f"Default: {manifest_dir_help_default}"
-        ),
+    add_manifest_dir_flag(
+        ingest,
+        manifest_dir_default=manifest_dir_default,
+        manifest_dir_help_default=manifest_dir_help_default,
     )
-    ingest.add_argument(
-        "--plan-json",
-        action="store_true",
+    add_plan_json_flag(
+        ingest,
         help=(
             "Print the fingerprinted source-item plan and manifest reconciliation, "
-            "then exit without constructing the runtime."
+            "then exit without assembling RAGCore."
         ),
     )
-    ingest.add_argument(
-        "--metadata",
-        action="append",
-        default=[],
-        metavar="KEY=VALUE",
+    add_metadata_flag(
+        ingest,
         help="Repeatable metadata field applied to every ingested document.",
     )
     add_events_jsonl_flag(ingest)
-    ingest.add_argument(
-        "--json", action="store_true", help="Emit one JSON object per file."
-    )
+    add_json_flag(ingest, help="Emit one JSON object per file.")
     apply_command_examples(ingest, "ingest")
 
 

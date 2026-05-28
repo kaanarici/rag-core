@@ -2,11 +2,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from rag_core.config.vector_store_config import (
+    QDRANT_VECTOR_STORE_PROVIDER,
+    TURBOPUFFER_VECTOR_STORE_PROVIDER,
+)
 from rag_core.core_models import RAGCoreConfig
 
 if TYPE_CHECKING:
+    from rag_core.search.provider_protocols import VectorStore
     from rag_core.search.providers.registry import ProviderRegistry
-    from rag_core.search.types import VectorStore
 
 
 def create_configured_vector_store(
@@ -16,9 +20,9 @@ def create_configured_vector_store(
     dense_dimensions: int,
     vector_stores: "ProviderRegistry[VectorStore]",
 ) -> "VectorStore":
-    if config.vector_store.provider == "qdrant":
+    if config.vector_store.provider == QDRANT_VECTOR_STORE_PROVIDER:
         return vector_stores.create(
-            "qdrant",
+            QDRANT_VECTOR_STORE_PROVIDER,
             url=config.qdrant.url,
             location=config.qdrant.location,
             api_key=config.qdrant.api_key,
@@ -26,10 +30,10 @@ def create_configured_vector_store(
             dense_dimensions=dense_dimensions,
             policy=config.policy,
         )
-    if config.vector_store.provider == "turbopuffer":
+    if config.vector_store.provider == TURBOPUFFER_VECTOR_STORE_PROVIDER:
         tp = config.vector_store.turbopuffer
         return vector_stores.create(
-            "turbopuffer",
+            TURBOPUFFER_VECTOR_STORE_PROVIDER,
             namespace=collection_name,
             dense_dimensions=dense_dimensions,
             api_key=tp.api_key,

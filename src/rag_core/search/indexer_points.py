@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from rag_core.config import (
+    CONTENT_CHUNKER_CHUNKING_STRATEGY,
+    INGEST_SOURCE_TYPE_URL,
+    PRECHUNKED_CHUNKING_STRATEGY,
+)
 from rag_core.search.policy import DEFAULT_POLICY, VectorStorePolicy
 from rag_core.search.sparse_channels import primary_sparse_channel
 from rag_core.search.stored_payload import build_stored_payload
-from rag_core.search.types import ContentType, VectorPoint
+from rag_core.search.vector_models import ContentType, VectorPoint
 
 from .indexer_embeddings import PreparedIndexData
 from .indexer_models import IndexRequest
@@ -42,7 +47,11 @@ def build_points(
             chunk_token_count=chunk.token_count,
             payload_text=prepared.payload_texts[index],
             content_type=prepared.content_type,
-            filter_metadata=_filter_metadata(req.extra_fields, chunk.metadata),
+            filter_metadata=_filter_metadata(
+                document_metadata=req.document_metadata,
+                extra_fields=req.extra_fields,
+                chunk_metadata=chunk.metadata,
+            ),
             section_info=resolve_section_info(
                 chunk_metadata=chunk.metadata,
                 mapping=section_lookup.get(index),
@@ -78,7 +87,9 @@ def _build_payload(
 ) -> dict[str, object]:
     document_path = _stored_document_path(req)
     chunker_strategy = req.chunker_strategy or (
-        "prechunked" if req.pre_chunked_texts else "content_chunker"
+        PRECHUNKED_CHUNKING_STRATEGY
+        if req.pre_chunked_texts
+        else CONTENT_CHUNKER_CHUNKING_STRATEGY
     )
     return build_stored_payload(
         namespace=namespace,
@@ -106,18 +117,22 @@ def _build_payload(
 
 
 def _stored_document_path(req: IndexRequest) -> str | None:
-    if req.source_type == "url":
+    if req.source_type == INGEST_SOURCE_TYPE_URL:
         return req.document_path or req.path
     return None
 
 
 def _filter_metadata(
-    document_metadata: dict[str, str] | None,
+    *,
+    document_metadata: dict[str, object] | None,
+    extra_fields: dict[str, str] | None,
     chunk_metadata: object,
 ) -> dict[str, object]:
     metadata: dict[str, object] = {}
     if document_metadata:
         metadata.update(document_metadata)
+    if extra_fields:
+        metadata.update(extra_fields)
     if isinstance(chunk_metadata, dict):
         metadata.update(chunk_metadata)
     return metadata

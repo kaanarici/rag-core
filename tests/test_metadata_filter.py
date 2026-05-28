@@ -4,7 +4,7 @@ The AST is the engine's vendor-neutral way to express filters beyond the
 first-class ``namespace``/``corpus_ids``/``document_ids``/``content_types``
 fields. These tests pin down construction validation, the in-memory
 interpreter's payload semantics, the Qdrant translator's ``rest.Filter`` shape,
-and round-trip behaviour through the orchestrator.
+and round-trip behaviour through the search pipeline.
 """
 
 from __future__ import annotations
@@ -20,7 +20,11 @@ from rag_core.search.filter_eval import eval_filter
 from rag_core.search.providers.memory_store import InMemoryVectorStore
 from rag_core.search.providers.qdrant_filters import metadata_filter_to_qdrant
 from rag_core.search.query_plan import UnsupportedQueryStage
-from rag_core.search.searcher import SearchOrchestrator, SearchRequest
+from rag_core.search.pipeline_runner import (
+    SearchExecutionOptions,
+    SearchPipelineRunner,
+    SearchRequest,
+)
 from rag_core.search.types import (
     And,
     Filter,
@@ -198,7 +202,7 @@ def test_memory_store_metadata_filter_narrows_candidates() -> None:
     asyncio.run(_run())
 
 
-def test_search_orchestrator_round_trips_metadata_filter() -> None:
+def test_search_pipeline_runner_round_trips_metadata_filter() -> None:
     async def _run() -> None:
         store = InMemoryVectorStore()
         await store.upsert(
@@ -209,7 +213,7 @@ def test_search_orchestrator_round_trips_metadata_filter() -> None:
             ]
         )
 
-        orchestrator = SearchOrchestrator(
+        pipeline_runner = SearchPipelineRunner(
             embedding_provider=FakeEmbeddingProvider(vocabulary=("a",)),
             sparse_embedder=FakeSparseEmbedder(),
             vector_store=store,
@@ -221,14 +225,18 @@ def test_search_orchestrator_round_trips_metadata_filter() -> None:
                 Term(field="category", value="news"),
             )
         )
-        results = await orchestrator.search(
+        results = await pipeline_runner.search(
             SearchRequest(
                 query="anything",
                 corpus_ids=["corpus"],
                 namespace="ns",
-                query_vector=[1.0, 0.0, 0.0],
-                query_sparse_vectors={"bm25": SparseVector(indices=[1], values=[1.0])},
                 metadata_filter=metadata_filter,
+                execution=SearchExecutionOptions(
+                    query_vector=[1.0, 0.0, 0.0],
+                    query_sparse_vectors={
+                        "bm25": SparseVector(indices=[1], values=[1.0])
+                    },
+                ),
             )
         )
         assert [hit.id for hit in results] == ["p1"]

@@ -5,11 +5,13 @@ import logging
 import pytest
 
 from rag_core.search.providers import sparse
+from rag_core.search.providers.sparse import SPARSE_LOAD_FAILED, SPARSE_LOAD_LOADED
 from rag_core.search.sparse_channels import (
     PRIMARY_SPARSE_CHANNEL,
     SECONDARY_SPARSE_CHANNEL,
 )
 from rag_core.search.types import SparseVector
+from tests.support import TEST_API_SECRET, assert_caplog_omits_private
 
 LOGGER_NAME = "rag_core.search.providers.sparse"
 PRIVATE_BM25_MODEL = "/Users/person/private-bm25-sk-test-secret"
@@ -62,18 +64,6 @@ def _joined_messages(caplog: pytest.LogCaptureFixture) -> str:
     return "\n".join(record.getMessage() for record in caplog.records)
 
 
-def _assert_private_context_absent(
-    caplog: pytest.LogCaptureFixture, message: str
-) -> None:
-    assert PRIVATE_BM25_MODEL not in message
-    assert PRIVATE_SPLADE_MODEL not in message
-    assert "/Users/person" not in message
-    assert "sk-test-secret" not in message
-    assert "raw fastembed setup detail" not in message
-    assert "Traceback" not in message
-    assert all(record.exc_info is None for record in caplog.records)
-
-
 def test_splade_count_mismatch_logs_sanitized_warning_and_uses_bm25_fallback(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
@@ -97,11 +87,17 @@ def test_splade_count_mismatch_logs_sanitized_warning_and_uses_bm25_fallback(
     ]
     message = _joined_messages(caplog)
     assert "provider=fastembed" in message
-    assert "backend=fastembed" in message
+    assert "backend=fastembed" not in message
     assert f"channel={SECONDARY_SPARSE_CHANNEL}" in message
     assert f"fallback_channel={PRIMARY_SPARSE_CHANNEL}" in message
     assert "expected=2 actual=0" in message
-    _assert_private_context_absent(caplog, message)
+    assert_caplog_omits_private(
+        caplog,
+        PRIVATE_BM25_MODEL,
+        PRIVATE_SPLADE_MODEL,
+        "/Users/person",
+        "raw fastembed setup detail",
+    )
 
 
 def test_splade_load_failure_log_is_sanitized_and_uses_bm25_fallback(
@@ -125,15 +121,21 @@ def test_splade_load_failure_log_is_sanitized_and_uses_bm25_fallback(
         {PRIMARY_SPARSE_CHANNEL: SparseVector(indices=[1], values=[1.0])}
     ]
     assert embedder.diagnostics()["splade_enabled"] is False
-    assert embedder.diagnostics()["splade_load_status"] == "load_failed"
+    assert embedder.diagnostics()["splade_load_status"] == SPARSE_LOAD_FAILED
     message = _joined_messages(caplog)
     assert "provider=fastembed" in message
-    assert "backend=fastembed" in message
+    assert "backend=fastembed" not in message
     assert f"channel={SECONDARY_SPARSE_CHANNEL}" in message
     assert f"fallback_channel={PRIMARY_SPARSE_CHANNEL}" in message
     assert "error_type=ProviderSecretError" in message
     assert "Loaded sparse model" not in message
-    _assert_private_context_absent(caplog, message)
+    assert_caplog_omits_private(
+        caplog,
+        PRIVATE_BM25_MODEL,
+        PRIVATE_SPLADE_MODEL,
+        "/Users/person",
+        "raw fastembed setup detail",
+    )
 
 
 def test_splade_load_success_log_omits_configured_model_identifier(
@@ -155,14 +157,20 @@ def test_splade_load_success_log_omits_configured_model_identifier(
 
     assert set(channels[0]) == {PRIMARY_SPARSE_CHANNEL, SECONDARY_SPARSE_CHANNEL}
     assert embedder.diagnostics()["splade_enabled"] is True
-    assert embedder.diagnostics()["splade_load_status"] == "loaded"
+    assert embedder.diagnostics()["splade_load_status"] == SPARSE_LOAD_LOADED
     message = _joined_messages(caplog)
     assert "provider=fastembed" in message
-    assert "backend=fastembed" in message
+    assert "backend=fastembed" not in message
     assert f"channel={SECONDARY_SPARSE_CHANNEL}" in message
     assert "fallback_channel=" not in message
     assert "error_type=" not in message
-    _assert_private_context_absent(caplog, message)
+    assert_caplog_omits_private(
+        caplog,
+        PRIVATE_BM25_MODEL,
+        PRIVATE_SPLADE_MODEL,
+        "/Users/person",
+        "raw fastembed setup detail",
+    )
 
 
 def test_sparse_model_env_defaults_are_resolved_at_construction(
@@ -222,4 +230,4 @@ def test_single_query_sparse_count_mismatch_raises_sanitized_contract_error(
     assert PRIVATE_BM25_MODEL not in message
     assert PRIVATE_SPLADE_MODEL not in message
     assert "/Users/person" not in message
-    assert "sk-test-secret" not in message
+    assert TEST_API_SECRET not in message

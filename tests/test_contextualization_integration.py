@@ -10,7 +10,7 @@ from rag_core.documents.contextualizer import (
     ChunkContextualizer,
     NoOpContextualizer,
 )
-from rag_core.search.providers.embedding_cache import InMemoryChunkContextCache
+from rag_core.search.providers.chunk_context_cache import InMemoryChunkContextCache
 import pytest
 
 from tests.support import (

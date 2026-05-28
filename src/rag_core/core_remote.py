@@ -7,7 +7,8 @@ from rag_core.core_models import IngestedDocument
 from rag_core.events.emit import emit_event, now_ms
 from rag_core.events.types import FetchCompleted, FetchFailed, FetchStarted
 from rag_core.fetch_security import FetchSecurityPolicy, redact_fetch_url, validate_fetch_url
-from rag_core.fetch_security_url import safe_remote_redacted_url
+from rag_core.config import INGEST_SOURCE_TYPE_URL
+from rag_core.fetch_security_url import safe_remote_event_url
 from rag_core.sources import RemoteUrlSourceReader
 
 if TYPE_CHECKING:
@@ -104,7 +105,7 @@ async def ingest_remote_url(
         path=remote_document.redacted_url,
         metadata={**dict(metadata or {}), **remote_document.to_source_metadata()},
         force_reindex=force_reindex,
-        source_type="url",
+        source_type=INGEST_SOURCE_TYPE_URL,
     )
 __all__ = ["ingest_remote_url"]
 
@@ -115,6 +116,6 @@ def _safe_remote_event_url(
     policy: FetchSecurityPolicy | None,
 ) -> str:
     try:
-        return safe_remote_redacted_url(validate_fetch_url(url, policy=policy))
+        return safe_remote_event_url(validate_fetch_url(url, policy=policy))
     except ValueError:
         return redact_fetch_url(url)

@@ -15,25 +15,25 @@ from rag_core.sources import (
 
 
 @dataclass(frozen=True)
-class LocalSearchDocumentPlan:
+class LocalSearchDocumentSpec:
     path: Path
     document_key: str
 
 
 @dataclass(frozen=True)
-class LocalSearchPlan:
+class LocalSearchRunSpec:
     root: Path
     query: str
     namespace: str
     corpus_id: str
     limit: int
-    documents: list[LocalSearchDocumentPlan]
+    documents: list[LocalSearchDocumentSpec]
     skipped_unsupported_count: int
     skipped_empty_count: int
     truncated: bool
 
 
-def build_local_search_plan(request: LocalSearchRequest) -> LocalSearchPlan:
+def build_local_search_run_spec(request: LocalSearchRequest) -> LocalSearchRunSpec:
     root = _validated_local_search_root(request)
     document_key_root = root.parent if root.is_file() else root
     fileset = discover_local_files(root, max_files=request.max_files)
@@ -41,14 +41,14 @@ def build_local_search_plan(request: LocalSearchRequest) -> LocalSearchPlan:
         if fileset.skipped_empty_count:
             raise ValueError("only empty supported files found under %s" % root)
         raise ValueError("no supported files found under %s" % root)
-    return LocalSearchPlan(
+    return LocalSearchRunSpec(
         root=root,
         query=request.query,
         namespace=request.namespace,
         corpus_id=request.corpus_id or default_corpus_id(root),
         limit=request.limit,
         documents=[
-            LocalSearchDocumentPlan(
+            LocalSearchDocumentSpec(
                 path=file_path, document_key=document_key(document_key_root, file_path)
             )
             for file_path in fileset.files
@@ -183,9 +183,9 @@ def _path_within_root(path: Path, root: Path) -> bool:
 
 
 __all__ = [
-    "LocalSearchDocumentPlan",
-    "LocalSearchPlan",
-    "build_local_search_plan",
+    "LocalSearchDocumentSpec",
+    "LocalSearchRunSpec",
+    "build_local_search_run_spec",
     "default_corpus_id",
     "discover_local_files",
 ]

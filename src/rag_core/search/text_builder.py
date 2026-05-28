@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Optional, Union
 
-from rag_core.search.types import ContentType
+from rag_core.search.vector_models import ContentType
 
 
 def build_sparse_text(

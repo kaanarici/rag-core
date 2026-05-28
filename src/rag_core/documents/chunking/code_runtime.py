@@ -25,7 +25,7 @@ class MagikaDetection:
     detector: MagikaDetector | None
 
 
-def tree_sitter_backend_available() -> bool:
+def tree_sitter_runtime_available() -> bool:
     try:
         from tree_sitter_language_pack import get_parser  # noqa: F401
     except ImportError:

@@ -7,7 +7,7 @@ from qdrant_client import AsyncQdrantClient
 from qdrant_client import models as rest
 
 from rag_core.search.policy import VectorStorePolicy
-from rag_core.search.types import DeleteFilter
+from rag_core.search.request_models import DeleteFilter
 
 from .qdrant_filters import build_delete_filter
 from .qdrant_payloads import _qdrant_point_id

@@ -1,11 +1,12 @@
-"""SearchOrchestrator drives the default pipeline and accepts custom pipelines."""
+"""SearchPipelineRunner drives the default pipeline and accepts custom pipelines."""
 
 from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
 
-from rag_core.events import EventBuffer, SearchPlanned, SearchStarted
+from rag_core.events import EventBuffer, SearchCompleted, SearchPlanned, SearchStarted
+from rag_core.events.trace_payload_fields import TRACE_ABSENT_LABEL
 from rag_core.search.pipeline import (
     HybridRetrieve,
     IdentityFuse,
@@ -17,12 +18,18 @@ from rag_core.search.pipeline import (
     SidecarPostprocess,
     SidecarPrefetchTransform,
 )
-from rag_core.search.searcher import (
-    SearchOrchestrator,
+from rag_core.search.pipeline_runner import (
+    SearchExecutionOptions,
+    SearchPipelineRunner,
     SearchRequest,
 )
 from rag_core.search.planning import query_plan_preset, search_profile
-from rag_core.search.query_plan import DenseChannel, Prefetch, QueryPlan
+from rag_core.search.query_plan import (
+    PRIMARY_DENSE_QUERY_VECTOR,
+    DenseChannel,
+    Prefetch,
+    QueryPlan,
+)
 from rag_core.search.types import (
     QueryPlanCapabilities,
     RerankBudget,
@@ -42,15 +49,17 @@ from tests.support import (
     make_search_result,
 )
 
+_DENSE_PRIMARY_CHANNEL = f"dense:dense:{PRIMARY_DENSE_QUERY_VECTOR}"
 
-def _orchestrator(
+
+def _pipeline_runner(
     *,
     store: RecordingVectorStore | None = None,
     sidecar: FakeSearchSidecar | None = None,
     reranker: FakeReranker | None = None,
     pipeline: RetrievalPipeline | None = None,
-) -> SearchOrchestrator:
-    return SearchOrchestrator(
+) -> SearchPipelineRunner:
+    return SearchPipelineRunner(
         embedding_provider=FakeEmbeddingProvider(),
         sparse_embedder=FakeSparseEmbedder(),
         vector_store=store or RecordingVectorStore(),
@@ -73,12 +82,12 @@ class _InjectDenseOnlyPlanTransform:
 
 def test_default_pipeline_with_sidecar_uses_prefetch_and_postprocess() -> None:
     """Wiring contract: with a sidecar, prefetch + postprocess get installed."""
-    orchestrator = _orchestrator(sidecar=FakeSearchSidecar())
-    pipeline = orchestrator._pipeline
+    pipeline_runner = _pipeline_runner(sidecar=FakeSearchSidecar())
+    pipeline = pipeline_runner._pipeline
     assert any(isinstance(t, SidecarPrefetchTransform) for t in pipeline.query_transforms)
     assert any(isinstance(p, SidecarPostprocess) for p in pipeline.postprocesses)
 
-    bare = _orchestrator()
+    bare = _pipeline_runner()
     assert bare._pipeline.query_transforms == ()
     assert bare._pipeline.postprocesses == ()
 
@@ -90,11 +99,11 @@ def test_search_with_default_pipeline_merges_sidecar_and_vector_results() -> Non
             id="doc-exact", text="fox query text", title="Fox Query", score=1.0
         )
         sidecar = FakeSearchSidecar(results=[exact])
-        orchestrator = _orchestrator(
+        pipeline_runner = _pipeline_runner(
             store=RecordingVectorStore(search_results=[semantic]),
             sidecar=sidecar,
         )
-        results = await orchestrator.search(
+        results = await pipeline_runner.search(
             SearchRequest(
                 query="fox query", corpus_ids=["corpus-1"], namespace="space-1"
             )
@@ -125,11 +134,11 @@ def test_custom_pipeline_overrides_default() -> None:
             rerank=PassThroughRerank(),
             postprocesses=(Tag(),),
         )
-        orchestrator = _orchestrator(
+        pipeline_runner = _pipeline_runner(
             store=RecordingVectorStore(search_results=[make_search_result(id="a")]),
             pipeline=custom,
         )
-        results = await orchestrator.search(
+        results = await pipeline_runner.search(
             SearchRequest(query="query", corpus_ids=["corpus-1"], namespace="space-1")
         )
         assert captured == ["custom"]
@@ -143,26 +152,26 @@ def test_sidecar_can_be_skipped_per_request_and_failures_are_isolated() -> None:
         sidecar = FakeSearchSidecar(
             results=[make_search_result(id="doc-exact", score=1.0)]
         )
-        orchestrator = _orchestrator(
+        pipeline_runner = _pipeline_runner(
             store=RecordingVectorStore(
                 search_results=[make_search_result(id="doc-store")]
             ),
             sidecar=sidecar,
         )
 
-        skipped = await orchestrator.search(
+        skipped = await pipeline_runner.search(
             SearchRequest(
                 query="fox query",
                 corpus_ids=["corpus-1"],
                 namespace="space-1",
-                use_lexical_search=False,
+                execution=SearchExecutionOptions(use_lexical_search=False),
             )
         )
         assert [r.id for r in skipped] == ["doc-store"]
         assert sidecar.calls == []
 
         broken = FakeSearchSidecar(error=RuntimeError("sidecar failure"))
-        with_failure = _orchestrator(
+        with_failure = _pipeline_runner(
             store=RecordingVectorStore(
                 search_results=[make_search_result(id="vec-only", score=0.7)]
             ),
@@ -180,19 +189,19 @@ def test_explicit_query_plan_disables_sidecar_merge() -> None:
     async def _run() -> None:
         sidecar = FakeSearchSidecar(results=[make_search_result(id="doc-sidecar")])
         store = RecordingVectorStore(search_results=[make_search_result(id="doc-store")])
-        orchestrator = _orchestrator(store=store, sidecar=sidecar)
+        pipeline_runner = _pipeline_runner(store=store, sidecar=sidecar)
         explicit_plan = QueryPlan(
             prefetches=(Prefetch(channel=DenseChannel(), limit=5),),
             final_limit=1,
         )
 
-        results = await orchestrator.search(
+        results = await pipeline_runner.search(
             SearchRequest(
                 query="q",
                 corpus_ids=["c"],
                 namespace="n",
                 limit=1,
-                query_plan=explicit_plan,
+                execution=SearchExecutionOptions(query_plan=explicit_plan),
             )
         )
 
@@ -206,15 +215,17 @@ def test_explicit_query_plan_preset_disables_sidecar_merge() -> None:
     async def _run() -> None:
         sidecar = FakeSearchSidecar(results=[make_search_result(id="doc-sidecar")])
         store = RecordingVectorStore(search_results=[make_search_result(id="doc-store")])
-        orchestrator = _orchestrator(store=store, sidecar=sidecar)
+        pipeline_runner = _pipeline_runner(store=store, sidecar=sidecar)
 
-        results = await orchestrator.search(
+        results = await pipeline_runner.search(
             SearchRequest(
                 query="q",
                 corpus_ids=["c"],
                 namespace="n",
                 limit=2,
-                query_plan=query_plan_preset("hybrid_rrf", limit=2),
+                execution=SearchExecutionOptions(
+                    query_plan=query_plan_preset("hybrid_rrf", limit=2),
+                ),
             )
         )
 
@@ -232,20 +243,37 @@ def test_named_search_profile_plan_disables_sidecar_merge() -> None:
         store = RecordingVectorStore(
             search_results=[make_search_result(id="doc-store", score=0.4)]
         )
-        orchestrator = _orchestrator(store=store, sidecar=sidecar)
+        events = EventBuffer()
+        pipeline_runner = SearchPipelineRunner(
+            embedding_provider=FakeEmbeddingProvider(),
+            sparse_embedder=FakeSparseEmbedder(),
+            vector_store=store,
+            sidecar=sidecar,
+            event_sink=events,
+        )
 
-        results = await orchestrator.search(
+        results = await pipeline_runner.search(
             SearchRequest(
                 query="q",
                 corpus_ids=["corpus-1"],
                 namespace="space-1",
                 limit=2,
-                query_plan=search_profile("fast", limit=2),
+                execution=SearchExecutionOptions(
+                    query_plan=search_profile("fast", limit=2),
+                ),
             )
         )
 
         assert [r.id for r in results] == ["doc-store"]
         assert sidecar.calls == []
+        [planned] = [event for event in events.events if isinstance(event, SearchPlanned)]
+        [completed] = [
+            event for event in events.events if isinstance(event, SearchCompleted)
+        ]
+        assert planned.search_profile == "fast"
+        assert planned.use_lexical_search is False
+        assert completed.requested_sidecar is False
+        assert completed.attempted_sidecar is False
 
     asyncio.run(_run())
 
@@ -261,7 +289,7 @@ def test_query_plan_final_limit_mismatch_canonicalizes_request_limit() -> None:
                 make_search_result(id="doc-store", namespace="n", corpus_id="c")
             ]
         )
-        orchestrator = SearchOrchestrator(
+        pipeline_runner = SearchPipelineRunner(
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(),
             vector_store=store,
@@ -270,13 +298,13 @@ def test_query_plan_final_limit_mismatch_canonicalizes_request_limit() -> None:
         )
         mismatched_plan = search_profile("fast", limit=1)
 
-        results = await orchestrator.search(
+        results = await pipeline_runner.search(
             SearchRequest(
                 query="q",
                 corpus_ids=["c"],
                 namespace="n",
                 limit=2,
-                query_plan=mismatched_plan,
+                execution=SearchExecutionOptions(query_plan=mismatched_plan),
             )
         )
 
@@ -286,8 +314,14 @@ def test_query_plan_final_limit_mismatch_canonicalizes_request_limit() -> None:
         assert store.search_calls[0].query_plan is mismatched_plan
         [started] = [event for event in events.events if isinstance(event, SearchStarted)]
         [planned] = [event for event in events.events if isinstance(event, SearchPlanned)]
+        [completed] = [
+            event for event in events.events if isinstance(event, SearchCompleted)
+        ]
         assert started.limit == 1
         assert planned.limit == 1
+        assert planned.use_lexical_search is False
+        assert completed.requested_sidecar is False
+        assert completed.attempted_sidecar is False
 
     asyncio.run(_run())
 
@@ -315,8 +349,8 @@ def test_custom_pipeline_with_prefer_sidecar_merge_wins_on_duplicate_id() -> Non
             query_transforms=(SidecarPrefetchTransform(),),
             postprocesses=(SidecarPostprocess(strategy=PreferSidecarMerge()),),
         )
-        orchestrator = _orchestrator(store=store, sidecar=sidecar, pipeline=pipeline)
-        results = await orchestrator.search(
+        pipeline_runner = _pipeline_runner(store=store, sidecar=sidecar, pipeline=pipeline)
+        results = await pipeline_runner.search(
             SearchRequest(query="q", corpus_ids=["c"], namespace="n")
         )
         assert [r.id for r in results] == ["dup"]
@@ -348,13 +382,15 @@ def test_custom_pipeline_keeps_sidecar_with_explicit_query_plan() -> None:
             query_transforms=(SidecarPrefetchTransform(),),
             postprocesses=(SidecarPostprocess(strategy=PreferSidecarMerge()),),
         )
-        orchestrator = _orchestrator(store=store, sidecar=sidecar, pipeline=pipeline)
-        results = await orchestrator.search(
+        pipeline_runner = _pipeline_runner(store=store, sidecar=sidecar, pipeline=pipeline)
+        results = await pipeline_runner.search(
             SearchRequest(
                 query="q",
                 corpus_ids=["c"],
                 namespace="n",
-                query_plan=query_plan_preset("dense_only", limit=1),
+                execution=SearchExecutionOptions(
+                    query_plan=query_plan_preset("dense_only", limit=1),
+                ),
             )
         )
         assert [r.id for r in results] == ["dup"]
@@ -374,7 +410,7 @@ def test_custom_pipeline_search_planned_reflects_transform_injected_plan() -> No
             rerank=PassThroughRerank(),
             query_transforms=(_InjectDenseOnlyPlanTransform(),),
         )
-        orchestrator = SearchOrchestrator(
+        pipeline_runner = SearchPipelineRunner(
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(),
             vector_store=store,
@@ -382,10 +418,10 @@ def test_custom_pipeline_search_planned_reflects_transform_injected_plan() -> No
             pipeline=pipeline,
         )
 
-        await orchestrator.search(SearchRequest(query="q", corpus_ids=["c"], namespace="n"))
+        await pipeline_runner.search(SearchRequest(query="q", corpus_ids=["c"], namespace="n"))
 
         [planned] = [event for event in events.events if isinstance(event, SearchPlanned)]
-        assert planned.channels == ("dense:dense:primary",)
+        assert planned.channels == (_DENSE_PRIMARY_CHANNEL,)
         assert planned.final_limit == 1
 
     asyncio.run(_run())
@@ -410,7 +446,7 @@ def test_non_hybrid_custom_pipeline_search_planned_runs_after_transforms() -> No
             rerank=PassThroughRerank(),
             query_transforms=(_InjectDenseOnlyPlanTransform(),),
         )
-        orchestrator = SearchOrchestrator(
+        pipeline_runner = SearchPipelineRunner(
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(),
             vector_store=RecordingVectorStore(),
@@ -418,12 +454,12 @@ def test_non_hybrid_custom_pipeline_search_planned_runs_after_transforms() -> No
             pipeline=pipeline,
         )
 
-        results = await orchestrator.search(
+        results = await pipeline_runner.search(
             SearchRequest(query="q", corpus_ids=["c"], namespace="n")
         )
 
         [planned] = [event for event in events.events if isinstance(event, SearchPlanned)]
-        assert planned.channels == ("dense:dense:primary",)
+        assert planned.channels == (_DENSE_PRIMARY_CHANNEL,)
         assert planned.limit == 1
         assert planned.final_limit == 1
         assert [result.id for result in results] == ["a"]
@@ -443,11 +479,11 @@ def test_default_pipeline_runs_rerank_when_requested_and_skips_when_not() -> Non
                 RerankResult(index=0, score=0.9, text=hits[0].text),
             ]
         )
-        orchestrator = _orchestrator(
+        pipeline_runner = _pipeline_runner(
             store=RecordingVectorStore(search_results=hits), reranker=reranker
         )
 
-        reranked = await orchestrator.search(
+        reranked = await pipeline_runner.search(
             SearchRequest(
                 query="q", corpus_ids=["c"], namespace="n", rerank=True
             )
@@ -455,7 +491,7 @@ def test_default_pipeline_runs_rerank_when_requested_and_skips_when_not() -> Non
         assert [r.id for r in reranked] == ["b", "a"]
         assert [r.score for r in reranked] == [0.9, 0.9]
 
-        skipped = await orchestrator.search(
+        skipped = await pipeline_runner.search(
             SearchRequest(
                 query="q", corpus_ids=["c"], namespace="n", rerank=False
             )
@@ -489,13 +525,13 @@ def test_default_pipeline_applies_rerank_before_sidecar_merge() -> None:
                 )
             ]
         )
-        orchestrator = _orchestrator(
+        pipeline_runner = _pipeline_runner(
             store=RecordingVectorStore(search_results=hits),
             reranker=reranker,
             sidecar=sidecar,
         )
 
-        results = await orchestrator.search(
+        results = await pipeline_runner.search(
             SearchRequest(query="q", corpus_ids=["c"], namespace="n", rerank=True)
         )
 
@@ -526,13 +562,13 @@ def test_default_pipeline_preserves_budgeted_rerank_order_through_sidecar_merge(
         sidecar = FakeSearchSidecar(
             results=[make_search_result(id="side", score=1.0, namespace="n", corpus_id="c")]
         )
-        orchestrator = _orchestrator(
+        pipeline_runner = _pipeline_runner(
             store=RecordingVectorStore(search_results=hits),
             reranker=reranker,
             sidecar=sidecar,
         )
 
-        results = await orchestrator.search(
+        results = await pipeline_runner.search(
             SearchRequest(
                 query="q",
                 corpus_ids=["c"],
@@ -559,9 +595,9 @@ def test_sidecar_hit_can_displace_weaker_vector_hit_when_limit_is_full() -> None
                 make_search_result(id="vec-b", score=0.8, namespace="n", corpus_id="c"),
             ]
         )
-        orchestrator = _orchestrator(store=store, sidecar=sidecar)
+        pipeline_runner = _pipeline_runner(store=store, sidecar=sidecar)
 
-        results = await orchestrator.search(
+        results = await pipeline_runner.search(
             SearchRequest(query="q", corpus_ids=["c"], namespace="n", limit=2)
         )
 
@@ -593,9 +629,9 @@ def test_sidecar_prefetch_runs_concurrently_with_vector_search() -> None:
             results=[make_search_result(id="side", score=1.0, namespace="n", corpus_id="c")]
         )
         store = SlowStore(search_results=[make_search_result(id="vec", score=0.5)])
-        orchestrator = _orchestrator(store=store, sidecar=sidecar)
+        pipeline_runner = _pipeline_runner(store=store, sidecar=sidecar)
         results = await asyncio.wait_for(
-            orchestrator.search(
+            pipeline_runner.search(
                 SearchRequest(query="q", corpus_ids=["c"], namespace="n")
             ),
             timeout=2.0,
@@ -622,9 +658,9 @@ def test_prefetched_sidecar_is_cancelled_when_retrieve_fails() -> None:
             async def search(self, query: SearchQuery) -> list[SearchResult]:
                 raise RuntimeError("retrieve failed")
 
-        orchestrator = _orchestrator(store=FailingStore(), sidecar=WaitingSidecar())
+        pipeline_runner = _pipeline_runner(store=FailingStore(), sidecar=WaitingSidecar())
         try:
-            await orchestrator.search(SearchRequest(query="q", corpus_ids=["c"], namespace="n"))
+            await pipeline_runner.search(SearchRequest(query="q", corpus_ids=["c"], namespace="n"))
         except RuntimeError:
             pass
 
@@ -659,19 +695,19 @@ def test_search_planned_reflects_prepared_default_query_plan() -> None:
 
         events = EventBuffer()
         store = SparseLaterDisabledStore()
-        orchestrator = SearchOrchestrator(
+        pipeline_runner = SearchPipelineRunner(
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(),
             vector_store=store,
             event_sink=events,
         )
 
-        await orchestrator.search(SearchRequest(query="q", corpus_ids=["c"], namespace="n"))
+        await pipeline_runner.search(SearchRequest(query="q", corpus_ids=["c"], namespace="n"))
 
         [planned] = [event for event in events.events if isinstance(event, SearchPlanned)]
         assert store.ensure_collection_calls == 1
-        assert planned.channels == ("dense:dense:primary",)
-        assert planned.fusion == "none"
+        assert planned.channels == (_DENSE_PRIMARY_CHANNEL,)
+        assert planned.fusion == TRACE_ABSENT_LABEL
         assert store.search_calls[0].query_plan is not None
         assert len(store.search_calls[0].query_plan.prefetches) == 1
 

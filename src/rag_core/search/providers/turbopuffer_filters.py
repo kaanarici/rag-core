@@ -4,20 +4,19 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from rag_core.search.policy import VectorStorePolicy
-from rag_core.search.query_plan import UnsupportedQueryStage
-from rag_core.search.types import (
+from rag_core.search.filters import (
     And,
-    DeleteFilter,
     Filter,
     Geo,
     In,
     Not,
     Or,
     Range,
-    SearchQuery,
     Term,
 )
+from rag_core.search.policy import VectorStorePolicy
+from rag_core.search.query_plan import UnsupportedQueryStage
+from rag_core.search.request_models import DeleteFilter, SearchQuery
 
 from .turbopuffer_payloads import _jsonish
 

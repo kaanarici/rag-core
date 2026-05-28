@@ -6,6 +6,8 @@ import math
 from types import SimpleNamespace
 from typing import cast
 
+from rag_core.retrieval_defaults import DEFAULT_SEARCH_LIMIT
+
 
 class TurboPufferFakeNamespace:
     """Minimal namespace that stores upsert rows and answers ANN queries."""
@@ -63,7 +65,9 @@ class TurboPufferFakeNamespace:
                 aggregations={"chunk_count": len(matched)},
             )
         rank_by = kwargs.get("rank_by")
-        top_k = _int_kwarg(kwargs.get("top_k") or kwargs.get("limit") or 10)
+        top_k = _int_kwarg(
+            kwargs.get("top_k") or kwargs.get("limit") or DEFAULT_SEARCH_LIMIT
+        )
         candidates = [
             row
             for row in self._rows.values()

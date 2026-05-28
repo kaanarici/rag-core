@@ -11,14 +11,28 @@ Large suite (~2000 tests). Passing everything does **not** mean production retri
 | Plumbing | `plumbing` | Fake embedders / scripted stores — wiring only |
 | PR retrieval regression | `eval` | `tests/evals/pr_corpus/` — fixed vectors + Qdrant; pipeline/metric regression only |
 | Eval harness | `eval_harness` | Keyword metric plumbing (`baseline/`) — not retrieval regression |
-| Meta | `meta` | Docs, packaging, exports |
+| Meta | `meta` | Docs, packaging, public-surface checks |
 | Live | `live` | Paid APIs; **not** in default CI — run locally when you have credentials |
 
 Semantic retrieval quality on your data belongs in **your app** via `rag_core.evals` (`examples/retrieval_eval.py`), not in this repo's CI.
 
 ## CI (pull request / push)
 
-`.github/workflows/ci.yml` only:
+`.github/workflows/ci.yml` runs on pull requests and pushes to `main`.
+
+Non-pytest checks:
+
+- `./scripts/dx_smoke.sh` on Python 3.12
+- `./scripts/verify_vercel_ai_sdk_example.sh` on Python 3.12
+- `./scripts/ci_self_host_smoke.sh` on Python 3.12
+- `uv run ruff check .`
+- `uv run mypy src tests examples`
+- `uv run python scripts/architecture_pressure.py --json`
+- `uv build`
+- `uv run python scripts/check_dist_artifacts.py`
+- `uv run python scripts/wheel_smoke.py`
+
+Pytest tiers:
 
 1. Fast pytest tier (unit, contracts, plumbing)
 2. `provider_contract`
@@ -27,10 +41,51 @@ Semantic retrieval quality on your data belongs in **your app** via `rag_core.ev
 
 No scheduled workflows. No API-key eval in CI.
 
-## Local gates (run before you ship)
+## Launch gates
+
+Run these before a public release or launch claim:
+
+Fast iteration during local work:
+
+```bash
+./scripts/landing_check.sh --quick
+```
+
+Full release short form:
+
+```bash
+./scripts/landing_check.sh
+```
+
+Expanded release gate:
 
 ```bash
 uv sync --group dev
+uv run ruff check .
+uv run mypy src tests examples
+uv run pytest -q
+./scripts/dx_smoke.sh
+./scripts/verify_vercel_ai_sdk_example.sh
+./scripts/ci_self_host_smoke.sh
+uv build
+uv run python scripts/check_dist_artifacts.py
+uv run python scripts/wheel_smoke.py
+```
+
+These prove packaging, typing, fixed-fixture retrieval regressions, no-key
+developer journeys, and the optional HTTP wrapper. They still do not prove
+semantic quality on a user's corpus or live paid-provider behavior.
+
+CI runs the pytest suite as marker tiers so failures identify the broken claim
+faster. The release gate remains the canonical command list above.
+
+## Confidence aids
+
+Use these while iterating locally or debugging a specific claim:
+
+```bash
+uv sync --group dev
+./scripts/landing_check.sh --quick
 ./scripts/dx_smoke.sh
 
 uv run ruff check . && uv run mypy src tests examples
@@ -53,6 +108,7 @@ uv run pytest -q -m live --maxfail=3
 | `tests/evals/pr_corpus/` | PR retrieval regression corpus + precomputed embeddings |
 | `tests/evals/baseline/` | Keyword fake embedder metric harness |
 | `tests/fixtures/integration_corpus/` | 10-doc integration search corpus |
+| `tests/fixtures/real_documents/` | Small externally authored parser fixtures with source/license notes |
 | `tests/fixtures/providers/` | Provider contract JSON replay |
 
 ## Rules

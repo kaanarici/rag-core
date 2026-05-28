@@ -11,6 +11,7 @@ What this file owns:
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Sequence
 
 import pytest
@@ -20,16 +21,16 @@ from rag_core.core_ingest import CoreIngestor
 from rag_core.core_models import PreparedDocument, ProcessingFingerprint
 from rag_core.search.indexer import DocumentIndexer, IndexRequest
 from rag_core.search.providers.memory_store import InMemoryVectorStore
-from rag_core.search.providers.query_plan_capabilities import (
-    TURBOPUFFER_QUERY_PLAN_CAPABILITIES,
+from rag_core.search.providers.vector_store_capabilities import (
+    MEMORY_VECTOR_STORE_CAPABILITY_SPEC,
+    QDRANT_VECTOR_STORE_CAPABILITY_SPEC,
+    TURBOPUFFER_VECTOR_STORE_CAPABILITY_SPEC,
 )
 from rag_core.search.providers.qdrant_store import QdrantVectorStore
 from rag_core.search.providers.registry import VECTOR_STORES
 from rag_core.search.providers.turbopuffer_store import TurboPufferVectorStore
 from rag_core.search.types import (
     DeleteFilter,
-    MetadataFilterCapabilities,
-    QueryPlanCapabilities,
     SearchQuery,
     SearchResult,
     StoreCapabilities,
@@ -108,49 +109,50 @@ def test_qdrant_store_declares_full_capability_surface() -> None:
     )
     try:
         assert isinstance(store, VectorStore)
-        assert store.capabilities == StoreCapabilities(
-            per_point_delete=True,
-            document_record_lookup=True,
+        assert store.capabilities == QDRANT_VECTOR_STORE_CAPABILITY_SPEC.to_store_capabilities(
             dense_vector_dimensions=4,
-            query_plan=QueryPlanCapabilities(
-                dense=True,
-                sparse=True,
-                hybrid_rrf=True,
-                hybrid_dbsf=True,
-                hybrid_weighted_rrf=True,
-                mmr=True,
-                boost=True,
-                nested_prefetch=True,
-            ),
-            metadata_filter=MetadataFilterCapabilities(
-                term=True,
-                in_=True,
-                numeric_range=True,
-                string_range=False,
-                geo=True,
-                boolean=True,
-            ),
         )
     finally:
         asyncio.run(store.close())
 
 
+def test_qdrant_store_reports_dense_only_after_ready_collection_without_sparse() -> None:
+    store = QdrantVectorStore(
+        url=None,
+        api_key=None,
+        collection_name="docs",
+        location=":memory:",
+        dense_dimensions=4,
+    )
+    try:
+        store._collection_state.ready = True
+        store._collection_state.available_sparse_vector_names = frozenset()
+
+        capabilities = store.capabilities
+
+        assert capabilities.query_plan.dense is True
+        assert capabilities.query_plan.sparse is False
+        assert capabilities.query_plan.hybrid is False
+        assert capabilities.metadata_filter == (
+            QDRANT_VECTOR_STORE_CAPABILITY_SPEC.metadata_filter
+        )
+    finally:
+        asyncio.run(store.close())
+
+
+def test_vector_store_capability_specs_do_not_import_qdrant_implementation() -> None:
+    source = Path("src/rag_core/search/providers/vector_store_capabilities.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "qdrant_shared" not in source
+    assert "KNOWN_SPARSE_CHANNELS" in source
+
+
 def test_memory_store_declares_full_capability_surface() -> None:
     store = InMemoryVectorStore()
     assert isinstance(store, VectorStore)
-    assert store.capabilities == StoreCapabilities(
-        per_point_delete=True,
-        document_record_lookup=True,
-        query_plan=QueryPlanCapabilities(dense=True, sparse=True, hybrid_rrf=True),
-        metadata_filter=MetadataFilterCapabilities(
-            term=True,
-            in_=True,
-            numeric_range=True,
-            string_range=True,
-            geo=True,
-            boolean=True,
-        ),
-    )
+    assert store.capabilities == MEMORY_VECTOR_STORE_CAPABILITY_SPEC.to_store_capabilities()
 
 
 def test_turbopuffer_store_declares_adapter_tested_capability_surface() -> None:
@@ -160,19 +162,8 @@ def test_turbopuffer_store_declares_adapter_tested_capability_surface() -> None:
         namespace_client=object(),
     )
     assert isinstance(store, VectorStore)
-    assert store.capabilities == StoreCapabilities(
-        per_point_delete=True,
-        document_record_lookup=True,
+    assert store.capabilities == TURBOPUFFER_VECTOR_STORE_CAPABILITY_SPEC.to_store_capabilities(
         dense_vector_dimensions=4,
-        query_plan=TURBOPUFFER_QUERY_PLAN_CAPABILITIES,
-        metadata_filter=MetadataFilterCapabilities(
-            term=True,
-            in_=True,
-            numeric_range=True,
-            string_range=True,
-            geo=False,
-            boolean=True,
-        ),
     )
 
 

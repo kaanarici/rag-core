@@ -7,6 +7,8 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from rag_core.documents.exception_names import exception_type
+
 from ..pdf_inspector import PdfInspectorDetectionResult, PdfInspectorExtractionResult
 from .pdf_converter_inspector import _get_inspector_page_count, _get_inspector_route
 
@@ -26,10 +28,6 @@ class InspectorExtraction:
     failed: bool = False
 
 
-def _exception_type(exc: Exception) -> str:
-    return type(exc).__name__
-
-
 async def detect_with_pdf_inspector(
     file_bytes: bytes,
     *,
@@ -44,7 +42,7 @@ async def detect_with_pdf_inspector(
         logger.warning(
             "PDF Inspector availability check failed; inspector_path=%s error_type=%s",
             _INSPECTOR_PATH,
-            _exception_type(exc),
+            exception_type(exc),
         )
         return None
 
@@ -54,7 +52,7 @@ async def detect_with_pdf_inspector(
         logger.warning(
             "PDF Inspector detection failed; inspector_path=%s error_type=%s",
             _INSPECTOR_PATH,
-            _exception_type(exc),
+            exception_type(exc),
         )
         return None
     return InspectorDetection(
@@ -80,6 +78,6 @@ async def extract_with_pdf_inspector(
             _INSPECTOR_PATH,
             route or "unknown",
             page_count,
-            _exception_type(exc),
+            exception_type(exc),
         )
         return InspectorExtraction(result=None, failed=True)

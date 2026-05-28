@@ -4,10 +4,9 @@ import math
 from dataclasses import dataclass, field
 from typing import Sequence
 
+from rag_core.search.query_plan import DEFAULT_RRF_K
 from rag_core.search.sparse_channels import PRIMARY_SPARSE_CHANNEL
-from rag_core.search.types import SparseVector
-
-_RRF_K = 60
+from rag_core.search.vector_models import SparseVector
 
 
 @dataclass
@@ -68,7 +67,9 @@ def reciprocal_rank_fusion(
     scores: dict[str, float] = {}
     for ranking in rankings:
         for rank, point_id in enumerate(ranking):
-            scores[point_id] = scores.get(point_id, 0.0) + 1.0 / (_RRF_K + rank + 1)
+            scores[point_id] = scores.get(point_id, 0.0) + 1.0 / (
+                DEFAULT_RRF_K + rank + 1
+            )
     fused = sorted(scores.items(), key=lambda item: item[1], reverse=True)
     return fused[:limit]
 

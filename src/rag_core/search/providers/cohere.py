@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from rag_core.retrieval_defaults import DEFAULT_SEARCH_LIMIT
 from rag_core.search.providers.rerank_results import safe_indexed_rerank_results
-from rag_core.search.types import RerankResult
+from rag_core.search.request_models import RerankResult
+
+COHERE_RERANKER_PROVIDER = "cohere"
+DEFAULT_COHERE_RERANKER_MODEL = "rerank-v3.5"
 
 
 def _import_cohere() -> Any:
@@ -19,11 +23,11 @@ def _import_cohere() -> Any:
 
 
 class CohereReranker:
-    """Cohere rerank-v3.5 provider."""
+    """Cohere reranker provider."""
 
     def __init__(
         self,
-        model: str = "rerank-v3.5",
+        model: str = DEFAULT_COHERE_RERANKER_MODEL,
         api_key: str | None = None,
     ) -> None:
         cohere = _import_cohere()
@@ -32,7 +36,7 @@ class CohereReranker:
 
     @property
     def provider_name(self) -> str:
-        return "cohere"
+        return COHERE_RERANKER_PROVIDER
 
     @property
     def model_name(self) -> str:
@@ -42,7 +46,7 @@ class CohereReranker:
         self,
         query: str,
         documents: list[str],
-        top_k: int = 10,
+        top_k: int = DEFAULT_SEARCH_LIMIT,
     ) -> list[RerankResult]:
         if not documents or top_k <= 0:
             return []

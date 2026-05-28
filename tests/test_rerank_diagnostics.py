@@ -5,9 +5,11 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
+from rag_core.events.sink import EventSink
 from rag_core.events.sinks import EventBuffer
 from rag_core.events.sinks import JsonlSink
 from rag_core.events.types import RerankApplied
+from rag_core.retrieval_defaults import DEFAULT_SEARCH_LIMIT
 from rag_core.search.pipeline.stages.reranker_stage import ProviderRerankStage
 from rag_core.search.pipeline.types import PipelineContext, PipelineQuery
 from rag_core.search.providers.rerank_results import ValidatedRerankResults
@@ -25,7 +27,7 @@ class _StaticReranker:
         self,
         query: str,
         documents: list[str],
-        top_k: int = 10,
+        top_k: int = DEFAULT_SEARCH_LIMIT,
     ) -> list[RerankResult]:
         return list(self._results)
 
@@ -38,7 +40,7 @@ class _ValidatedReranker:
         self,
         query: str,
         documents: list[str],
-        top_k: int = 10,
+        top_k: int = DEFAULT_SEARCH_LIMIT,
     ) -> list[RerankResult]:
         return ValidatedRerankResults(
             [RerankResult(index=0, score=0.9, text=documents[0])],
@@ -280,7 +282,7 @@ def _query() -> PipelineQuery:
 def _context(
     *,
     reranker: RerankerProvider,
-    event_sink: object,
+    event_sink: EventSink,
 ) -> PipelineContext:
     return PipelineContext(
         embedding_provider=cast(Any, object()),

@@ -3,21 +3,23 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class EvalCase:
     """One labelled query for the eval runner.
 
-    ``expected_chunk_ids`` lists ids the runner treats as relevant. Results
-    are matched against ``SearchResult.id`` first when the fixture names exact
-    chunks, then against ``document_id`` for document-level fixtures.
+    ``expected_ids`` is the neutral name for ids the runner treats as relevant.
+    Results are matched against ``SearchResult.id`` first when the case names
+    exact chunks, then against ``document_id`` or ``document_key`` for
+    document-level cases.
+    ``expected_chunk_ids`` remains available for compatibility.
 
     ``expected_grades`` is required only for graded ``ndcg_at_k``. When
-    absent, nDCG falls back to binary relevance from ``expected_chunk_ids``.
+    absent, nDCG falls back to binary relevance from ``expected_ids``.
     """
 
     query: str
@@ -26,6 +28,34 @@ class EvalCase:
     expected_chunk_ids: tuple[str, ...]
     expected_grades: Mapping[str, int] | None = None
     case_id: str | None = None
+
+    def __init__(
+        self,
+        query: str,
+        namespace: str,
+        corpus_ids: Sequence[str],
+        expected_chunk_ids: Sequence[str] | None = None,
+        expected_grades: Mapping[str, int] | None = None,
+        case_id: str | None = None,
+        *,
+        expected_ids: Sequence[str] | None = None,
+    ) -> None:
+        if expected_ids is not None and expected_chunk_ids is not None:
+            raise ValueError("use expected_ids or expected_chunk_ids, not both")
+        relevant_ids = expected_ids if expected_ids is not None else expected_chunk_ids
+        if relevant_ids is None:
+            raise ValueError("expected_ids is required")
+        object.__setattr__(self, "query", query)
+        object.__setattr__(self, "namespace", namespace)
+        object.__setattr__(self, "corpus_ids", tuple(corpus_ids))
+        object.__setattr__(self, "expected_chunk_ids", tuple(relevant_ids))
+        object.__setattr__(self, "expected_grades", expected_grades)
+        object.__setattr__(self, "case_id", case_id)
+
+    @property
+    def expected_ids(self) -> tuple[str, ...]:
+        """Relevant chunk or document ids for this case."""
+        return self.expected_chunk_ids
 
 
 class _DuplicateObjectKeyError(ValueError):
@@ -84,20 +114,15 @@ def _reject_duplicate_object_keys(pairs: list[tuple[str, object]]) -> dict[str, 
 def _load_case_row(row: object, *, path: Path, line_number: int) -> EvalCase:
     if not isinstance(row, dict):
         raise _load_error(path, line_number, "case must be a JSON object")
-    expected_chunk_ids = _required_string_tuple(
-        row,
-        "expected_chunk_ids",
-        path=path,
-        line_number=line_number,
-    )
-    _validate_unique_expected_chunk_ids(
-        expected_chunk_ids,
+    expected_ids = _expected_ids_tuple(row, path=path, line_number=line_number)
+    _validate_unique_expected_ids(
+        expected_ids,
         path=path,
         line_number=line_number,
     )
     expected_grades = _optional_grades(row, path=path, line_number=line_number)
     _validate_expected_grades(
-        expected_chunk_ids,
+        expected_ids,
         expected_grades,
         path=path,
         line_number=line_number,
@@ -111,7 +136,7 @@ def _load_case_row(row: object, *, path: Path, line_number: int) -> EvalCase:
             path=path,
             line_number=line_number,
         ),
-        expected_chunk_ids=expected_chunk_ids,
+        expected_ids=expected_ids,
         expected_grades=expected_grades,
         case_id=_optional_string(row, "case_id", path=path, line_number=line_number),
     )
@@ -163,6 +188,24 @@ def _required_string_tuple(
     return tuple(items)
 
 
+def _expected_ids_tuple(
+    row: dict[str, object],
+    *,
+    path: Path,
+    line_number: int,
+) -> tuple[str, ...]:
+    has_expected_ids = "expected_ids" in row
+    has_expected_chunk_ids = "expected_chunk_ids" in row
+    if has_expected_ids and has_expected_chunk_ids:
+        raise _load_error(
+            path,
+            line_number,
+            "use expected_ids or expected_chunk_ids, not both",
+        )
+    field = "expected_ids" if has_expected_ids else "expected_chunk_ids"
+    return _required_string_tuple(row, field, path=path, line_number=line_number)
+
+
 def _optional_grades(
     row: dict[str, object],
     *,
@@ -199,22 +242,22 @@ def _optional_grades(
     return grades
 
 
-def _validate_unique_expected_chunk_ids(
-    expected_chunk_ids: tuple[str, ...],
+def _validate_unique_expected_ids(
+    expected_ids: tuple[str, ...],
     *,
     path: Path,
     line_number: int,
 ) -> None:
-    if len(set(expected_chunk_ids)) != len(expected_chunk_ids):
+    if len(set(expected_ids)) != len(expected_ids):
         raise _load_error(
             path,
             line_number,
-            "expected_chunk_ids must not contain duplicate ids",
+            "expected_ids must not contain duplicate ids",
         )
 
 
 def _validate_expected_grades(
-    expected_chunk_ids: tuple[str, ...],
+    expected_ids: tuple[str, ...],
     expected_grades: Mapping[str, int] | None,
     *,
     path: Path,
@@ -222,15 +265,15 @@ def _validate_expected_grades(
 ) -> None:
     if expected_grades is None:
         return
-    expected_ids = set(expected_chunk_ids)
+    relevant_ids = set(expected_ids)
     positive_grade_ids = {
         item_id for item_id, grade in expected_grades.items() if grade > 0
     }
-    if positive_grade_ids != expected_ids:
+    if positive_grade_ids != relevant_ids:
         raise _load_error(
             path,
             line_number,
-            "expected_grades positive ids must match expected_chunk_ids",
+            "expected_grades positive ids must match expected_ids",
         )
 
 

@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 from qdrant_client import models as rest
 
-from rag_core.search.types import VectorPoint
+from rag_core.search.vector_models import VectorPoint
 
 from .qdrant_payloads import _build_point
 

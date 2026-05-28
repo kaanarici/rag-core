@@ -6,17 +6,18 @@ from typing import Callable, Protocol
 
 from rag_core.cli_inputs import cli_error_message
 from rag_core.local_search_planning import (
-    LocalSearchPlan,
-    build_local_search_plan,
+    LocalSearchRunSpec,
+    build_local_search_run_spec,
     default_corpus_id,
     discover_local_files,
 )
 from rag_core.local_search_models import (
+    DEFAULT_LOCAL_SEARCH_COLLECTION,
     LocalSearchRequest,
     LocalSearchResult,
     LocalSearchSkippedFailure,
 )
-from rag_core.search.types import SearchResult
+from rag_core.search import SearchResult
 
 
 class LocalSearchCore(Protocol):
@@ -52,25 +53,25 @@ async def run_local_search(
     *,
     core_factory: LocalSearchCoreFactory | None = None,
 ) -> LocalSearchResult:
-    plan = build_local_search_plan(request)
+    run_spec = build_local_search_run_spec(request)
     factory = core_factory or _default_local_search_core_factory
     core = factory()
     try:
         await core.ensure_ready()
-        indexed, skipped_failed = await _index_local_documents(core, plan)
+        indexed, skipped_failed = await _index_local_documents(core, run_spec)
 
         if not indexed:
-            raise ValueError("no files could be indexed under %s" % plan.root)
+            raise ValueError("no files could be indexed under %s" % run_spec.root)
 
-        hits = await _search_local_documents(core, plan)
+        hits = await _search_local_documents(core, run_spec)
         return _local_search_result(
-            plan, indexed=indexed, skipped_failed=skipped_failed, hits=hits
+            run_spec, indexed=indexed, skipped_failed=skipped_failed, hits=hits
         )
     finally:
         await core.close()
 
 
-def search_hit_payload(hit: SearchResult) -> dict[str, object]:
+def local_search_hit_payload(hit: SearchResult) -> dict[str, object]:
     payload = _dataclass_payload(hit)
     return {
         "score": payload.get("score"),
@@ -85,16 +86,16 @@ def search_hit_payload(hit: SearchResult) -> dict[str, object]:
 
 async def _index_local_documents(
     core: LocalSearchCore,
-    plan: LocalSearchPlan,
+    run_spec: LocalSearchRunSpec,
 ) -> tuple[list[dict[str, object]], list[LocalSearchSkippedFailure]]:
     indexed: list[dict[str, object]] = []
     skipped_failed: list[LocalSearchSkippedFailure] = []
-    for document in plan.documents:
+    for document in run_spec.documents:
         try:
             ingested = await core.ingest_file(
                 document.path,
-                namespace=plan.namespace,
-                corpus_id=plan.corpus_id,
+                namespace=run_spec.namespace,
+                corpus_id=run_spec.corpus_id,
                 document_key=document.document_key,
             )
         except Exception as exc:  # noqa: BLE001 - keep indexing remaining files.
@@ -109,41 +110,41 @@ async def _index_local_documents(
 
 
 async def _search_local_documents(
-    core: LocalSearchCore, plan: LocalSearchPlan
+    core: LocalSearchCore, run_spec: LocalSearchRunSpec
 ) -> list[SearchResult]:
     return await core.search(
-        query=plan.query,
-        namespace=plan.namespace,
-        corpus_ids=[plan.corpus_id],
-        limit=plan.limit,
+        query=run_spec.query,
+        namespace=run_spec.namespace,
+        corpus_ids=[run_spec.corpus_id],
+        limit=run_spec.limit,
         rerank=False,
     )
 
 
 def _local_search_result(
-    plan: LocalSearchPlan,
+    run_spec: LocalSearchRunSpec,
     *,
     indexed: list[dict[str, object]],
     skipped_failed: list[LocalSearchSkippedFailure],
     hits: list[SearchResult],
 ) -> LocalSearchResult:
     return LocalSearchResult(
-        query=plan.query,
-        namespace=plan.namespace,
-        corpus_id=plan.corpus_id,
+        query=run_spec.query,
+        namespace=run_spec.namespace,
+        corpus_id=run_spec.corpus_id,
         indexed=indexed,
-        skipped_unsupported_count=plan.skipped_unsupported_count,
-        skipped_empty_count=plan.skipped_empty_count,
+        skipped_unsupported_count=run_spec.skipped_unsupported_count,
+        skipped_empty_count=run_spec.skipped_empty_count,
         skipped_failed=skipped_failed,
-        truncated=plan.truncated,
-        hits=[search_hit_payload(hit) for hit in hits],
+        truncated=run_spec.truncated,
+        hits=[local_search_hit_payload(hit) for hit in hits],
     )
 
 
 def _default_local_search_core_factory() -> LocalSearchCore:
     from rag_core.demo import build_demo_core
 
-    return build_demo_core(collection="local_search")
+    return build_demo_core(collection=DEFAULT_LOCAL_SEARCH_COLLECTION)
 
 
 def _dataclass_payload(value: object) -> dict[str, object]:
@@ -160,6 +161,6 @@ __all__ = [
     "LocalSearchCoreFactory",
     "default_corpus_id",
     "discover_local_files",
+    "local_search_hit_payload",
     "run_local_search",
-    "search_hit_payload",
 ]
