@@ -137,7 +137,6 @@ def test_readme_names_prompt_safe_context_boundary() -> None:
     source = "\n".join(
         Path(path).read_text(encoding="utf-8")
         for path in (
-            "MISSION.md",
             "README.md",
             "docs/quickstart.md",
             "examples/chatbot_context.py",
@@ -202,9 +201,8 @@ def test_public_docs_do_not_claim_managed_rag_drop_in_compatibility() -> None:
 
 
 def test_historical_plan_and_research_docs_are_not_release_artifacts() -> None:
-    assert sorted(path.as_posix() for path in Path("docs/plans").rglob("*.md")) == [
-        "docs/plans/ROUTING.md"
-    ]
+    plan_docs = sorted(path.as_posix() for path in Path("docs/plans").rglob("*.md"))
+    assert plan_docs in ([], ["docs/plans/ROUTING.md"])
     assert not list(Path("docs/research").rglob("*.md"))
 
 

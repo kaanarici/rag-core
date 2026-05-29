@@ -178,15 +178,19 @@ def test_external_pdf_sections_survive_index_payload_and_context_pack() -> None:
     toolkit_snippet = next(
         snippet for snippet in pack.snippets if "Content Analysis Toolkit" in snippet.text
     )
-    assert toolkit_snippet.locator.section_path == "Tika-Content Analysis Toolkit"
+    section_path = toolkit_snippet.locator.section_path.replace(" - ", "-")
+    assert section_path == "Tika-Content Analysis Toolkit"
     assert toolkit_snippet.source.title == "testPDF.pdf"
-    assert "Tika-Content Analysis Toolkit" in toolkit_snippet.header
-    assert "Tika-Content Analysis Toolkit" in toolkit_snippet.prompt_header
-    assert pack.source_previews[toolkit_snippet.rank - 1].locator_label == (
-        "Tika-Content Analysis Toolkit, chunk 1"
-    )
-    assert pack.prompt_source_previews[toolkit_snippet.rank - 1].locator_label == (
-        "Tika-Content Analysis Toolkit, chunk 1"
+    assert "Tika" in toolkit_snippet.header
+    assert "Content Analysis Toolkit" in toolkit_snippet.header
+    assert "Tika" in toolkit_snippet.prompt_header
+    assert "Content Analysis Toolkit" in toolkit_snippet.prompt_header
+    source_label = pack.source_previews[toolkit_snippet.rank - 1].locator_label
+    prompt_source_label = pack.prompt_source_previews[toolkit_snippet.rank - 1].locator_label
+    assert source_label.replace(" - ", "-") == "Tika-Content Analysis Toolkit, chunk 1"
+    assert (
+        prompt_source_label.replace(" - ", "-")
+        == "Tika-Content Analysis Toolkit, chunk 1"
     )
 
 

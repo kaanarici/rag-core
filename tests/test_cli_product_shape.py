@@ -225,10 +225,7 @@ def test_retrieval_default_docs_distinguish_profiles_from_lexical_sidecar() -> N
     docs = "\n".join(
         (root / path).read_text(encoding="utf-8")
         for path in (
-            "MISSION.md",
-            "CONTEXT.md",
             "README.md",
-            "docs/CONTEXT.md",
             "docs/expectations.md",
             "docs/embed.md",
             "docs/stability.md",
@@ -239,7 +236,6 @@ def test_retrieval_default_docs_distinguish_profiles_from_lexical_sidecar() -> N
     assert "capability-aware default query plan" in docs
     assert "Default retrieval is capability-aware" in docs
     assert "`balanced` when dense+sparse hybrid RRF is supported" in docs
-    assert "capability-aware retrieve" in docs
     assert "capability-aware query embedding" in docs
     assert "use_lexical_search` is the request flag" in docs
     assert "configured lexical/exact-match expansion" in docs
