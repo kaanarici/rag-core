@@ -42,7 +42,8 @@ citations for model/tool responses.
 
 - `rag_core.demo` — smoke helpers only
 - `tests.support` — test package, not shipped in wheel
-- Undocumented `cli_*` / `core_*` modules — internal
+- `rag_core._engine` — private implementation package behind the facade
+- Undocumented `cli_*` modules — internal command wiring
 
 ## Rerank and hybrid defaults
 

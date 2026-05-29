@@ -65,16 +65,13 @@ By default, `serve` accepts ingest paths under the server working directory only
 you pass `--ingest-root /srv/docs`, the allowlist becomes the explicit roots you
 configured.
 
-## Operational boundary
+## Operational Boundary
 
-`serve` is an adapter, not an app platform. It does not provide:
-
-- Built-in auth, API-key management, tenancy, rate limits, or quotas
-- Connector sync, webhooks, polling, or deleted-source policy
-- Job retry scheduling, stuck-job reapers, or resume-after-crash recovery
-
-Wrap it behind your gateway or BFF. Bind `namespace`, `corpus_id`, `corpus_ids`, and
-the selected ingest root from the authenticated session before proxying requests.
+`serve` is a thin adapter intended to sit behind an application gateway. Put auth,
+API-key management, tenancy, rate limits, connector sync, retry scheduling, and
+deleted-source policy in your gateway, BFF, or worker system. Bind `namespace`,
+`corpus_id`, `corpus_ids`, and the selected ingest root from the authenticated
+session before proxying requests.
 
 ## HTTP surface
 

@@ -1,7 +1,8 @@
 # Retrieval expectations
 
-`rag-core` is an embeddable retrieval engine. Applications keep auth, chat, and model
-calls; the library owns parse → chunk → index → search → context/citations/manifest/events.
+`rag-core` is an embeddable retrieval engine for app-owned RAG. It owns parse →
+chunk → index → search → context/citations/manifest/events; applications integrate
+it behind their own auth, tenancy, UI, connectors, and model orchestration.
 
 ## Retrieval defaults
 
@@ -21,8 +22,15 @@ Default limits are intentionally surface-specific:
 | `RAGCore.retrieve_context`, CLI `retrieve-context`, HTTP `/v1/retrieve-context` | 8 snippets |
 | `search_user_documents` tool contract | 5 snippets |
 
-Rerank runs only when requested **and** a reranker provider is configured; otherwise the
-rerank stage is a no-op.
+Default retrieval is capability-aware across the library, CLI, HTTP runtime, and
+tool contract surfaces. The engine embeds only the query channels the selected
+plan and active vector store can use, so dense-only plans do not initialize sparse
+retrieval and hybrid plans are selected only when supported. This is not a
+promise that every provider runs hybrid.
+
+Rerank runs only when requested **and** a real reranker provider is configured. If
+rerank is requested without a provider, search completes with
+`requested_rerank=true`, `attempted_rerank=false`, and no rerank stage event.
 
 Search profiles are named query-plan presets. `balanced` is the default profile when
 the active vector store supports dense+sparse hybrid RRF. `fast` is dense-only,
@@ -42,7 +50,7 @@ Familiar `scored_chunks`-style fields for tool and observability adapters:
 | --- | --- | --- | --- |
 | `id` | `id` | `id` | Chunk point id |
 | `text` | `text` | `content` | Retrieved chunk body |
-| `score` | `score` | `score` | Rank score from the active fusion/rerank stage |
+| `score` | `score` | `score` | Retrieval/fusion score from the vector store |
 | `document_id` | `document_id` | `document_id` | Stable document identity |
 | `document_key` | `document_key` | `document_key` | App-facing locator (path, URL key, etc.) |
 | `metadata` | `metadata` | `metadata` | Filterable payload fields |
@@ -52,6 +60,17 @@ Familiar `scored_chunks`-style fields for tool and observability adapters:
 Extraction quality metadata appears as flat `quality_*` hit metadata when available,
 and `retrieve_context(...)` carries the same sanitized values under
 `retrieval_metadata["quality"]`.
+
+Text roles are explicit:
+
+- `PreparedChunk.text` / `SearchResult.text` — clean chunk body for display and prompt context
+- `PreparedChunk.embedding_text` — optional dense-embedding input, often enriched by contextualization
+- sparse/lexical text — keyword input that may include structured metadata
+- metadata, locators, and source identity — structured fields for filters, citations, previews, traces, and debugging
+
+Embedding input can include compact structured metadata as retrieval signal, but
+prompt-shaped metadata wrappers are not used for default indexing text and do not
+appear in `SearchResult.text` or `ContextPack.as_prompt_text()`.
 
 CLI `search --json` emits the app-facing `SearchResult` field names.
 `to_retrieval_hits()` in `rag_core.events.export` maps the chunk body from
@@ -82,11 +101,48 @@ source identifiers such as document IDs, document keys, result IDs, corpus IDs, 
 source hashes. CLI and HTTP `retrieve-context` use `as_prompt_text()` for
 `context_text` while keeping the structured context pack app-facing.
 
-## Manifest vs hosted doc registry
+## Chunking
+
+`RAGCoreConfig(chunking=ChunkingConfig(...))` controls facade prepare and ingest paths.
+Public beta strategies are `auto`, `markdown`, `code`, and `semantic`.
+
+```python
+from rag_core import RAGCoreConfig
+from rag_core.config import ChunkingConfig
+
+config = RAGCoreConfig(
+    chunking=ChunkingConfig(strategy="markdown", max_chars=1200, overlap=120)
+)
+```
+
+`auto` routes code-like files to the code chunker and other text to markdown. The
+semantic chunker is beta and uses heuristic boundaries unless a semantic embedding
+runtime is explicitly enabled.
+
+## Evals
+
+`rag_core.evals` still reports recall/MRR/nDCG over expected chunk or document ids.
+Cases can also assert context-pack quality directly:
+
+```json
+{"query":"How can invoices be paid?","namespace":"acme","corpus_ids":["help"],"expected_ids":["billing.md"],"expected_context_contains":["ACH"],"forbidden_context_contains":["content_sha256","document_key"],"expected_citation_count_min":1}
+```
+
+Context metrics include `context_recall`, `citation_count`, `source_count`,
+`forbidden_leak_count`, `context_token_estimate`, `context_contains_pass`, and
+`prompt_safety_pass`.
+
+## Manifest and Skip Semantics
 
 Manifest JSONL records ingest fingerprints and skip-by-hash reconciliation. It is not a
 hosted document registry; apps own external doc IDs and map them to `document_id` /
 `document_key`.
+
+Unchanged ingest defaults to `IngestConfig(skip_unchanged="fast")`: when the vector
+store can return a matching document record, core returns stored document metadata
+without parsing, chunking, embedding, or upserting. Use
+`skip_unchanged="materialize"` if you need the older result materialization behavior
+that reparses unchanged content before returning.
 
 ## Source reconciliation
 
@@ -112,12 +168,13 @@ What the embedding application still owns:
 - Tenant binding for `namespace` and corpus selection
 - Background cleanup jobs that call core deletion primitives
 
-## Non-goals
+## Integration Boundary
 
-- Hosted chat, webhooks, billing, teams, admin UI
-- Eval or trace-summary CLI commands (use `rag_core.evals`, `examples/retrieval_eval.py`, and `summarize_search_trace` on events JSONL)
-- TurboPuffer in the default wheel (use `--extra turbopuffer`)
-- Eval HTTP on `rag-core serve`
+Applications own auth, model calls, connector scheduling, deleted-source policy,
+and product UI. `rag-core` provides the retrieval engine and optional thin HTTP
+adapter those applications can run behind their gateway. Use `rag_core.evals`,
+`examples/retrieval_eval.py`, and event trace summaries for quality workflows;
+the optional runtime does not expose eval HTTP.
 
 ## Self-host runtime (optional)
 

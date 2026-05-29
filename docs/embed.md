@@ -9,11 +9,12 @@ context packs and retrieval traces.
 ```python
 import asyncio
 from rag_core import RAGCore, RAGCoreConfig
-from rag_core.config import EmbeddingConfig, QdrantConfig
+from rag_core.config import ChunkingConfig, EmbeddingConfig, QdrantConfig
 
 async def main() -> None:
     config = RAGCoreConfig(
         qdrant=QdrantConfig(location="./rag-core-qdrant"),
+        chunking=ChunkingConfig(strategy="auto", max_chars=1600, overlap=160),
         embedding=EmbeddingConfig(
             provider="openai",
             model="text-embedding-3-small",
@@ -88,6 +89,13 @@ filters inside the bound namespace/corpus scope.
 Pass `rerank=True` only when `RAGCoreConfig.reranker` (or CLI flags) point at a real
 reranker provider. See [expectations.md](expectations.md).
 
+## Chunking
+
+`RAGCoreConfig.chunking` controls the public prepare/ingest path. Use `auto` for
+normal files, `markdown` for prose/docs, `code` when you want code-aware line
+locators, and `semantic` for beta semantic chunking. Lower-level chunking
+strategies remain pluggable through the chunking registry for experiments.
+
 ## Agent tools
 
 `rag_core.contracts` parses model tool payloads and provides helpers for app-bound
@@ -127,6 +135,10 @@ your configured embeddings — not the library’s CI fixture corpus. See
 [retrieval_eval.py](../examples/retrieval_eval.py). Use `expected_ids` for the
 relevant chunk or document ids you expect retrieval to return; legacy
 `expected_chunk_ids` case files still load for compatibility.
+Add context-level assertions when you want to verify prompt-safe output:
+`expected_context_contains`, `forbidden_context_contains`,
+`forbidden_private_identifiers`, `expected_citation_count_min`, and
+`max_context_chars`.
 
 For a no-key folder check before wiring real providers, `local-eval` indexes a
 local file or folder with deterministic demo embeddings, infers `namespace` and

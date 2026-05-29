@@ -131,10 +131,11 @@ uv run python -m examples.retrieval_eval
 ```
 
 Uses `rag_core.evals` in the repo — not the CI fixture corpus. Cases use
-`expected_ids` for relevant chunk or document ids:
+`expected_ids` for relevant chunk or document ids and can add prompt-context
+assertions:
 
 ```json
-{"query": "billing policy", "namespace": "acme", "corpus_ids": ["help"], "expected_ids": ["billing.md"]}
+{"query": "billing policy", "namespace": "acme", "corpus_ids": ["help"], "expected_ids": ["billing.md"], "expected_context_contains": ["ACH"], "forbidden_context_contains": ["content_sha256", "document_key"]}
 ```
 
 Exit code `0` means bundled example thresholds passed.

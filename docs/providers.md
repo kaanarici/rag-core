@@ -60,7 +60,7 @@ Register provider-backed extension points or inject application-owned embeddings
 | Category | Protocol | Registry or built-ins | Runtime selection |
 | --- | --- | --- | --- |
 | Dense embeddings | `rag_core.search.provider_protocols.EmbeddingProvider` | `EMBEDDING_PROVIDERS` | `RAGCoreConfig.embedding`, CLI, or `RAGCore(embedding_provider=...)` |
-| Sparse embeddings | `rag_core.search.provider_protocols.SparseEmbedder` | `SPARSE_EMBEDDERS` | `RAGCore(sparse_embedder=...)` |
+| Sparse embeddings | `rag_core.search.provider_protocols.SparseEmbedder` | `SPARSE_EMBEDDERS` | `RAGCore(sparse_embedder=...)`; default FastEmbed models load only when sparse indexing/search is used |
 | Rerankers | `rag_core.search.provider_protocols.RerankerProvider` | `RERANKER_PROVIDERS` | `RAGCoreConfig.reranker`, CLI, or `RAGCore(reranker=...)` |
 | Vector stores | `rag_core.search.provider_protocols.VectorStore` | `VECTOR_STORES` | Qdrant/TurboPuffer via `RAGCoreConfig.vector_store` or CLI; any store via `RAGCore(vector_store=...)` |
 | OCR | `rag_core.documents.OcrProvider` | `OCR_PROVIDERS` | `RAGCore(ocr_provider=...)`; no `RAGCoreConfig` field |
@@ -69,7 +69,7 @@ Register provider-backed extension points or inject application-owned embeddings
 | Chunk context cache | `rag_core.search.providers.ChunkContextCache` | `CHUNK_CONTEXT_CACHES` | `RAGCore(chunk_context_cache=...)` only |
 | Chunk contextualizers | `rag_core.documents.ChunkContextualizer` | Built-ins: `NoOpContextualizer`, `AnthropicChunkContextualizer`, `CachingContextualizer` | `RAGCore(chunk_contextualizer=...)` only |
 | Event sinks | `rag_core.events.EventSink` | Built-ins: `NoOpSink`, `LoggingSink`, `JsonlSink`, `EventBuffer`, `MultiSink`, `OpenTelemetrySink` | `RAGCore(event_sink=...)` only |
-| Chunking | `rag_core.documents.chunking.ChunkingStrategy` | `CHUNKING_STRATEGIES` | prepare paths |
+| Chunking | `rag_core.documents.chunking.ChunkingStrategy` | `CHUNKING_STRATEGIES` | `RAGCoreConfig.chunking` for public prepare paths; custom strategies through registry |
 | Converters | `rag_core.documents.converters.BaseConverter` | Dedicated loader: `get_converter()`, `convert_file()` | `ConversionResult` via converter registry |
 
 Declare `rag_core.search.provider_protocols.StoreCapabilities` truthfully;
@@ -121,7 +121,7 @@ audit for first-party adapters, not a benchmark.
 | Cohere rerank | `results[]` with `index`, `relevance_score` |
 | Voyage rerank | `index`, `relevance_score` |
 | ZeroEntropy rerank | `index`, `relevance_score`; `top_n` |
-| FastEmbed sparse | `SparseEmbedding` → `SparseVector` |
+| FastEmbed sparse | Lazy `SparseTextEmbedding` load → `SparseVector`; diagnostics expose load status |
 | Qdrant Query API | dense, sparse, RRF, DBSF, weighted RRF, MMR, boost |
 | TurboPuffer query | dense ANN + filters; hybrid/sparse slices as implemented; else fail closed |
 | Mistral OCR | `pages[]` with `markdown` |

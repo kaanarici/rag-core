@@ -81,7 +81,7 @@ def manifest_row(entry: CorpusManifestEntry) -> dict[str, object]:
 
 
 def preview_text(hit: SearchResult, *, max_chars: int = 96) -> str:
-    text = hit.text.rsplit("# Content", maxsplit=1)[-1].strip()
+    text = hit.text.strip()
     if len(text) <= max_chars:
         return text
     return f"{text[: max_chars - 3].rstrip()}..."

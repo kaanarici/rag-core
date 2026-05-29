@@ -26,6 +26,7 @@ uv run python scripts/worktree_slices.py --staged --slice validation-tooling
 surfaces. Use `./scripts/landing_check.sh --quick` while iterating; it runs
 sync, lint, typecheck, the fast pytest tier, and `dx_smoke`. Run
 `./scripts/landing_check.sh` before treating the tree as release-landable.
+The scripts are **coordination** only; they do not implement resume-after-crash recovery.
 CI runs the full validation surface directly, with pytest split into marker
 tiers for clearer failures.
 

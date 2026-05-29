@@ -7,9 +7,16 @@ citations and traces.
 **v0 beta** — library-first. CI proves wiring and retrieval regression on fixed
 fixtures; see [tests/README.md](tests/README.md) for what passing tests mean.
 
-Your application keeps authentication, chat, connectors, and billing. rag-core keeps
-everything from raw bytes through prompt-safe context assembly. Optional
-`rag-core serve` exposes the same `RAGCore` over HTTP.
+rag-core provides retrieval infrastructure for app-owned RAG. Applications
+integrate it behind their own auth, tenancy, UI, connectors, and model
+orchestration. Optional `rag-core serve` exposes the same `RAGCore` over HTTP.
+
+## Why rag-core?
+
+Use rag-core when you want the retrieval layer to be inspectable and portable:
+typed ingest, configurable chunking, capability-aware vector search, optional
+rerank, prompt-safe context, citations, traces, and local evals without adopting a
+hosted product shape.
 
 ## What you get
 
@@ -66,13 +73,38 @@ uv run rag-core retrieve-context "billing policy" --namespace acme --corpus-id h
 
 Embed guide: [docs/embed.md](docs/embed.md). Providers: [docs/providers.md](docs/providers.md).
 
+## Core Concepts
+
+- **Corpus** — documents scoped by `namespace` and `corpus_id`
+- **Chunk** — clean retrieved text plus optional `embedding_text` for enriched indexing
+- **SearchResult** — app-facing hit with clean `text`, retrieval score, metadata, and locators
+- **ContextPack** — prompt-safe snippets with citations, source previews, and token estimates
+- **Provider** — replaceable embedding, sparse, vector-store, rerank, OCR, cache, sidecar, or chunking adapter
+
+## Usage Modes
+
+| Mode | Use |
+| --- | --- |
+| Embedded Python | Construct `RAGCore` in your worker or API process |
+| CLI | Run no-key smoke, local search, configured ingest/search, evals, and doctor |
+| Optional HTTP | Run `rag-core serve` behind an app gateway |
+| Experiments | Bring custom providers, query plans, chunkers, sidecars, or pipeline stages |
+
+## Extension Points
+
+Common extension points are provider protocols and registries for dense
+embeddings, sparse embeddings, vector stores, rerankers, OCR, chunking, caches,
+sidecars, contextualizers, and event sinks. Stable app-facing imports are listed
+in [docs/stability.md](docs/stability.md); experimental and provider-author
+surfaces may change during v0.
+
 ## Self-host HTTP (optional)
 
 ```bash
 docker compose up -d --build && curl -s http://127.0.0.1:8787/health/ready
 ```
 
-Thin runtime over `RAGCore` — no auth or connector sync in core. [docs/self-host.md](docs/self-host.md) · [openapi.yaml](docs/self-host/openapi.yaml)
+Thin runtime over `RAGCore`, intended to sit behind your gateway. [docs/self-host.md](docs/self-host.md) · [openapi.yaml](docs/self-host/openapi.yaml)
 
 Server-local ingest paths are limited to the working directory by default. When
 `--ingest-root` is set, only the configured roots are allowed.
@@ -127,6 +159,12 @@ uv run rag-core retrieve-context "billing policy" --namespace acme --corpus-id h
 | [providers.md](docs/providers.md) | Vector stores and providers |
 | [self-host.md](docs/self-host.md) | Optional HTTP runtime |
 | [parsing/formats.md](docs/parsing/formats.md) | Supported formats |
+
+## Scope
+
+rag-core stops at retrieval infrastructure. Applications own auth, tenancy,
+connectors, product workflows, and model orchestration. The optional HTTP runtime
+is an adapter over the same core, not a production platform by itself.
 
 ## Validate changes
 
