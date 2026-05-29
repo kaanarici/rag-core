@@ -201,7 +201,7 @@ def _wait_for_ready(
             with urlopen(f"{base_url}/health/ready", timeout=1) as response:
                 if response.status == 200:
                     return
-        except URLError:
+        except (TimeoutError, URLError, socket.timeout):
             pass
         time.sleep(0.5)
     _print_server_logs(stdout_path, stderr_path)
