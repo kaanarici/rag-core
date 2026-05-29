@@ -40,7 +40,7 @@ class _RAGCoreManifestMethods:
         *,
         document: IngestedDocument,
     ) -> CorpusManifestEntry:
-        from rag_core.core_manifest import manifest_entry_for_core
+        from rag_core._engine.core_manifest import manifest_entry_for_core
 
         return manifest_entry_for_core(document)
 
@@ -57,7 +57,7 @@ class _RAGCoreManifestMethods:
         path: str | None = None,
         metadata: dict[str, str] | None = None,
     ) -> CorpusManifestEntry:
-        from rag_core.core_manifest import manifest_bytes_for_core
+        from rag_core._engine.core_manifest import manifest_bytes_for_core
 
         return await manifest_bytes_for_core(
             prepare_bytes=self.prepare_bytes,
@@ -84,7 +84,7 @@ class _RAGCoreManifestMethods:
         document_key: str | None = None,
         metadata: dict[str, str] | None = None,
     ) -> CorpusManifestEntry:
-        from rag_core.core_manifest import manifest_file_for_core
+        from rag_core._engine.core_manifest import manifest_file_for_core
 
         return await manifest_file_for_core(
             path,
@@ -105,7 +105,7 @@ class _RAGCoreManifestMethods:
         corpus_id: str,
         documents: list[IngestedDocument],
     ) -> CorpusManifest:
-        from rag_core.core_manifest import corpus_manifest_for_core
+        from rag_core._engine.core_manifest import corpus_manifest_for_core
 
         return corpus_manifest_for_core(
             namespace=namespace,

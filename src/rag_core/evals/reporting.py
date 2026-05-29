@@ -26,6 +26,31 @@ def eval_result_payload(result: EvalResult) -> EvalReport:
         "ndcg_at_10": finite_metric_value(result.ndcg_at_10, name="ndcg_at_10"),
         "latency_ms": finite_metric_value(result.latency_ms, name="latency_ms"),
     }
+    if _case_has_context_expectations(case):
+        payload.update(
+            {
+                "expected_context_contains": list(case.expected_context_contains),
+                "forbidden_context_contains": list(case.forbidden_context_contains),
+                "forbidden_private_identifiers": list(
+                    case.forbidden_private_identifiers
+                ),
+                "expected_citation_count_min": case.expected_citation_count_min,
+                "expected_source_count_min": case.expected_source_count_min,
+                "max_context_chars": case.max_context_chars,
+                "max_context_tokens": case.max_context_tokens,
+                "context_recall": finite_metric_value(
+                    result.context_recall,
+                    name="context_recall",
+                ),
+                "citation_count": result.citation_count,
+                "source_count": result.source_count,
+                "forbidden_leak_count": result.forbidden_leak_count,
+                "context_token_estimate": result.context_token_estimate,
+                "context_char_count": result.context_char_count,
+                "context_contains_pass": result.context_contains_pass,
+                "prompt_safety_pass": result.prompt_safety_pass,
+            }
+        )
     if case.expected_grades is not None:
         payload["expected_grades"] = dict(case.expected_grades)
     if result.error_type is not None:
@@ -83,6 +108,9 @@ def _redacted_case_payload(payload: object) -> EvalReport:
     redacted.pop("expected_ids", None)
     redacted.pop("expected_chunk_ids", None)
     redacted.pop("expected_grades", None)
+    redacted.pop("expected_context_contains", None)
+    redacted.pop("forbidden_context_contains", None)
+    redacted.pop("forbidden_private_identifiers", None)
     return redacted
 
 
@@ -95,6 +123,12 @@ def _aggregate_metrics(payloads: Sequence[Mapping[str, object]]) -> EvalReport:
         "latency_ms": _mean_payload_value(payloads, "latency_ms"),
         "latency_p95_ms": _latency_percentile(payloads, percentile=0.95),
         "throughput_qps": _throughput_qps(payloads),
+        "context_recall": _mean_optional_payload_value(payloads, "context_recall"),
+        "prompt_safety_pass_rate": _mean_bool_payload_value(
+            payloads,
+            "prompt_safety_pass",
+        ),
+        "forbidden_leak_count": _sum_payload_int(payloads, "forbidden_leak_count"),
     }
 
 
@@ -104,6 +138,47 @@ def _mean_payload_value(payloads: Sequence[Mapping[str, object]], key: str) -> f
     return sum(
         finite_metric_value(payload[key], name=key) for payload in payloads
     ) / len(payloads)
+
+
+def _mean_optional_payload_value(
+    payloads: Sequence[Mapping[str, object]],
+    key: str,
+) -> float:
+    values = [payload[key] for payload in payloads if key in payload]
+    if not values:
+        return 0.0
+    return sum(finite_metric_value(value, name=key) for value in values) / len(values)
+
+
+def _mean_bool_payload_value(
+    payloads: Sequence[Mapping[str, object]],
+    key: str,
+) -> float:
+    values = [payload[key] for payload in payloads if isinstance(payload.get(key), bool)]
+    if not values:
+        return 0.0
+    return sum(1.0 for value in values if value is True) / len(values)
+
+
+def _sum_payload_int(payloads: Sequence[Mapping[str, object]], key: str) -> int:
+    total = 0
+    for payload in payloads:
+        value = payload.get(key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            total += value
+    return total
+
+
+def _case_has_context_expectations(case: object) -> bool:
+    return bool(
+        getattr(case, "expected_context_contains", ())
+        or getattr(case, "forbidden_context_contains", ())
+        or getattr(case, "forbidden_private_identifiers", ())
+        or getattr(case, "expected_citation_count_min", 0)
+        or getattr(case, "expected_source_count_min", 0)
+        or getattr(case, "max_context_chars", None) is not None
+        or getattr(case, "max_context_tokens", None) is not None
+    )
 
 
 def _latency_percentile(

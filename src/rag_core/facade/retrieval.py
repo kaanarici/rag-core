@@ -12,7 +12,7 @@ from rag_core.search import ContextPack, RerankBudget, SearchResult
 
 if TYPE_CHECKING:
     from rag_core.events.sink import EventSink
-    from rag_core.core_retrieval import SearchRunner
+    from rag_core._engine.core_retrieval import SearchRunner
     from rag_core.search import Filter, QueryPlan
 
 
@@ -35,7 +35,7 @@ class _RAGCoreRetrievalMethods:
         metadata_filter: "Filter | None" = None,
         rerank_budget: RerankBudget | None = None,
     ) -> list[SearchResult]:
-        from rag_core.core_retrieval import search_with_core
+        from rag_core._engine.core_retrieval import search_with_core
 
         return await search_with_core(
             search=self._search,
@@ -69,7 +69,7 @@ class _RAGCoreRetrievalMethods:
         max_chars: int | None = None,
         max_tokens: int | None = None,
     ) -> ContextPack:
-        from rag_core.core_retrieval import retrieve_context_with_core
+        from rag_core._engine.core_retrieval import retrieve_context_with_core
 
         return await retrieve_context_with_core(
             search=self._search,

@@ -9,7 +9,7 @@ from rag_core.archive_sources import (
     ZipArchiveSourceReader,
 )
 from rag_core.config.ingest_config import DEFAULT_INGEST_MAX_CONCURRENCY
-from rag_core.core_archive_runner import (
+from rag_core._engine.core_archive_runner import (
     ArchiveIngestCore,
     archive_record_counts,
     compact_archive_records,

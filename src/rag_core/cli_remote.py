@@ -27,7 +27,7 @@ from rag_core.cli_remote_output import (
     emit_remote_url_ingest,
 )
 from rag_core.config import INGEST_SOURCE_TYPE_URL
-from rag_core.core_config_cli import with_ingest_source_type
+from rag_core._engine.core_config_cli import with_ingest_source_type
 from rag_core.core_models import RAGCoreConfig
 from rag_core.fetching import FetchError
 from rag_core.fetch_security import validate_fetch_url

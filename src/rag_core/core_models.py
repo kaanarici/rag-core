@@ -51,7 +51,7 @@ class RAGCoreConfig:
         *,
         manifest_dir: Path | None = None,
     ) -> "RAGCoreConfig":
-        from rag_core.core_config_cli import build_rag_core_config_from_cli_args
+        from rag_core._engine.core_config_cli import build_rag_core_config_from_cli_args
 
         return build_rag_core_config_from_cli_args(
             cls,

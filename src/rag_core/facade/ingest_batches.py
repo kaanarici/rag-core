@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from rag_core.archive_sources import ArchiveLimits
-    from rag_core.core_archive_runner import ArchiveIngestCore
+    from rag_core._engine.core_archive_runner import ArchiveIngestCore
     from rag_core.events.sink import EventSink
     from rag_core.fetch_security import FetchLimits, FetchSecurityPolicy
     from rag_core.fetching import FetchClient
@@ -34,7 +34,7 @@ async def ingest_files_from_facade(
     max_concurrency: int = DEFAULT_INGEST_MAX_CONCURRENCY,
     manifest_dir: str | Path | None = None,
 ) -> "LocalIngestResult":
-    from rag_core.core_batch_ingest import ingest_files_with_core
+    from rag_core._engine.core_batch_ingest import ingest_files_with_core
 
     return await ingest_files_with_core(
         core=cast("LocalIngestCore", core),
@@ -64,7 +64,7 @@ async def ingest_archive_from_facade(
     archive_limits: "ArchiveLimits | None" = None,
     manifest_dir: str | Path | None = None,
 ) -> "LocalIngestResult":
-    from rag_core.core_archive_ingest import ingest_zip_archive_with_core
+    from rag_core._engine.core_archive_ingest import ingest_zip_archive_with_core
 
     return await ingest_zip_archive_with_core(
         core=cast("ArchiveIngestCore", core),
@@ -100,7 +100,7 @@ async def ingest_urls_from_facade(
     fetch_limits: "FetchLimits | None" = None,
     manifest_dir: str | Path | None = None,
 ) -> "RemoteUrlIngestResult":
-    from rag_core.core_batch_ingest import ingest_urls_with_core
+    from rag_core._engine.core_batch_ingest import ingest_urls_with_core
 
     return await ingest_urls_with_core(
         core=cast("RemoteUrlIngestCore", core),

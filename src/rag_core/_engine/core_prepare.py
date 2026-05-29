@@ -2,30 +2,31 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from rag_core.core_prepare_events import (
+from rag_core._engine.core_prepare_events import (
     emit_chunk_produced,
     emit_ocr_applied,
     emit_parse_completed,
 )
-from rag_core.core_ocr_metadata import write_ocr_metadata
+from rag_core._engine.core_ocr_metadata import write_ocr_metadata
 from rag_core.events.emit import now_ms, stage_guard
+from rag_core.config import ChunkingConfig
 
-from .core_models import (
+from rag_core.core_models import (
     OcrMetadata,
     ParsedDocument,
     PreparedDocument,
 )
-from rag_core.core_prepare_chunks import (
+from rag_core._engine.core_prepare_chunks import (
     prepare_pre_chunked_texts as prepare_pre_chunked_texts,
     prepare_text_chunks,
 )
-from rag_core.core_prepare_contextualizer import (
+from rag_core._engine.core_prepare_contextualizer import (
     apply_contextualizer as _apply_contextualizer,
 )
-from rag_core.core_prepare_figure_locators import (
+from rag_core._engine.core_prepare_figure_locators import (
     with_figure_locators as _with_figure_locators,
 )
-from rag_core.core_prepare_metadata import (
+from rag_core._engine.core_prepare_metadata import (
     build_ocr_signal,
     merge_markdown,
     normalize_page_indices,
@@ -87,6 +88,7 @@ async def prepare_document_bytes(
     event_sink: "EventSink | None" = None,
     contextualizer: "ChunkContextualizer | None" = None,
     chunk_context_cache: "ChunkContextCache | None" = None,
+    chunking_config: ChunkingConfig | None = None,
 ) -> PreparedDocument:
     parsed = await parse_document_bytes(
         file_bytes=file_bytes,
@@ -108,7 +110,10 @@ async def prepare_document_bytes(
         )
 
     chunks = prepare_text_chunks(
-        parsed.markdown, mime_type=mime_type, filename=filename
+        parsed.markdown,
+        mime_type=mime_type,
+        filename=filename,
+        chunking_config=chunking_config,
     )
     chunks = _with_figure_locators(chunks=chunks, metadata=parsed.metadata)
     chunking_strategy = chunks[0].chunking_strategy if chunks else "none"

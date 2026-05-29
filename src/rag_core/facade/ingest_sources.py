@@ -4,9 +4,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rag_core.config import INGEST_SOURCE_TYPE_FILE
-from rag_core.core_file_io import detect_local_mime_type, read_file_bytes
+from rag_core._engine.core_file_io import detect_local_mime_type, read_file_bytes
 from rag_core.core_models import IngestedDocument, RAGCoreConfig
-from rag_core.core_remote import IngestBytes, ingest_remote_url
+from rag_core._engine.core_remote import IngestBytes, ingest_remote_url
 from rag_core.local_sources import document_key as local_document_key
 from rag_core.local_sources import local_source_key_root
 from rag_core.local_sources import reject_local_hardlink_path

@@ -40,7 +40,7 @@ class SparseVector:
 
 @dataclass(frozen=True)
 class TextualRepresentation:
-    """Metadata header + content for a chunk, ready for embedding."""
+    """Enriched metadata + content text for embedding or lexical indexing."""
 
     text: str
     metadata: dict[str, str]
@@ -69,7 +69,11 @@ class VectorPoint:
 class SearchResult:
     """A single search result from any source.
 
-    Example: SearchResult(id="uuid5-hex", text="# Metadata\\n...\\n# Content\\n...",
+    ``score`` is the retrieval or fusion score returned by the vector store.
+    Provider rerank scores, when present, live under ``metadata["rerank"]`` so
+    callers can compare retrieval and rerank signals explicitly.
+
+    Example: SearchResult(id="uuid5-hex", text="Clean retrieved chunk body",
              score=0.87, content_type="document", source_type="<source-type>",
              document_id="doc_123", corpus_id="help_center",
              document_key="docs/report.pdf", title="Q1 Report",

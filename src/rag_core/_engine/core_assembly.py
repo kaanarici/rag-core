@@ -3,13 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from rag_core.core_ingest import CoreIngestor, PrepareBytes
+from rag_core._engine.core_ingest import CoreIngestor, PrepareBytes
 from rag_core.core_models import ProcessingFingerprint, RAGCoreConfig
-from rag_core.core_runtime import (
+from rag_core._engine.core_runtime import (
     resolve_processing_version,
     resolve_runtime_collection_name,
 )
-from rag_core.core_vector_store_factory import (
+from rag_core._engine.core_vector_store_factory import (
     create_configured_vector_store,
     require_vector_store_capabilities,
 )
@@ -36,7 +36,7 @@ class CoreComponents:
     embedding: EmbeddingProvider
     sparse: SparseEmbedder
     store: VectorStore
-    reranker: RerankerProvider
+    reranker: RerankerProvider | None
     sidecar: SearchSidecar | None
     indexer: DocumentIndexer
     search: SearchPipelineRunner
@@ -61,7 +61,7 @@ def build_core_components(
 ) -> CoreComponents:
     from rag_core.search.providers.embedding import create_embedding_provider
     from rag_core.search.providers.registry import VECTOR_STORES
-    from rag_core.search.providers.reranker import create_reranker
+    from rag_core.search.providers.reranker import create_reranker, is_noop_reranker
     from rag_core.search.providers.sparse import FastEmbedSparseEmbedder
 
     embedding = embedding_provider or create_embedding_provider(
@@ -122,6 +122,7 @@ def build_core_components(
         model=config.reranker.model,
         api_key=config.reranker.api_key,
     )
+    search_reranker = None if is_noop_reranker(resolved_reranker) else resolved_reranker
     sidecar = search_sidecar
     if sidecar is None and config.ingest.lexical_search_provider:
         from rag_core.search.lexical_sidecar import create_search_sidecar
@@ -142,7 +143,7 @@ def build_core_components(
         embedding_provider=embedding,
         sparse_embedder=sparse,
         vector_store=store,
-        reranker=resolved_reranker,
+        reranker=search_reranker,
         sidecar=sidecar,
         event_sink=event_sink,
     )
@@ -158,12 +159,13 @@ def build_core_components(
         event_sink=event_sink,
         manifest_directory=config.ingest.manifest_directory,
         policy=config.policy,
+        skip_unchanged=config.ingest.skip_unchanged,
     )
     return CoreComponents(
         embedding=embedding,
         sparse=sparse,
         store=store,
-        reranker=resolved_reranker,
+        reranker=search_reranker,
         sidecar=sidecar,
         indexer=indexer,
         search=search,

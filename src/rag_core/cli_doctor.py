@@ -8,7 +8,7 @@ from rag_core.cli_doctor_output import emit_doctor
 from rag_core.cli_doctor_store import exercise_doctor_store
 from rag_core.cli_inputs import cli_redacted_url, cli_store_location_label
 from rag_core.core_models import RAGCoreConfig
-from rag_core.core_runtime import (
+from rag_core._engine.core_runtime import (
     describe_source_processing_versions,
     resolve_processing_version,
     resolve_runtime_collection_name,

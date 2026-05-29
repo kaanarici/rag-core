@@ -99,7 +99,7 @@ class RetrievalPipeline:
                     duration_ms=now_ms() - started_ms,
                 ),
             )
-            if query.rerank:
+            if query.rerank and getattr(self.rerank, "real_rerank", True):
                 started_ms = now_ms()
                 candidate_count = len(results)
                 try:

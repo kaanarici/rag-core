@@ -6,7 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from rag_core.core_ingest_events import emit_index_deleted
+from rag_core._engine.core_ingest_events import emit_index_deleted
 from rag_core.core_models import DeleteDocumentResult
 from rag_core.events.emit import stage_guard
 from rag_core.manifest_persistence import delete_entry

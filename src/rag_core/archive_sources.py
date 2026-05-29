@@ -9,7 +9,7 @@ from rag_core.archive_member_policy import archive_document_key
 from rag_core.archive_member_policy import is_supported_archive_member_path
 from rag_core.archive_member_policy import safe_archive_member_path
 from rag_core.archive_member_policy import validate_archive_member_size
-from rag_core.core_file_io import detect_mime_type_for_name
+from rag_core._engine.core_file_io import detect_mime_type_for_name
 from rag_core.local_sources import reject_local_hardlink_path
 from rag_core.local_sources import reject_local_symlink_path
 

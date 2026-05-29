@@ -193,6 +193,13 @@ def _resolve_local_eval_case_ids(
                 document_key_by_alias,
             ),
             case_id=case.case_id,
+            expected_context_contains=case.expected_context_contains,
+            forbidden_context_contains=case.forbidden_context_contains,
+            forbidden_private_identifiers=case.forbidden_private_identifiers,
+            expected_citation_count_min=case.expected_citation_count_min,
+            expected_source_count_min=case.expected_source_count_min,
+            max_context_chars=case.max_context_chars,
+            max_context_tokens=case.max_context_tokens,
         )
         for case in cases
     ]

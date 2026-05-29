@@ -10,8 +10,8 @@ from rag_core.cli_provider_errors import (
     provider_runtime_message,
 )
 from rag_core.config import INGEST_SOURCE_TYPE_FILE
-from rag_core.core_file_io import detect_local_mime_type, read_file_bytes
-from rag_core.core_lifecycle import compute_content_sha256
+from rag_core._engine.core_file_io import detect_local_mime_type, read_file_bytes
+from rag_core._engine.core_lifecycle import compute_content_sha256
 from rag_core.core_models import IngestedDocument
 from rag_core.events.emit import emit_event, now_ms
 from rag_core.events.types import (

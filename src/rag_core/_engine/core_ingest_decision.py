@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from rag_core.core_lifecycle import resolve_ingest_state
+from rag_core._engine.core_lifecycle import resolve_ingest_state
 from rag_core.core_models import ProcessingFingerprint
 from rag_core.search.provider_protocols import VectorStore
 from rag_core.search.request_models import StoredDocumentRecord

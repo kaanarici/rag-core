@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from rag_core.config.ingest_config import DEFAULT_INGEST_SOURCE_TYPE
-from rag_core.core_lifecycle import (
+from rag_core._engine.core_lifecycle import (
     compute_content_sha256,
     resolve_document_id,
     resolve_document_key,

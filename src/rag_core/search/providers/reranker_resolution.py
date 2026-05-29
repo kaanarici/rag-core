@@ -95,7 +95,7 @@ def attach_runtime_metadata(
     effective: str,
     fallback_reason: str | None,
 ) -> _R:
-    from rag_core.core_runtime import (
+    from rag_core._engine.core_runtime import (
         RERANKER_EFFECTIVE_ATTR,
         RERANKER_FALLBACK_REASON_ATTR,
         RERANKER_REQUESTED_ATTR,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 DEFAULT_PROCESSING_VERSION = "rag_core_processing_v1"
 INGEST_SOURCE_TYPE_FILE = "file"
@@ -17,6 +18,9 @@ DEFAULT_CLI_MANIFEST_DIRECTORY = ".rag-core/manifest"
 DEFAULT_INGEST_MAX_CONCURRENCY = 1
 CLI_MANIFEST_DIR_ENV = "RAG_CORE_MANIFEST_DIR"
 PROCESSING_VERSION_ENV = "RAG_CORE_PROCESSING_VERSION"
+SkipUnchangedMode = Literal["fast", "materialize"]
+SKIP_UNCHANGED_FAST: SkipUnchangedMode = "fast"
+SKIP_UNCHANGED_MATERIALIZE: SkipUnchangedMode = "materialize"
 
 
 @dataclass(frozen=True)
@@ -45,3 +49,17 @@ class IngestConfig:
     """
     embedding_cache_path: Path | None = None
     """SQLite embedding-cache path when ``embedding_cache_provider="sqlite"``."""
+    skip_unchanged: SkipUnchangedMode = SKIP_UNCHANGED_FAST
+    """How unchanged documents are handled during skip-by-hash reingest.
+
+    ``"fast"`` returns stored document metadata without parsing or chunking.
+    ``"materialize"`` preserves the older behavior of parsing the file to
+    return freshly prepared metadata even though indexing is skipped.
+    """
+
+    def __post_init__(self) -> None:
+        if self.skip_unchanged not in {
+            SKIP_UNCHANGED_FAST,
+            SKIP_UNCHANGED_MATERIALIZE,
+        }:
+            raise ValueError("IngestConfig.skip_unchanged must be 'fast' or 'materialize'")

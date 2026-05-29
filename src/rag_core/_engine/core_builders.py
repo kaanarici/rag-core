@@ -7,7 +7,7 @@ Single owner for the shallow transformations between ``PreparedDocument``,
 from __future__ import annotations
 
 from rag_core.config import INGEST_SOURCE_TYPE_ARCHIVE, INGEST_SOURCE_TYPE_FILE
-from rag_core.core_lifecycle import (
+from rag_core._engine.core_lifecycle import (
     compute_content_sha256,
     resolve_document_id,
     resolve_document_key,
@@ -18,7 +18,7 @@ from rag_core.core_models import (
     ProcessingFingerprint,
 )
 from rag_core.ingest_states import INGEST_STATE_PREVIEW
-from rag_core.core_ocr_metadata import (
+from rag_core._engine.core_ocr_metadata import (
     OCR_METADATA_KEY as OCR_METADATA_KEY,
     read_ocr_metadata as read_ocr_metadata,
     write_ocr_metadata as write_ocr_metadata,

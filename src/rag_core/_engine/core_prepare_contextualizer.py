@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from rag_core.core_prepare_chunks import override_embedding_texts
+from rag_core._engine.core_prepare_chunks import override_embedding_texts
 from rag_core.events.emit import emit_event, now_ms
 from rag_core.events.types import ContextualizeCompleted, ContextualizeStarted
 
-from .core_models import PreparedChunk
+from rag_core.core_models import PreparedChunk
 
 if TYPE_CHECKING:
     from rag_core.documents.contextualizer import ChunkContextualizer

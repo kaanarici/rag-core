@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from rag_core.config import INGEST_SOURCE_TYPE_URL, PRECHUNKED_CHUNKING_STRATEGY
 from rag_core.core_models import PreparedChunk
-from rag_core.core_prepare import (
+from rag_core._engine.core_prepare import (
     prepare_pre_chunked_texts,
     prepare_text_chunks,
 )
@@ -102,17 +102,8 @@ def _build_payload_texts(
     content_type: ContentType,
     chunks: list[PreparedChunk],
 ) -> list[str]:
-    return [
-        build_textual_representation(
-            content=chunk.text,
-            source_type=req.source_type,
-            name=req.filename,
-            content_type=content_type,
-            path=_textual_path(req),
-            extra_fields=req.extra_fields,
-        )
-        for chunk in chunks
-    ]
+    del req, content_type
+    return [chunk.text for chunk in chunks]
 
 
 def _build_sparse_texts(

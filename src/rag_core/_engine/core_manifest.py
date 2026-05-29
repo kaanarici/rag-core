@@ -3,14 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from rag_core.core_builders import (
+from rag_core._engine.core_builders import (
     build_preview_document,
 )
-from rag_core.core_manifest_builders import (
+from rag_core._engine.core_manifest_builders import (
     build_corpus_manifest,
     build_manifest_entry,
 )
-from rag_core.core_file_io import detect_local_mime_type, read_file_bytes
+from rag_core._engine.core_file_io import detect_local_mime_type, read_file_bytes
 from rag_core.core_models import CorpusManifest, CorpusManifestEntry, IngestedDocument
 
 if TYPE_CHECKING:

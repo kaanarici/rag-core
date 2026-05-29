@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 class ProviderRerankStage:
     """Re-rank candidates using `ctx.reranker`. No-op if absent or empty."""
 
+    real_rerank = True
+
     async def rerank(
         self,
         results: list[SearchResult],

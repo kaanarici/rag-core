@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from rag_core.core_prepare_metadata import (
+from rag_core._engine.core_prepare_metadata import (
     coerce_float,
     coerce_float_or_zero,
     coerce_int_or_zero,

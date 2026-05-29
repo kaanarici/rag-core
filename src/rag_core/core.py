@@ -4,16 +4,16 @@ import inspect
 from types import TracebackType
 from typing import TYPE_CHECKING
 
-from rag_core.core_assembly import build_core_components
+from rag_core._engine.core_assembly import build_core_components
 from rag_core.facade.ingest import _RAGCoreIngestMethods
 from rag_core.facade.manifest import _RAGCoreManifestMethods
 from rag_core.facade.prepare import _RAGCorePrepareMethods
 from rag_core.facade.retrieval import _RAGCoreRetrievalMethods
 from rag_core.core_models import RAGCoreConfig
-from rag_core.core_runtime import build_runtime_description
+from rag_core._engine.core_runtime import build_runtime_description
 
 if TYPE_CHECKING:
-    from rag_core.core_ingest import CoreIngestor
+    from rag_core._engine.core_ingest import CoreIngestor
     from rag_core.documents.contextualizer import ChunkContextualizer
     from rag_core.documents.ocr import OcrProvider
     from rag_core.events.sink import EventSink
@@ -45,7 +45,7 @@ class RAGCore(
     _embedding: "EmbeddingProvider"
     _sparse: "SparseEmbedder"
     _store: "VectorStore"
-    _reranker: "RerankerProvider"
+    _reranker: "RerankerProvider | None"
     _sidecar: "SearchSidecar | None"
     _indexer: "DocumentIndexer"
     _search: "SearchPipelineRunner"

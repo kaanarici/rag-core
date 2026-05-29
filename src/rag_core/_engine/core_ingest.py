@@ -3,21 +3,19 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from rag_core.core_builders import (
-    build_index_request,
-)
-from rag_core.core_ingest_decision import resolve_ingest_decision
-from rag_core.core_ingest_delete import (
+from rag_core._engine.core_builders import build_index_request
+from rag_core._engine.core_ingest_decision import resolve_ingest_decision
+from rag_core._engine.core_ingest_delete import (
     delete_ingested_document,
     delete_vector_index_and_sidecar,
 )
-from rag_core.core_ingest_events import (
+from rag_core._engine.core_ingest_events import (
     emit_ingest_completed,
     emit_ingest_skipped,
     emit_ingest_started,
 )
-from rag_core.core_ingest_identity import resolve_ingest_identity
-from rag_core.core_ingest_recovery import (
+from rag_core._engine.core_ingest_identity import resolve_ingest_identity
+from rag_core._engine.core_ingest_recovery import (
     latest_manifest_entry,
     manifest_entry_from_existing_record,
     restore_manifest_from_vector_store,
@@ -26,30 +24,27 @@ from rag_core.core_ingest_recovery import (
     sync_sidecar_or_emit_error,
     write_final_manifest,
 )
-from rag_core.core_ingest_results import (
+from rag_core._engine.core_ingest_results import (
+    build_fast_skipped_ingested_document,
     build_indexed_ingested_document,
     build_skipped_ingested_document,
 )
-from rag_core.core_manifest_builders import build_staged_manifest_entry
-from rag_core.core_models import (
-    DeleteDocumentResult,
-    IngestedDocument,
-    PreparedDocument,
-    ProcessingFingerprint,
-)
+from rag_core._engine.core_manifest_builders import build_staged_manifest_entry
+from rag_core.core_models import DeleteDocumentResult, IngestedDocument, PreparedDocument
+from rag_core.core_models import ProcessingFingerprint
 from rag_core.events.emit import now_ms, stage_guard
 from rag_core.manifest_persistence import (
     manifest_path,
     write_entry,
     write_entry_if_stale,
 )
+from rag_core.config import SKIP_UNCHANGED_FAST
 from rag_core.search.indexer import DocumentIndexer
 from rag_core.search.policy import DEFAULT_POLICY, VectorStorePolicy
 from rag_core.search.provider_protocols import SearchSidecar, VectorStore
 
 if TYPE_CHECKING:
     from rag_core.events.sink import EventSink
-
 
 class PrepareBytes(Protocol):
     async def __call__(
@@ -77,6 +72,7 @@ class CoreIngestor:
         event_sink: "EventSink | None" = None,
         manifest_directory: Path | None = None,
         policy: VectorStorePolicy = DEFAULT_POLICY,
+        skip_unchanged: str = SKIP_UNCHANGED_FAST,
     ) -> None:
         self._collection_name = collection_name
         self._source_type = source_type
@@ -89,6 +85,7 @@ class CoreIngestor:
         self._event_sink = event_sink
         self._manifest_directory = manifest_directory
         self._policy = policy
+        self._skip_unchanged = skip_unchanged
 
     async def ingest_bytes(
         self,
@@ -143,28 +140,41 @@ class CoreIngestor:
             )
 
             if not decision.should_index:
-                prepared = await self._prepare_bytes(
-                    file_bytes=file_bytes,
-                    filename=filename,
-                    mime_type=mime_type,
-                    path=path,
-                )
                 emit_ingest_skipped(
                     sink,
                     namespace=namespace,
                     corpus_id=corpus_id,
                     document_id=identity.document_id,
                 )
-                skipped = build_skipped_ingested_document(
-                    prepared=prepared,
-                    identity=identity,
-                    decision=decision,
-                    corpus_id=corpus_id,
-                    namespace=namespace,
-                    collection_name=self._collection_name,
-                    embedding_model=self._embedding_model,
-                    metadata=metadata,
-                )
+                if self._skip_unchanged == SKIP_UNCHANGED_FAST:
+                    skipped = build_fast_skipped_ingested_document(
+                        identity=identity,
+                        decision=decision,
+                        filename=filename,
+                        mime_type=mime_type,
+                        corpus_id=corpus_id,
+                        namespace=namespace,
+                        collection_name=self._collection_name,
+                        embedding_model=self._embedding_model,
+                        metadata=metadata,
+                    )
+                else:
+                    prepared = await self._prepare_bytes(
+                        file_bytes=file_bytes,
+                        filename=filename,
+                        mime_type=mime_type,
+                        path=path,
+                    )
+                    skipped = build_skipped_ingested_document(
+                        prepared=prepared,
+                        identity=identity,
+                        decision=decision,
+                        corpus_id=corpus_id,
+                        namespace=namespace,
+                        collection_name=self._collection_name,
+                        embedding_model=self._embedding_model,
+                        metadata=metadata,
+                    )
                 if self._manifest_directory is not None:
                     with stage_guard(sink, stage="manifest"):
                         previous_entry = latest_manifest_entry(
@@ -185,11 +195,14 @@ class CoreIngestor:
                                 content_sha256=identity.content_sha256,
                                 filename=filename,
                                 mime_type=mime_type,
-                                metadata=skipped.metadata,
+                                metadata=(
+                                    dict(metadata or {})
+                                    if self._skip_unchanged == SKIP_UNCHANGED_FAST
+                                    else skipped.metadata
+                                ),
                             ),
                         )
                 return skipped
-
             prepared = await self._prepare_bytes(
                 file_bytes=file_bytes,
                 filename=filename,

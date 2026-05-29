@@ -118,6 +118,7 @@ def build_runtime_description(
             "requested": getattr(reranker, RERANKER_REQUESTED_ATTR, None),
             "effective": getattr(reranker, RERANKER_EFFECTIVE_ATTR, None),
             "fallback_reason": getattr(reranker, RERANKER_FALLBACK_REASON_ATTR, None),
+            "configured": reranker is not None,
         },
         "ocr": (
             {
@@ -191,6 +192,8 @@ def describe_source_processing_versions(
 
 
 def _provider_name(provider: Any) -> str:
+    if provider is None:
+        return "none"
     explicit = getattr(provider, "provider_name", None)
     if explicit:
         return str(explicit)

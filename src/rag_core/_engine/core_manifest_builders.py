@@ -6,7 +6,7 @@ from rag_core.core_models import (
     IngestedDocument,
     PreparedDocument,
 )
-from rag_core.core_ocr_metadata import read_ocr_metadata
+from rag_core._engine.core_ocr_metadata import read_ocr_metadata
 from rag_core.manifest_entries import sanitize_manifest_metadata
 
 

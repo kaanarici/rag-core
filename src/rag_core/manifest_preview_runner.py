@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from rag_core.core_builders import build_preview_document
-from rag_core.core_manifest_builders import build_manifest_entry
-from rag_core.core_file_io import detect_local_mime_type, read_file_bytes
-from rag_core.core_prepare import prepare_document_bytes
+from rag_core._engine.core_builders import build_preview_document
+from rag_core._engine.core_manifest_builders import build_manifest_entry
+from rag_core._engine.core_file_io import detect_local_mime_type, read_file_bytes
+from rag_core._engine.core_prepare import prepare_document_bytes
 from rag_core.local_sources import document_key as local_document_key
 from rag_core.local_sources import reject_local_hardlink_path, reject_local_symlink_path
 from rag_core.manifest_preview_models import (

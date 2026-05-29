@@ -34,6 +34,8 @@ class IdentityFuse:
 class PassThroughRerank:
     """Return input unchanged when no reranker is configured."""
 
+    real_rerank = False
+
     async def rerank(
         self,
         results: list[SearchResult],

@@ -1,7 +1,7 @@
 """Build text representations used for retrieval.
 
-Document-like chunks include a metadata header and content body.
-Code chunks remain raw so syntax-aware chunking stays effective.
+Dense and sparse indexing may use structured metadata as additional signal.
+Stored payload text stays as the clean chunk body.
 """
 
 from __future__ import annotations
@@ -35,9 +35,11 @@ def build_textual_representation(
     path: Optional[str] = None,
     extra_fields: Optional[dict[str, str]] = None,
 ) -> str:
-    """Build text for retrieval and embedding.
+    """Build enriched text for retrieval and embedding.
 
-    Code content is returned unchanged. Other content includes metadata headers.
+    Code content is returned unchanged. Other content includes compact metadata
+    lines as retrieval signal.
+    Do not use this for display, prompt context, or ``SearchResult.text``.
     """
     if content_type == ContentType.CODE:
         return content
@@ -59,19 +61,16 @@ def _build_document_representation(
     extra_fields: Optional[dict[str, str]] = None,
 ) -> str:
     lines = [
-        "# Metadata",
-        "",
-        f"**Source Type**: {source_type}",
-        "**Type**: Document",
-        f"**Name**: {name}",
+        f"source_type: {source_type}",
+        "type: document",
+        f"name: {name}",
     ]
     if path:
-        lines.append(f"**Path**: {path}")
+        lines.append(f"path: {path}")
 
     if extra_fields:
-        lines.append("")
         for key, value in extra_fields.items():
-            lines.append(f"**{key}**: {value}")
+            lines.append(f"{key}: {value}")
 
-    lines.extend(["", "# Content", "", content])
+    lines.extend(["", content])
     return "\n".join(lines)

@@ -87,16 +87,33 @@ class FastEmbedSparseEmbedder:
     ) -> None:
         bm25_model_name = bm25_model_name or _default_bm25_model_name()
         splade_model_name = splade_model_name or _default_splade_model_name()
-        sparse_text_embedding = _import_sparse_text_embedding()
-        self._bm25_model = sparse_text_embedding(bm25_model_name)
+        self._bm25_model: Any | None = None
         self._bm25_model_name = bm25_model_name
         self._splade_model_name = splade_model_name
         self._splade_enabled = enable_splade
         self._splade_model: Any | None = None
+        self._bm25_load_status: SparseLoadStatus = SPARSE_LOAD_NOT_LOADED
         self._splade_load_status = (
             SPARSE_LOAD_NOT_LOADED if enable_splade else SPARSE_LOAD_DISABLED
         )
         self._lock = threading.Lock()
+
+    @property
+    def model_name(self) -> str:
+        return self._bm25_model_name
+
+    def _ensure_bm25_model(self) -> Any:
+        if self._bm25_model is not None:
+            self._bm25_load_status = SPARSE_LOAD_LOADED
+            return self._bm25_model
+        try:
+            sparse_text_embedding = _import_sparse_text_embedding()
+            self._bm25_model = sparse_text_embedding(self._bm25_model_name)
+            self._bm25_load_status = SPARSE_LOAD_LOADED
+            return self._bm25_model
+        except Exception:
+            self._bm25_load_status = SPARSE_LOAD_FAILED
+            raise
 
     def _embed_with_model(self, model: Any, texts: list[str]) -> list[SparseVector]:
         with self._lock:
@@ -143,7 +160,7 @@ class FastEmbedSparseEmbedder:
 
     def embed_texts(self, texts: list[str]) -> list[SparseVector]:
         """Embed multiple texts as sparse BM25 vectors."""
-        return self._embed_with_model(self._bm25_model, texts)
+        return self._embed_with_model(self._ensure_bm25_model(), texts)
 
     def embed_texts_multi(self, texts: list[str]) -> list[dict[str, SparseVector]]:
         """Embed texts into multiple sparse channels (bm25 + splade)."""
@@ -178,6 +195,7 @@ class FastEmbedSparseEmbedder:
         return {
             "provider": DEFAULT_SPARSE_EMBEDDER_PROVIDER,
             "bm25_enabled": True,
+            "bm25_load_status": self._bm25_load_status,
             "splade_enabled": self._splade_enabled,
             "splade_load_status": self._splade_load_status,
         }

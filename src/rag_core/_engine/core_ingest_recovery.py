@@ -8,10 +8,10 @@ from posixpath import basename
 from urllib.parse import urlsplit
 from typing import TYPE_CHECKING, Any
 
-from rag_core.core_ocr_metadata import read_ocr_metadata
-from rag_core.core_manifest_builders import build_manifest_entry
+from rag_core._engine.core_ocr_metadata import read_ocr_metadata
+from rag_core._engine.core_manifest_builders import build_manifest_entry
 from rag_core.core_models import CorpusManifestEntry, IngestedDocument
-from rag_core.core_sidecar_sync import sync_search_sidecar
+from rag_core._engine.core_sidecar_sync import sync_search_sidecar
 from rag_core.events.emit import emit_event, stage_guard
 from rag_core.events.types import StageError
 from rag_core.manifest_persistence import delete_entry, read_entries, write_entry

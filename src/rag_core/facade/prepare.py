@@ -3,9 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from rag_core.core_file_io import detect_local_mime_type, read_file_bytes
-from rag_core.core_models import ParsedDocument, PreparedDocument
-from rag_core.core_prepare import parse_document_bytes, prepare_document_bytes
+from rag_core._engine.core_file_io import detect_local_mime_type, read_file_bytes
+from rag_core.core_models import ParsedDocument, PreparedDocument, RAGCoreConfig
+from rag_core._engine.core_prepare import parse_document_bytes, prepare_document_bytes
 
 if TYPE_CHECKING:
     from rag_core.documents.contextualizer import ChunkContextualizer
@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 
 class _RAGCorePrepareMethods:
+    _config: RAGCoreConfig
     _ocr: "OcrProvider | None"
     _event_sink: "EventSink | None"
     _chunk_contextualizer: "ChunkContextualizer | None"
@@ -53,6 +54,7 @@ class _RAGCorePrepareMethods:
             event_sink=self._event_sink,
             contextualizer=self._chunk_contextualizer,
             chunk_context_cache=self._chunk_context_cache,
+            chunking_config=self._config.chunking,
         )
 
     async def prepare_file(

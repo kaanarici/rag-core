@@ -49,7 +49,7 @@ class LocalParseError(RuntimeError):
 
 
 def _quality_to_metadata(quality: Any) -> Dict[str, Any]:
-    from rag_core.core_prepare_metadata import quality_score_to_metadata
+    from rag_core._engine.core_prepare_metadata import quality_score_to_metadata
 
     return quality_score_to_metadata(quality)
 

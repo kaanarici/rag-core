@@ -69,6 +69,10 @@ def _build_noop_reranker(**_: Any) -> NoOpReranker:
     return NoOpReranker()
 
 
+def is_noop_reranker(reranker: object | None) -> bool:
+    return isinstance(reranker, NoOpReranker)
+
+
 def _build_cohere_reranker(
     *,
     model: str | None = None,

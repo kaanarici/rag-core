@@ -4,11 +4,15 @@ from collections.abc import Mapping
 from dataclasses import replace
 from typing import Sequence
 
+from rag_core.config import ChunkingConfig
 from rag_core.config import PRECHUNKED_CHUNKING_STRATEGY
 from rag_core.documents.chunking.router import chunk_text
+from rag_core.documents.chunking.protocol import ChunkConfig
 
-from .core_models import PreparedChunk
-from rag_core.core_prepare_pdf_locators import with_pdf_page_locators as _with_pdf_page_locators
+from rag_core.core_models import PreparedChunk
+from rag_core._engine.core_prepare_pdf_locators import (
+    with_pdf_page_locators as _with_pdf_page_locators,
+)
 
 
 def prepare_text_chunks(
@@ -17,10 +21,16 @@ def prepare_text_chunks(
     mime_type: str | None = None,
     filename: str | None = None,
     embedding_texts: Sequence[str] | None = None,
+    chunking_config: ChunkingConfig | None = None,
 ) -> list[PreparedChunk]:
     chunks = _with_pdf_page_locators(
         text=text,
-        chunks=chunk_text(text, mime_type=mime_type, filename=filename),
+        chunks=chunk_text(
+            text,
+            config=_chunk_config(chunking_config),
+            mime_type=mime_type,
+            filename=filename,
+        ),
         mime_type=mime_type,
         filename=filename,
     )
@@ -94,3 +104,13 @@ def _resolve_chunk_metadata(
             % (len(texts), len(chunk_metadata))
         )
     return list(chunk_metadata)
+
+
+def _chunk_config(config: ChunkingConfig | None) -> ChunkConfig:
+    if config is None:
+        return ChunkConfig()
+    return ChunkConfig(
+        strategy=config.strategy,
+        max_chars=config.max_chars,
+        overlap=config.overlap,
+    )

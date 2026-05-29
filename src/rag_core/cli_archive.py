@@ -16,8 +16,8 @@ from rag_core.archive_sources import (
 from rag_core.cli_ingest_output import emit_local_ingest_result
 from rag_core.cli_inputs import parse_metadata_fields
 from rag_core.config import INGEST_SOURCE_TYPE_ARCHIVE
-from rag_core.core_config_cli import with_ingest_source_type
-from rag_core.core_archive_ingest import reconcile_archive_source_plan
+from rag_core._engine.core_config_cli import with_ingest_source_type
+from rag_core._engine.core_archive_ingest import reconcile_archive_source_plan
 from rag_core.core_models import RAGCoreConfig
 from rag_core.local_ingest_manifest import (
     manifest_status_for_content,

@@ -12,11 +12,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import re
 from time import perf_counter
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from rag_core.evals.cases import EvalCase, load_cases
 from rag_core.evals.metrics import mrr, ndcg_at_k, recall_at_k
 from rag_core.retrieval_defaults import DEFAULT_RERANK, DEFAULT_SEARCH_LIMIT
+from rag_core.search.context_pack import build_context_pack
 
 if TYPE_CHECKING:
     from rag_core import RAGCore
@@ -34,6 +35,14 @@ class EvalResult:
     ndcg_at_10: float
     latency_ms: float
     error_type: str | None = None
+    context_recall: float = 0.0
+    citation_count: int = 0
+    source_count: int = 0
+    forbidden_leak_count: int = 0
+    context_token_estimate: int = 0
+    context_char_count: int = 0
+    context_contains_pass: bool = True
+    prompt_safety_pass: bool = True
 
 
 def _result_id(
@@ -59,6 +68,67 @@ def _grades_for(case: EvalCase) -> Mapping[str, int]:
     if case.expected_grades is not None:
         return case.expected_grades
     return {expected_id: 1 for expected_id in case.expected_ids}
+
+
+def _context_metrics(case: EvalCase, hits: Sequence[SearchResult]) -> dict[str, Any]:
+    if not _has_context_expectations(case):
+        return {}
+    pack = build_context_pack(
+        hits,
+        query=case.query,
+        max_chars=case.max_context_chars,
+        max_tokens=case.max_context_tokens,
+    )
+    text = pack.as_prompt_text()
+    lowered = text.lower()
+    expected = tuple(item.lower() for item in case.expected_context_contains)
+    forbidden = tuple(
+        item.lower()
+        for item in (
+            *case.forbidden_context_contains,
+            *case.forbidden_private_identifiers,
+        )
+    )
+    matched = sum(1 for item in expected if item in lowered)
+    forbidden_leak_count = sum(1 for item in forbidden if item in lowered)
+    context_contains_pass = matched == len(expected)
+    citation_count = len(pack.citations)
+    source_count = len(pack.source_previews)
+    prompt_safety_pass = (
+        forbidden_leak_count == 0
+        and citation_count >= case.expected_citation_count_min
+        and source_count >= case.expected_source_count_min
+        and (
+            case.max_context_chars is None
+            or len(text) <= case.max_context_chars
+        )
+        and (
+            case.max_context_tokens is None
+            or pack.token_estimate <= case.max_context_tokens
+        )
+    )
+    return {
+        "context_recall": matched / len(expected) if expected else 1.0,
+        "citation_count": citation_count,
+        "source_count": source_count,
+        "forbidden_leak_count": forbidden_leak_count,
+        "context_token_estimate": pack.token_estimate,
+        "context_char_count": len(text),
+        "context_contains_pass": context_contains_pass,
+        "prompt_safety_pass": prompt_safety_pass,
+    }
+
+
+def _has_context_expectations(case: EvalCase) -> bool:
+    return bool(
+        case.expected_context_contains
+        or case.forbidden_context_contains
+        or case.forbidden_private_identifiers
+        or case.expected_citation_count_min
+        or case.expected_source_count_min
+        or case.max_context_chars is not None
+        or case.max_context_tokens is not None
+    )
 
 
 _SAFE_ERROR_TYPE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,79}")
@@ -137,6 +207,7 @@ async def run_eval(
                 mrr=mrr(retrieved_ids, relevant),
                 ndcg_at_10=ndcg_at_k(retrieved_ids, grades, 10),
                 latency_ms=latency_ms,
+                **_context_metrics(case, hits),
             )
         )
     return results

@@ -7,6 +7,21 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from rag_core.evals.case_fields import (
+    expected_ids_tuple,
+    load_error,
+    non_negative_int,
+    optional_grades,
+    optional_non_negative_int,
+    optional_positive_int,
+    optional_positive_int_field,
+    optional_string,
+    optional_string_tuple,
+    required_string,
+    required_string_tuple,
+    validate_expected_grades,
+    validate_unique_expected_ids,
+)
 
 @dataclass(frozen=True, init=False)
 class EvalCase:
@@ -28,6 +43,13 @@ class EvalCase:
     expected_chunk_ids: tuple[str, ...]
     expected_grades: Mapping[str, int] | None = None
     case_id: str | None = None
+    expected_context_contains: tuple[str, ...] = ()
+    forbidden_context_contains: tuple[str, ...] = ()
+    forbidden_private_identifiers: tuple[str, ...] = ()
+    expected_citation_count_min: int = 0
+    expected_source_count_min: int = 0
+    max_context_chars: int | None = None
+    max_context_tokens: int | None = None
 
     def __init__(
         self,
@@ -37,6 +59,13 @@ class EvalCase:
         expected_chunk_ids: Sequence[str] | None = None,
         expected_grades: Mapping[str, int] | None = None,
         case_id: str | None = None,
+        expected_context_contains: Sequence[str] = (),
+        forbidden_context_contains: Sequence[str] = (),
+        forbidden_private_identifiers: Sequence[str] = (),
+        expected_citation_count_min: int = 0,
+        expected_source_count_min: int = 0,
+        max_context_chars: int | None = None,
+        max_context_tokens: int | None = None,
         *,
         expected_ids: Sequence[str] | None = None,
     ) -> None:
@@ -51,6 +80,44 @@ class EvalCase:
         object.__setattr__(self, "expected_chunk_ids", tuple(relevant_ids))
         object.__setattr__(self, "expected_grades", expected_grades)
         object.__setattr__(self, "case_id", case_id)
+        object.__setattr__(
+            self,
+            "expected_context_contains",
+            tuple(expected_context_contains),
+        )
+        object.__setattr__(
+            self,
+            "forbidden_context_contains",
+            tuple(forbidden_context_contains),
+        )
+        object.__setattr__(
+            self,
+            "forbidden_private_identifiers",
+            tuple(forbidden_private_identifiers),
+        )
+        object.__setattr__(
+            self,
+            "expected_citation_count_min",
+                non_negative_int(
+                expected_citation_count_min,
+                "expected_citation_count_min",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "expected_source_count_min",
+            non_negative_int(expected_source_count_min, "expected_source_count_min"),
+        )
+        object.__setattr__(
+            self,
+            "max_context_chars",
+            optional_positive_int(max_context_chars, "max_context_chars"),
+        )
+        object.__setattr__(
+            self,
+            "max_context_tokens",
+            optional_positive_int(max_context_tokens, "max_context_tokens"),
+        )
 
     @property
     def expected_ids(self) -> tuple[str, ...]:
@@ -79,18 +146,18 @@ def load_cases(path: Path) -> list[EvalCase]:
             try:
                 row = json.loads(line, object_pairs_hook=_reject_duplicate_object_keys)
             except _DuplicateObjectKeyError as exc:
-                raise _load_error(
+                raise load_error(
                     case_path,
                     line_number,
                     f"duplicate object key {exc.key!r}",
                 ) from None
             except json.JSONDecodeError:
-                raise _load_error(case_path, line_number, "invalid JSON") from None
+                raise load_error(case_path, line_number, "invalid JSON") from None
             case = _load_case_row(row, path=case_path, line_number=line_number)
             if case.case_id is not None:
                 first_seen_line = seen_case_ids.get(case.case_id)
                 if first_seen_line is not None:
-                    raise _load_error(
+                    raise load_error(
                         case_path,
                         line_number,
                         f"duplicate case_id {case.case_id!r} (first seen at line {first_seen_line})",
@@ -113,24 +180,24 @@ def _reject_duplicate_object_keys(pairs: list[tuple[str, object]]) -> dict[str, 
 
 def _load_case_row(row: object, *, path: Path, line_number: int) -> EvalCase:
     if not isinstance(row, dict):
-        raise _load_error(path, line_number, "case must be a JSON object")
-    expected_ids = _expected_ids_tuple(row, path=path, line_number=line_number)
-    _validate_unique_expected_ids(
+        raise load_error(path, line_number, "case must be a JSON object")
+    expected_ids = expected_ids_tuple(row, path=path, line_number=line_number)
+    validate_unique_expected_ids(
         expected_ids,
         path=path,
         line_number=line_number,
     )
-    expected_grades = _optional_grades(row, path=path, line_number=line_number)
-    _validate_expected_grades(
+    expected_grades = optional_grades(row, path=path, line_number=line_number)
+    validate_expected_grades(
         expected_ids,
         expected_grades,
         path=path,
         line_number=line_number,
     )
     return EvalCase(
-        query=_required_string(row, "query", path=path, line_number=line_number),
-        namespace=_required_string(row, "namespace", path=path, line_number=line_number),
-        corpus_ids=_required_string_tuple(
+        query=required_string(row, "query", path=path, line_number=line_number),
+        namespace=required_string(row, "namespace", path=path, line_number=line_number),
+        corpus_ids=required_string_tuple(
             row,
             "corpus_ids",
             path=path,
@@ -138,147 +205,49 @@ def _load_case_row(row: object, *, path: Path, line_number: int) -> EvalCase:
         ),
         expected_ids=expected_ids,
         expected_grades=expected_grades,
-        case_id=_optional_string(row, "case_id", path=path, line_number=line_number),
+        case_id=optional_string(row, "case_id", path=path, line_number=line_number),
+        expected_context_contains=optional_string_tuple(
+            row,
+            "expected_context_contains",
+            path=path,
+            line_number=line_number,
+        ),
+        forbidden_context_contains=optional_string_tuple(
+            row,
+            "forbidden_context_contains",
+            path=path,
+            line_number=line_number,
+        ),
+        forbidden_private_identifiers=optional_string_tuple(
+            row,
+            "forbidden_private_identifiers",
+            path=path,
+            line_number=line_number,
+        ),
+        expected_citation_count_min=optional_non_negative_int(
+            row,
+            "expected_citation_count_min",
+            path=path,
+            line_number=line_number,
+        ),
+        expected_source_count_min=optional_non_negative_int(
+            row,
+            "expected_source_count_min",
+            path=path,
+            line_number=line_number,
+        ),
+        max_context_chars=optional_positive_int_field(
+            row,
+            "max_context_chars",
+            path=path,
+            line_number=line_number,
+        ),
+        max_context_tokens=optional_positive_int_field(
+            row,
+            "max_context_tokens",
+            path=path,
+            line_number=line_number,
+        ),
     )
-
-
-def _required_string(
-    row: dict[str, object],
-    field: str,
-    *,
-    path: Path,
-    line_number: int,
-) -> str:
-    value = row.get(field)
-    if not isinstance(value, str) or not value.strip():
-        raise _load_error(path, line_number, f"{field} must be a non-empty string")
-    return value.strip()
-
-
-def _optional_string(
-    row: dict[str, object],
-    field: str,
-    *,
-    path: Path,
-    line_number: int,
-) -> str | None:
-    value = row.get(field)
-    if value is None:
-        return None
-    if not isinstance(value, str) or not value.strip():
-        raise _load_error(path, line_number, f"{field} must be a non-empty string when set")
-    return value.strip()
-
-
-def _required_string_tuple(
-    row: dict[str, object],
-    field: str,
-    *,
-    path: Path,
-    line_number: int,
-) -> tuple[str, ...]:
-    value = row.get(field)
-    if not isinstance(value, list) or not value:
-        raise _load_error(path, line_number, f"{field} must be a non-empty string array")
-    items: list[str] = []
-    for item in value:
-        if not isinstance(item, str) or not item.strip():
-            raise _load_error(path, line_number, f"{field} must contain only non-empty strings")
-        items.append(item.strip())
-    return tuple(items)
-
-
-def _expected_ids_tuple(
-    row: dict[str, object],
-    *,
-    path: Path,
-    line_number: int,
-) -> tuple[str, ...]:
-    has_expected_ids = "expected_ids" in row
-    has_expected_chunk_ids = "expected_chunk_ids" in row
-    if has_expected_ids and has_expected_chunk_ids:
-        raise _load_error(
-            path,
-            line_number,
-            "use expected_ids or expected_chunk_ids, not both",
-        )
-    field = "expected_ids" if has_expected_ids else "expected_chunk_ids"
-    return _required_string_tuple(row, field, path=path, line_number=line_number)
-
-
-def _optional_grades(
-    row: dict[str, object],
-    *,
-    path: Path,
-    line_number: int,
-) -> Mapping[str, int] | None:
-    value = row.get("expected_grades")
-    if value is None:
-        return None
-    if not isinstance(value, dict):
-        raise _load_error(path, line_number, "expected_grades must be an object")
-    grades: dict[str, int] = {}
-    for item_id, grade in value.items():
-        if not isinstance(item_id, str) or not item_id.strip():
-            raise _load_error(
-                path,
-                line_number,
-                "expected_grades keys must be non-empty strings",
-            )
-        stripped_id = item_id.strip()
-        if stripped_id in grades:
-            raise _load_error(
-                path,
-                line_number,
-                f"duplicate expected_grades key {stripped_id!r}",
-            )
-        if isinstance(grade, bool) or not isinstance(grade, int) or grade < 0:
-            raise _load_error(
-                path,
-                line_number,
-                "expected_grades values must be non-negative integers",
-            )
-        grades[stripped_id] = grade
-    return grades
-
-
-def _validate_unique_expected_ids(
-    expected_ids: tuple[str, ...],
-    *,
-    path: Path,
-    line_number: int,
-) -> None:
-    if len(set(expected_ids)) != len(expected_ids):
-        raise _load_error(
-            path,
-            line_number,
-            "expected_ids must not contain duplicate ids",
-        )
-
-
-def _validate_expected_grades(
-    expected_ids: tuple[str, ...],
-    expected_grades: Mapping[str, int] | None,
-    *,
-    path: Path,
-    line_number: int,
-) -> None:
-    if expected_grades is None:
-        return
-    relevant_ids = set(expected_ids)
-    positive_grade_ids = {
-        item_id for item_id, grade in expected_grades.items() if grade > 0
-    }
-    if positive_grade_ids != relevant_ids:
-        raise _load_error(
-            path,
-            line_number,
-            "expected_grades positive ids must match expected_ids",
-        )
-
-
-def _load_error(path: Path, line_number: int, reason: str) -> ValueError:
-    return ValueError(f"{path}:{line_number}: {reason}")
-
 
 __all__ = ["EvalCase", "load_cases"]
