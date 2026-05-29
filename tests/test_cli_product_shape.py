@@ -232,8 +232,6 @@ def test_retrieval_default_docs_distinguish_profiles_from_lexical_sidecar() -> N
             "docs/expectations.md",
             "docs/embed.md",
             "docs/stability.md",
-            "docs/plans/one-repo-retrieval-engine-strategy.md",
-            "docs/plans/retrieval-engine-reality-notebook.md",
             "src/rag_core/search/pipeline/stages/hybrid_retrieve.py",
         )
     )

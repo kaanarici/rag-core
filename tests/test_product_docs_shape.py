@@ -147,10 +147,6 @@ def test_readme_names_prompt_safe_context_boundary() -> None:
             "src/rag_core/search/context_pack_models.py",
             "docs/embed.md",
             "docs/expectations.md",
-            "docs/plans/2026-05-21-type-first-launch-hardening.md",
-            "docs/plans/engineering-improvement-areas.md",
-            "docs/plans/one-repo-retrieval-engine-strategy.md",
-            "docs/plans/retrieval-engine-reality-notebook.md",
         )
     )
 
@@ -189,15 +185,27 @@ def test_no_key_local_eval_path_is_documented_as_folder_eval() -> None:
     assert "local-eval" in Path("scripts/dx_smoke.sh").read_text(encoding="utf-8")
 
 
-def test_strategy_doc_does_not_claim_managed_rag_drop_in_compatibility() -> None:
-    source = Path("docs/plans/one-repo-retrieval-engine-strategy.md").read_text(
-        encoding="utf-8"
+def test_public_docs_do_not_claim_managed_rag_drop_in_compatibility() -> None:
+    source = "\n".join(
+        Path(path).read_text(encoding="utf-8")
+        for path in (
+            "README.md",
+            "docs/expectations.md",
+            "docs/providers.md",
+            "docs/stability.md",
+        )
     )
 
-    assert "Ragie-familiar at the hit layer" in source
-    assert "without claiming drop-in Ragie compatibility" in source
     assert "Ragie-compatible" not in source
     assert "rag-core parity target" not in source
+    assert "drop-in Ragie compatibility" not in source
+
+
+def test_historical_plan_and_research_docs_are_not_release_artifacts() -> None:
+    assert sorted(path.as_posix() for path in Path("docs/plans").rglob("*.md")) == [
+        "docs/plans/ROUTING.md"
+    ]
+    assert not list(Path("docs/research").rglob("*.md"))
 
 
 def test_search_hit_payload_matches_ragie_scored_chunk_fields() -> None:

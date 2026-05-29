@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -156,8 +156,10 @@ def test_sparse_provider_registry_introspection_does_not_import_fastembed_runtim
     monkeypatch.setattr(sparse_module, "_import_sparse_text_embedding", fail_import)
 
     assert "fastembed" in SPARSE_EMBEDDERS.names()
+    embedder = SPARSE_EMBEDDERS.create("fastembed")
+    assert cast(Any, embedder).diagnostics()["bm25_load_status"] == "not_loaded"
     with pytest.raises(AssertionError, match="runtime import"):
-        SPARSE_EMBEDDERS.create("fastembed")
+        embedder.embed_texts(["runtime import happens on sparse use"])
 
 
 def test_create_embedding_provider_openai_uses_registry(monkeypatch: pytest.MonkeyPatch) -> None:

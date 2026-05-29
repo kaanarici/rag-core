@@ -20,7 +20,7 @@ from rag_core.events import (
 from rag_core.fetch_security import FetchLimits, FetchSecurityPolicy, validate_fetch_url
 from rag_core.fetch_security_url import safe_remote_document_key
 from rag_core.fetching import FetchResponse
-from rag_core.core_remote import ingest_remote_url
+from rag_core._engine.core_remote import ingest_remote_url
 from rag_core.remote_ingest_models import RemoteUrlSourceItem
 from rag_core.remote_ingest_records import safe_remote_ingest_error
 

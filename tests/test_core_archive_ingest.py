@@ -10,7 +10,7 @@ from typing import Any, cast
 import pytest
 
 from rag_core import RAGCore
-from rag_core.core_archive_ingest import ingest_zip_archive_with_core
+from rag_core._engine.core_archive_ingest import ingest_zip_archive_with_core
 from rag_core.core_models import IngestedDocument
 from rag_core.events import EventBuffer
 from rag_core.local_ingest_models import LocalIngestResult

@@ -76,7 +76,7 @@ def test_search_stage_labels_have_single_trace_owner() -> None:
         for path in (
             "src/rag_core/events/trace_payload_fields.py",
             "src/rag_core/events/search_events.py",
-            "src/rag_core/core_retrieval.py",
+            "src/rag_core/_engine/core_retrieval.py",
             "src/rag_core/search/pipeline/runner.py",
             "src/rag_core/search/pipeline_runner.py",
         )

@@ -376,7 +376,7 @@ def test_runtime_search_diagnostics_use_public_planning_facade() -> None:
         path: Path(path).read_text(encoding="utf-8")
         for path in (
             "src/rag_core/cli_doctor.py",
-            "src/rag_core/core_runtime.py",
+            "src/rag_core/_engine/core_runtime.py",
         )
     }
 

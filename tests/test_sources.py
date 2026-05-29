@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from rag_core.core_lifecycle import compute_content_sha256
+from rag_core._engine.core_lifecycle import compute_content_sha256
 from rag_core.local_ingest_models import LocalIngestRequest
 from rag_core.local_ingest_planning import build_local_ingest_plan
 from rag_core.local_search_models import LocalSearchRequest

@@ -168,8 +168,14 @@ def test_index_document_uses_payload_chunks_and_contextual_dense_text() -> None:
         assert point.payload["processing_version"] == "processing-v-test"
         assert point.payload["team"] == "search"
         payload_text = str(point.payload["text"])
-        assert "original fox" in payload_text
+        assert payload_text == "original fox"
+        assert "# Metadata" not in payload_text
+        assert "# Content" not in payload_text
         assert "context fox" not in payload_text
+        assert "source_type: file" in embedding.embed_texts_calls[0][0]
+        assert "name: report.txt" in embedding.embed_texts_calls[0][0]
+        assert "# Metadata" not in embedding.embed_texts_calls[0][0]
+        assert "# Content" not in embedding.embed_texts_calls[0][0]
         # Dense vector uses embedding_chunk_texts (context-only counts), payload uses raw chunk.
         assert point.dense_vector == [0.0, 1.0, 1.0]
 
@@ -202,11 +208,12 @@ def test_index_document_persists_filterable_chunk_metadata() -> None:
         assert payload["language"] == "en"
         assert payload["published_at"] == 1700.0
         assert payload["featured"] is True
-        assert "page one" in str(payload["text"])
+        assert payload["text"] == "page one"
         assert "should not overwrite payload text" not in str(payload["text"])
         assert "nested" not in payload
         assert result.metadata["team"] == "support"
         assert result.metadata["language"] == "en"
+        assert result.text == "page one"
 
     asyncio.run(_run())
 

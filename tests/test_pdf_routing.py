@@ -10,14 +10,14 @@ import rag_core.documents.converters.pdf_converter as pdf_converter_module
 import rag_core.documents.pdf_inspector as pdf_inspector_module
 import rag_core.documents.pdf_inspector_runtime as pdf_inspector_runtime
 from rag_core import RAGCore
-from rag_core.core_builders import read_ocr_metadata
+from rag_core._engine.core_builders import read_ocr_metadata
 from rag_core.core_models import (
     OcrRoutingSignal,
     ParsedDocument,
     PreparedChunk,
     PreparedDocument,
 )
-from rag_core.core_prepare import apply_ocr
+from rag_core._engine.core_prepare import apply_ocr
 from rag_core.documents.converters.pdf_converter import PdfConverter
 from rag_core.documents.ocr import OcrRequest, OcrResult
 from rag_core.documents.pdf_inspector import (
@@ -275,6 +275,7 @@ def test_prepare_bytes_surfaces_ocr_routing_signal(
         event_sink=None,
         contextualizer=None,
         chunk_context_cache=None,
+        chunking_config=None,
     ):
         assert contextualizer is None
         assert chunk_context_cache is None

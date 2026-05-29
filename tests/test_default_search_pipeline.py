@@ -5,7 +5,13 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 
-from rag_core.events import EventBuffer, SearchCompleted, SearchPlanned, SearchStarted
+from rag_core.events import (
+    EventBuffer,
+    SearchCompleted,
+    SearchPlanned,
+    SearchStageCompleted,
+    SearchStarted,
+)
 from rag_core.events.trace_payload_fields import TRACE_ABSENT_LABEL
 from rag_core.search.pipeline import (
     HybridRetrieve,
@@ -498,6 +504,40 @@ def test_default_pipeline_runs_rerank_when_requested_and_skips_when_not() -> Non
         )
         assert [r.id for r in skipped] == ["a", "b"]
         assert len(reranker.calls) == 1
+
+    asyncio.run(_run())
+
+
+def test_default_pipeline_does_not_report_real_rerank_when_no_provider_configured() -> None:
+    async def _run() -> None:
+        events = EventBuffer()
+        pipeline_runner = SearchPipelineRunner(
+            embedding_provider=FakeEmbeddingProvider(),
+            sparse_embedder=FakeSparseEmbedder(),
+            vector_store=RecordingVectorStore(
+                search_results=[make_search_result(id="a", text="alpha")]
+            ),
+            reranker=None,
+            event_sink=events,
+        )
+
+        results = await pipeline_runner.search(
+            SearchRequest(query="q", corpus_ids=["c"], namespace="n", rerank=True)
+        )
+
+        assert [result.id for result in results] == ["a"]
+        [completed] = [
+            event for event in events.events if isinstance(event, SearchCompleted)
+        ]
+        assert completed.requested_rerank is True
+        assert completed.attempted_rerank is False
+        assert completed.applied_rerank is False
+        rerank_stages = [
+            event
+            for event in events.events
+            if isinstance(event, SearchStageCompleted) and event.stage == "rerank"
+        ]
+        assert rerank_stages == []
 
     asyncio.run(_run())
 

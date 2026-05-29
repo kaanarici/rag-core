@@ -11,7 +11,7 @@ from rag_core.contracts import (
     SearchUserDocumentsRequest,
     parse_search_user_documents_request,
 )
-from rag_core.core_retrieval import search_with_core
+from rag_core._engine.core_retrieval import search_with_core
 from rag_core.search.pipeline_runner import SearchRequest
 from rag_core.search.types import SearchResult
 

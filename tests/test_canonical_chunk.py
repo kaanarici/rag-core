@@ -1,9 +1,9 @@
 import pytest
 
 from rag_core.config import MARKDOWN_CHUNKING_STRATEGY
-from rag_core.core_builders import build_index_request
+from rag_core._engine.core_builders import build_index_request
 from rag_core.core_models import PreparedChunk, PreparedDocument, ProcessingFingerprint
-from rag_core.core_prepare import prepare_pre_chunked_texts, prepare_text_chunks
+from rag_core._engine.core_prepare import prepare_pre_chunked_texts, prepare_text_chunks
 from rag_core.documents.chunking.markdown import MarkdownChunker
 from rag_core.documents.chunking.protocol import ChunkConfig
 from rag_core.documents.chunking.router import chunk_text

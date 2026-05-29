@@ -6,10 +6,11 @@ from typing import Any, cast
 
 import pytest
 
-import rag_core.core_ingest as core_ingest
-import rag_core.core_ingest_delete as core_ingest_delete
-import rag_core.core_ingest_recovery as core_ingest_recovery
-from rag_core.core_ingest import CoreIngestor
+import rag_core._engine.core_ingest as core_ingest
+import rag_core._engine.core_ingest_delete as core_ingest_delete
+import rag_core._engine.core_ingest_recovery as core_ingest_recovery
+from rag_core.config import SKIP_UNCHANGED_MATERIALIZE
+from rag_core._engine.core_ingest import CoreIngestor
 from rag_core.core_models import (
     CorpusManifestEntry,
     IngestedDocument,
@@ -18,7 +19,7 @@ from rag_core.core_models import (
     PreparedDocument,
     ProcessingFingerprint,
 )
-from rag_core.core_lifecycle import compute_content_sha256
+from rag_core._engine.core_lifecycle import compute_content_sha256
 from rag_core.events.sink import EventSink
 from rag_core.events.sinks import EventBuffer
 from rag_core.events.types import StageError
@@ -623,11 +624,12 @@ def test_unchanged_ingest_heals_null_document_key_and_preserves_prepare_metadata
             ),
             store=store,
             indexer=cast(Any, indexer),
-            sidecar=None,
-            prepare_bytes=prepare_bytes,
-            event_sink=events,
-            manifest_directory=manifest_directory,
-        )
+                sidecar=None,
+                prepare_bytes=prepare_bytes,
+                event_sink=events,
+                manifest_directory=manifest_directory,
+                skip_unchanged=SKIP_UNCHANGED_MATERIALIZE,
+            )
         result = await ingestor.ingest_bytes(
             file_bytes=b"hello",
             filename="doc.md",
@@ -1106,6 +1108,7 @@ def _make_ingestor(
     store: RecordingVectorStore | None = None,
     indexer: RecordingIndexer | None = None,
     sidecar: object | None = None,
+    skip_unchanged: str = SKIP_UNCHANGED_MATERIALIZE,
 ) -> tuple[CoreIngestor, RecordingIndexer]:
     indexer = indexer or RecordingIndexer()
 
@@ -1146,6 +1149,7 @@ def _make_ingestor(
             prepare_bytes=prepare_bytes,
             event_sink=event_sink,
             manifest_directory=manifest_directory,
+            skip_unchanged=skip_unchanged,
         ),
         indexer,
     )

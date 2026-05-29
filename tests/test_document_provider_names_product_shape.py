@@ -87,7 +87,7 @@ def test_contextualizer_provider_names_have_single_owner() -> None:
             "src/rag_core/documents/contextualizer.py",
             "src/rag_core/documents/contextualizer_adapters.py",
             "src/rag_core/documents/contextualizer_anthropic_runtime.py",
-            "src/rag_core/core_runtime.py",
+            "src/rag_core/_engine/core_runtime.py",
             "src/rag_core/search/providers/provider_category_diagnostics.py",
             "src/rag_core/cli_doctor_output.py",
         )
@@ -117,7 +117,7 @@ def test_contextualizer_provider_names_have_single_owner() -> None:
         not in sources["src/rag_core/documents/contextualizer_anthropic_runtime.py"]
     )
     assert 'model: str = "claude-haiku-4-5-20251001"' not in adapter
-    runtime = sources["src/rag_core/core_runtime.py"]
+    runtime = sources["src/rag_core/_engine/core_runtime.py"]
     assert "NOOP_CONTEXTUALIZER_ID" in runtime
     assert 'normalized == "noop"' not in runtime
     diagnostics = sources[

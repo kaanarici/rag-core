@@ -248,7 +248,9 @@ def test_config_namespace_exports_curated_config_shapes_and_constants() -> None:
         "CONTENT_CHUNKER_CHUNKING_STRATEGY",
         "MARKDOWN_CHUNKING_STRATEGY",
         "PRECHUNKED_CHUNKING_STRATEGY",
+        "PUBLIC_CHUNKING_STRATEGIES",
         "SEMANTIC_CHUNKING_STRATEGY",
+        "ChunkingStrategyName",
         "DEFAULT_TURBOPUFFER_DELETE_CONTINUATION_LIMIT",
         "DEFAULT_VECTOR_STORE_PROVIDER",
         "DEFAULT_EMBEDDING_MODEL",
@@ -273,6 +275,9 @@ def test_config_namespace_exports_curated_config_shapes_and_constants() -> None:
         "INGEST_SOURCE_TYPE_FILE",
         "INGEST_SOURCE_TYPE_URL",
         "PROCESSING_VERSION_ENV",
+        "SKIP_UNCHANGED_FAST",
+        "SKIP_UNCHANGED_MATERIALIZE",
+        "SkipUnchangedMode",
         "QdrantConfig",
         "QDRANT_COLLECTION_ENV",
         "QDRANT_DIMENSION_AWARE_COLLECTION_ENV",
@@ -523,7 +528,7 @@ def test_public_extension_modules_type_against_curated_search_surface() -> None:
 
 def test_user_facing_retrieval_modules_type_against_curated_search_surface() -> None:
     for path in (
-        Path("src/rag_core/core_retrieval.py"),
+        Path("src/rag_core/_engine/core_retrieval.py"),
         Path("src/rag_core/facade/retrieval.py"),
         Path("src/rag_core/cli_search.py"),
         Path("src/rag_core/local_search_runner.py"),
@@ -871,3 +876,19 @@ def test_rag_core_search_returns_public_search_result_with_payload() -> None:
     assert query.namespace == "team-space"
     assert query.corpus_ids == ["corpus-a"]
     assert query.document_ids == ["doc-7"]
+
+
+def test_engine_implementation_modules_are_private_package_files() -> None:
+    root_core_modules = sorted(
+        path.name
+        for path in Path("src/rag_core").glob("core_*.py")
+        if path.name != "core_models.py"
+    )
+    private_engine_modules = sorted(
+        path.name for path in Path("src/rag_core/_engine").glob("core_*.py")
+    )
+
+    assert root_core_modules == []
+    assert "core_ingest.py" in private_engine_modules
+    assert "core_prepare.py" in private_engine_modules
+    assert "core_retrieval.py" in private_engine_modules

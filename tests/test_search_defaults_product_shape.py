@@ -37,7 +37,7 @@ def test_lexical_search_default_has_single_retrieval_owner() -> None:
         path: (root / path).read_text(encoding="utf-8")
         for path in (
             "src/rag_core/retrieval_defaults.py",
-            "src/rag_core/core_retrieval.py",
+            "src/rag_core/_engine/core_retrieval.py",
             "src/rag_core/facade/retrieval.py",
             "src/rag_core/runtime/requests.py",
             "src/rag_core/contracts/tool_contract_schemas.py",
@@ -72,7 +72,7 @@ def test_rerank_default_has_single_retrieval_owner() -> None:
         path: (root / path).read_text(encoding="utf-8")
         for path in (
             "src/rag_core/retrieval_defaults.py",
-            "src/rag_core/core_retrieval.py",
+            "src/rag_core/_engine/core_retrieval.py",
             "src/rag_core/facade/retrieval.py",
             "src/rag_core/runtime/requests.py",
             "src/rag_core/contracts/tool_contract_schemas.py",
@@ -148,7 +148,7 @@ def test_public_entrypoint_defaults_are_named_once() -> None:
         for path in (
             "src/rag_core/cli_local_search_parser.py",
             "src/rag_core/cli_search_parser.py",
-            "src/rag_core/core_retrieval.py",
+            "src/rag_core/_engine/core_retrieval.py",
             "src/rag_core/facade/retrieval.py",
             "src/rag_core/local_search_models.py",
             "src/rag_core/runtime/requests.py",

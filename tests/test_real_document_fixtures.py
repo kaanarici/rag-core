@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from rag_core.core_prepare import prepare_document_bytes
+from rag_core._engine.core_prepare import prepare_document_bytes
 from rag_core.documents.local_parse import parse_file_bytes
 from rag_core.search.context_pack import ContextPack, build_context_pack
 from rag_core.search.indexer import DocumentIndexer, IndexRequest

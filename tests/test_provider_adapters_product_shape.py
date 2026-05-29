@@ -62,10 +62,10 @@ def test_vector_store_provider_order_uses_capability_specs() -> None:
             "src/rag_core/search/providers/turbopuffer_search.py",
             "src/rag_core/search/providers/turbopuffer_store.py",
             "src/rag_core/search/providers/turbopuffer_write.py",
-            "src/rag_core/core_runtime.py",
+            "src/rag_core/_engine/core_runtime.py",
             "src/rag_core/search/planning.py",
             "src/rag_core/search/query_plan_presets.py",
-            "src/rag_core/core_vector_store_factory.py",
+            "src/rag_core/_engine/core_vector_store_factory.py",
             "src/rag_core/cli_doctor.py",
             "src/rag_core/cli_doctor_output.py",
             "tests/test_cli.py",
@@ -96,8 +96,8 @@ def test_vector_store_provider_order_uses_capability_specs() -> None:
     assert 'name="turbopuffer"' not in capabilities
     assert 'name="memory"' not in capabilities
     diagnostics = sources["src/rag_core/search/providers/vector_store_diagnostics.py"]
-    runtime = sources["src/rag_core/core_runtime.py"]
-    factory = sources["src/rag_core/core_vector_store_factory.py"]
+    runtime = sources["src/rag_core/_engine/core_runtime.py"]
+    factory = sources["src/rag_core/_engine/core_vector_store_factory.py"]
     cli_doctor = sources["src/rag_core/cli_doctor.py"]
     doctor_output = sources["src/rag_core/cli_doctor_output.py"]
     assert "BUILTIN_VECTOR_STORE_PROVIDER_ORDER" in diagnostics
@@ -109,7 +109,7 @@ def test_vector_store_provider_order_uses_capability_specs() -> None:
     assert "describe_query_plan_capabilities" in runtime
     assert "describe_metadata_filter_capabilities" in runtime
     for path in (
-        "src/rag_core/core_runtime.py",
+        "src/rag_core/_engine/core_runtime.py",
         "src/rag_core/search/planning.py",
         "src/rag_core/search/query_plan_presets.py",
         "src/rag_core/search/providers/qdrant_health.py",
@@ -120,7 +120,7 @@ def test_vector_store_provider_order_uses_capability_specs() -> None:
         assert "from rag_core.search.types import QueryPlanCapabilities" not in source
         assert "from rag_core.search.types import StoreCapabilities" not in source
         assert "from rag_core.search.types import MetadataFilterCapabilities" not in source
-    assert "from rag_core.core_runtime import" not in diagnostics
+    assert "from rag_core._engine.core_runtime import" not in diagnostics
     assert "QUERY_PLAN_STAGE_CAPABILITY_FIELDS" in doctor_output
     assert QUERY_PLAN_CAPABILITY_DENSE == "dense"
     assert QUERY_PLAN_CAPABILITY_SPARSE == "sparse"

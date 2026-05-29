@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import rag_core.documents.converters as converters_module
-from rag_core.core_file_io import detect_mime_type_for_name
+from rag_core._engine.core_file_io import detect_mime_type_for_name
 from rag_core.documents.converters import get_converter
 from rag_core.documents.converters.format_support import (
     FORMAT_SUPPORT_MATRIX,

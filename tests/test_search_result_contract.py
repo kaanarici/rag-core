@@ -41,6 +41,28 @@ def test_search_result_positional_fields_keep_document_identity_order() -> None:
     assert result.namespace is None
 
 
+def test_search_result_text_is_clean_chunk_content_by_contract() -> None:
+    result = SearchResult(
+        id="point-1",
+        text="Clean chunk body.",
+        score=0.42,
+        content_type="document",
+        source_type="file",
+        metadata={
+            "team": "support",
+            "rerank": {"provider_score": 0.98, "search_score": 0.42},
+        },
+    )
+
+    assert result.text == "Clean chunk body."
+    assert result.score == 0.42
+    assert result.metadata["team"] == "support"
+    assert result.metadata["rerank"] == {
+        "provider_score": 0.98,
+        "search_score": 0.42,
+    }
+
+
 @pytest.mark.parametrize(
     "result_id",
     [

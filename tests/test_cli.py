@@ -16,7 +16,7 @@ import pytest
 
 from rag_core.cli import main
 from rag_core.config import DEFAULT_RERANKER_PROVIDER
-from rag_core.core_lifecycle import compute_content_sha256
+from rag_core._engine.core_lifecycle import compute_content_sha256
 from rag_core.core_models import CorpusManifestEntry, IngestedDocument, RAGCoreConfig
 from rag_core.documents.contextualizer_provider_names import NOOP_CONTEXTUALIZER_ID
 from rag_core.events.sinks import DEFAULT_EVENT_SINK_PROVIDER
@@ -704,6 +704,11 @@ def test_local_eval_indexes_folder_and_returns_redacted_report(
                 "namespace": "acme",
                 "corpus_ids": ["help-center"],
                 "expected_ids": ["billing.md"],
+                "expected_context_contains": ["card", "ACH"],
+                "forbidden_context_contains": ["# Metadata", "# Content"],
+                "forbidden_private_identifiers": ["local:", "content_sha256"],
+                "expected_citation_count_min": 1,
+                "expected_source_count_min": 1,
             }
         )
         + "\n",
@@ -728,6 +733,8 @@ def test_local_eval_indexes_folder_and_returns_redacted_report(
     assert payload["case_count"] == 1
     assert payload["metrics"]["recall_at_5"] == 1.0
     assert payload["metrics"]["mrr"] == 1.0
+    assert payload["metrics"]["context_recall"] == 1.0
+    assert payload["metrics"]["prompt_safety_pass_rate"] == 1.0
     assert payload["quality_gate"]["passed"] is True
     assert payload["run"]["mode"] == "local_eval"
     assert payload["run"]["namespace"] == "acme"
@@ -737,6 +744,10 @@ def test_local_eval_indexes_folder_and_returns_redacted_report(
     assert "case_id" not in payload["cases"][0]
     assert "query" not in payload["cases"][0]
     assert "expected_ids" not in payload["cases"][0]
+    assert "expected_context_contains" not in payload["cases"][0]
+    assert payload["cases"][0]["context_contains_pass"] is True
+    assert payload["cases"][0]["prompt_safety_pass"] is True
+    assert payload["cases"][0]["forbidden_leak_count"] == 0
 
 
 def test_local_eval_quality_gate_failure_sets_exit_code(

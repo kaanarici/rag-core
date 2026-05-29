@@ -84,6 +84,29 @@ def test_context_pack_preserves_rank_order_and_source_references() -> None:
     assert pack.char_count == len(pack.as_text())
 
 
+def test_context_pack_prompt_text_does_not_emit_index_metadata_wrappers() -> None:
+    result = make_search_result(
+        id="point-1",
+        text="Invoices can be paid by ACH or card.",
+        document_id="private-doc-id",
+        document_key="private/billing.md",
+        title="Billing",
+        chunk_index=0,
+        metadata={"source": "fixture", "department": "finance"},
+    )
+
+    pack = build_context_pack([result], query="invoice payment")
+    prompt_text = pack.as_prompt_text()
+
+    assert "Invoices can be paid by ACH or card." in prompt_text
+    assert "# Metadata" not in prompt_text
+    assert "# Content" not in prompt_text
+    assert "private/billing.md" not in prompt_text
+    assert "private-doc-id" not in prompt_text
+    assert result.metadata["department"] == "finance"
+    assert pack.snippets[0].retrieval_metadata is None
+
+
 def test_context_pack_default_snippet_limit_uses_shared_context_default() -> None:
     results = [
         make_search_result(

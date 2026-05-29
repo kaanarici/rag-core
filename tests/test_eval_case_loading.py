@@ -36,6 +36,38 @@ def test_load_cases_validates_and_loads_jsonl_rows(tmp_path: Path) -> None:
     assert load_cases(path)[0].expected_ids == ("doc-a#chunk-1", "doc-a#chunk-2")
 
 
+def test_load_cases_accepts_context_level_expectations(tmp_path: Path) -> None:
+    path = tmp_path / "cases.jsonl"
+    path.write_text(
+        json.dumps(
+            {
+                "query": "billing policy",
+                "namespace": "acme",
+                "corpus_ids": ["help"],
+                "expected_ids": ["billing.md"],
+                "expected_context_contains": ["ACH", "card"],
+                "forbidden_context_contains": ["# Metadata", "# Content"],
+                "forbidden_private_identifiers": ["private/billing.md"],
+                "expected_citation_count_min": 1,
+                "expected_source_count_min": 1,
+                "max_context_chars": 500,
+                "max_context_tokens": 125,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    [case] = load_cases(path)
+
+    assert case.expected_context_contains == ("ACH", "card")
+    assert case.forbidden_context_contains == ("# Metadata", "# Content")
+    assert case.forbidden_private_identifiers == ("private/billing.md",)
+    assert case.expected_citation_count_min == 1
+    assert case.expected_source_count_min == 1
+    assert case.max_context_chars == 500
+    assert case.max_context_tokens == 125
+
+
 def test_load_cases_accepts_legacy_expected_chunk_ids(tmp_path: Path) -> None:
     path = tmp_path / "cases.jsonl"
     path.write_text(

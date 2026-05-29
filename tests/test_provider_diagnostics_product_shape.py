@@ -72,7 +72,7 @@ def test_provider_diagnostic_category_names_have_single_owner() -> None:
             "src/rag_core/search/providers/registry.py",
             "src/rag_core/search/providers/model_provider_diagnostics.py",
             "src/rag_core/cli_doctor_output.py",
-            "src/rag_core/core_runtime.py",
+            "src/rag_core/_engine/core_runtime.py",
         )
     }
     owner = sources["src/rag_core/search/providers/provider_category_names.py"]
@@ -139,7 +139,7 @@ def test_provider_diagnostic_category_names_have_single_owner() -> None:
         assert raw_registry not in registry
     assert "EMBEDDING_PROVIDER_CATEGORY" in diagnostics
     assert "SEARCH_SIDECAR_PROVIDER_CATEGORY" in diagnostics
-    assert "SPARSE_PROVIDER_CATEGORY" in sources["src/rag_core/core_runtime.py"]
+    assert "SPARSE_PROVIDER_CATEGORY" in sources["src/rag_core/_engine/core_runtime.py"]
     assert 'providers.get("embedding")' not in doctor_output
     assert '_emit_provider_category_summary("embedding"' not in doctor_output
     assert '("sparse", SPARSE_EMBEDDER_PROVIDER_ORDER)' not in doctor_output

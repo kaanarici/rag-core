@@ -28,7 +28,7 @@ def test_turbopuffer_distance_metric_default_has_single_config_owner() -> None:
         for path in (
             "src/rag_core/config/vector_store_config.py",
             "src/rag_core/cli_config_parser.py",
-            "src/rag_core/core_config_cli.py",
+            "src/rag_core/_engine/core_config_cli.py",
             "src/rag_core/search/providers/turbopuffer_config.py",
             "src/rag_core/search/providers/turbopuffer_store.py",
         )
@@ -66,7 +66,7 @@ def test_vector_store_default_has_single_config_owner() -> None:
         for path in (
             "src/rag_core/config/vector_store_config.py",
             "src/rag_core/cli_config_parser.py",
-            "src/rag_core/core_config_cli.py",
+            "src/rag_core/_engine/core_config_cli.py",
             "src/rag_core/search/providers/vector_store_diagnostics.py",
             "tests/support/fakes.py",
         )
@@ -100,7 +100,7 @@ def test_qdrant_collection_default_has_single_config_owner() -> None:
         for path in (
             "src/rag_core/config/qdrant_config.py",
             "src/rag_core/cli_config_parser.py",
-            "src/rag_core/core_config_cli.py",
+            "src/rag_core/_engine/core_config_cli.py",
             "tests/support/fakes.py",
         )
     }
@@ -132,7 +132,7 @@ def test_qdrant_dimension_aware_default_has_single_config_owner() -> None:
         path: Path(path).read_text(encoding="utf-8")
         for path in (
             "src/rag_core/config/qdrant_config.py",
-            "src/rag_core/core_config_cli.py",
+            "src/rag_core/_engine/core_config_cli.py",
             "tests/support/fakes.py",
         )
     }
@@ -164,7 +164,7 @@ def test_reranker_default_provider_has_single_config_owner() -> None:
         for path in (
             "src/rag_core/config/reranker_config.py",
             "src/rag_core/cli_config_parser.py",
-            "src/rag_core/core_config_cli.py",
+            "src/rag_core/_engine/core_config_cli.py",
             "src/rag_core/search/providers/reranker.py",
             "src/rag_core/search/providers/reranker_resolution.py",
             "src/rag_core/search/providers/model_provider_diagnostics.py",

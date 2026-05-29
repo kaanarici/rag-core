@@ -161,34 +161,34 @@ def test_core_engine_modules_import_search_contract_owners_directly() -> None:
         path: Path(path).read_text(encoding="utf-8")
         for path in (
             "src/rag_core/core.py",
-            "src/rag_core/core_assembly.py",
-            "src/rag_core/core_builders.py",
-            "src/rag_core/core_ingest.py",
-            "src/rag_core/core_ingest_decision.py",
-            "src/rag_core/core_ingest_delete.py",
-            "src/rag_core/core_ingest_recovery.py",
-            "src/rag_core/core_lifecycle.py",
-            "src/rag_core/core_sidecar_sync.py",
-            "src/rag_core/core_vector_store_factory.py",
+            "src/rag_core/_engine/core_assembly.py",
+            "src/rag_core/_engine/core_builders.py",
+            "src/rag_core/_engine/core_ingest.py",
+            "src/rag_core/_engine/core_ingest_decision.py",
+            "src/rag_core/_engine/core_ingest_delete.py",
+            "src/rag_core/_engine/core_ingest_recovery.py",
+            "src/rag_core/_engine/core_lifecycle.py",
+            "src/rag_core/_engine/core_sidecar_sync.py",
+            "src/rag_core/_engine/core_vector_store_factory.py",
             "src/rag_core/cli_doctor_store.py",
         )
     }
 
     provider_protocol_consumers = (
         "src/rag_core/core.py",
-        "src/rag_core/core_assembly.py",
-        "src/rag_core/core_ingest.py",
-        "src/rag_core/core_ingest_decision.py",
-        "src/rag_core/core_ingest_delete.py",
-        "src/rag_core/core_ingest_recovery.py",
-        "src/rag_core/core_sidecar_sync.py",
-        "src/rag_core/core_vector_store_factory.py",
+        "src/rag_core/_engine/core_assembly.py",
+        "src/rag_core/_engine/core_ingest.py",
+        "src/rag_core/_engine/core_ingest_decision.py",
+        "src/rag_core/_engine/core_ingest_delete.py",
+        "src/rag_core/_engine/core_ingest_recovery.py",
+        "src/rag_core/_engine/core_sidecar_sync.py",
+        "src/rag_core/_engine/core_vector_store_factory.py",
     )
     request_model_consumers = (
-        "src/rag_core/core_builders.py",
-        "src/rag_core/core_ingest_decision.py",
-        "src/rag_core/core_ingest_recovery.py",
-        "src/rag_core/core_lifecycle.py",
+        "src/rag_core/_engine/core_builders.py",
+        "src/rag_core/_engine/core_ingest_decision.py",
+        "src/rag_core/_engine/core_ingest_recovery.py",
+        "src/rag_core/_engine/core_lifecycle.py",
     )
 
     for path, source in sources.items():

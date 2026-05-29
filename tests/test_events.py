@@ -55,7 +55,7 @@ from rag_core.events.types import (
     StageError,
 )
 from rag_core.events.trace_payload_fields import TRACE_ABSENT_LABEL
-from rag_core.core_prepare import parse_document_bytes
+from rag_core._engine.core_prepare import parse_document_bytes
 from rag_core.search.providers.embedding_cache import InMemoryCache
 from rag_core.search.planning import QUERY_PLAN_PRESETS, query_plan_preset
 from rag_core.search.pipeline_runner_defaults import default_search_pipeline

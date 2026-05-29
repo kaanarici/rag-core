@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 
 from rag_core import RAGCore
-from rag_core.core_lifecycle import resolve_document_id
+from rag_core._engine.core_lifecycle import resolve_document_id
 from rag_core.core_models import RAGCoreConfig
 from rag_core.search.indexer_points import make_point_id
 from rag_core.search.policy import VectorStorePolicy

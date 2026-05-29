@@ -10,7 +10,7 @@ from typing import cast
 import pytest
 
 from rag_core.core_models import CorpusManifestEntry
-from rag_core.core_ingest_recovery import refreshed_manifest_entry
+from rag_core._engine.core_ingest_recovery import refreshed_manifest_entry
 from rag_core.manifest_persistence import (
     ManifestCompactionResult,
     ManifestReadError,

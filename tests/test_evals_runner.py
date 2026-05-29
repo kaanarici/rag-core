@@ -252,6 +252,73 @@ def test_run_eval_matches_expected_document_key() -> None:
     assert result.mrr == 1.0
 
 
+def test_run_eval_computes_context_quality_metrics() -> None:
+    class _ContextCore:
+        async def search(self, **_: object) -> list[object]:
+            return [
+                make_search_result(
+                    id="chunk-1",
+                    text="Invoices can be paid by ACH or card.",
+                    document_id="private-doc-id",
+                    document_key="private/billing.md",
+                    title="Billing",
+                    chunk_index=0,
+                )
+            ]
+
+    case = EvalCase(
+        query="invoice payment",
+        namespace="rt",
+        corpus_ids=("docs",),
+        expected_ids=("private-doc-id",),
+        expected_context_contains=("ACH", "card"),
+        forbidden_context_contains=("# Metadata", "# Content"),
+        forbidden_private_identifiers=("private/billing.md", "private-doc-id"),
+        expected_citation_count_min=1,
+        expected_source_count_min=1,
+        max_context_chars=512,
+    )
+
+    [result] = asyncio.run(run_eval(cast(RAGCore, _ContextCore()), [case]))
+
+    assert result.context_recall == 1.0
+    assert result.context_contains_pass is True
+    assert result.prompt_safety_pass is True
+    assert result.forbidden_leak_count == 0
+    assert result.citation_count == 1
+    assert result.source_count == 1
+    assert result.context_char_count <= 512
+
+
+def test_run_eval_marks_context_forbidden_text_failures() -> None:
+    class _LeakyCore:
+        async def search(self, **_: object) -> list[object]:
+            return [
+                make_search_result(
+                    id="chunk-1",
+                    text="# Metadata\nsecret\n\n# Content\nBilling answer.",
+                    document_id="billing",
+                    title="Billing",
+                )
+            ]
+
+    case = EvalCase(
+        query="billing",
+        namespace="rt",
+        corpus_ids=("docs",),
+        expected_ids=("billing",),
+        expected_context_contains=("Billing answer",),
+        forbidden_context_contains=("# Metadata", "# Content"),
+    )
+
+    [result] = asyncio.run(run_eval(cast(RAGCore, _LeakyCore()), [case]))
+
+    assert result.context_recall == 1.0
+    assert result.context_contains_pass is True
+    assert result.prompt_safety_pass is False
+    assert result.forbidden_leak_count == 2
+
+
 def test_run_eval_records_search_failure_without_raw_exception_detail() -> None:
     class _FailingCore:
         async def search(self, **_: object) -> list[object]:

@@ -5,8 +5,8 @@ import logging
 from urllib import request
 
 from rag_core.core_models import ParsedDocument
-from rag_core.core_ocr_metadata import read_ocr_metadata
-from rag_core.core_prepare import apply_ocr
+from rag_core._engine.core_ocr_metadata import read_ocr_metadata
+from rag_core._engine.core_prepare import apply_ocr
 from rag_core.documents.converters.pdf_converter_extraction import (
     PageExtraction,
     PdfExtraction,

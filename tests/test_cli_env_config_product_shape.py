@@ -41,7 +41,7 @@ def test_cli_config_env_names_have_config_owners() -> None:
             "src/rag_core/config/reranker_config.py",
             "src/rag_core/config/__init__.py",
             "src/rag_core/cli_config_parser.py",
-            "src/rag_core/core_config_cli.py",
+            "src/rag_core/_engine/core_config_cli.py",
             "src/rag_core/cli_parser.py",
         )
     }

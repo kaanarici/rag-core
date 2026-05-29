@@ -40,7 +40,7 @@ def test_cache_provider_defaults_have_single_factory_owner() -> None:
             "src/rag_core/search/providers/embedding_memory_cache.py",
             "src/rag_core/search/providers/chunk_context_cache.py",
             "src/rag_core/search/providers/provider_category_diagnostics.py",
-            "src/rag_core/core_assembly.py",
+            "src/rag_core/_engine/core_assembly.py",
             "src/rag_core/cli_doctor_output.py",
         )
     }
@@ -97,7 +97,7 @@ def test_cache_provider_defaults_have_single_factory_owner() -> None:
         'default=_normalize(config.ingest.embedding_cache_provider) or "none"'
         not in diagnostics
     )
-    assembly = sources["src/rag_core/core_assembly.py"]
+    assembly = sources["src/rag_core/_engine/core_assembly.py"]
     assert "SQLITE_CACHE_PROVIDER" in assembly
     assert 'embedding_cache_provider == "sqlite"' not in assembly
     assert "embedding_cache_provider='sqlite'" not in assembly

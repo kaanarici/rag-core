@@ -31,8 +31,8 @@ def test_ingest_states_have_single_lifecycle_owner() -> None:
         path: Path(path).read_text(encoding="utf-8")
         for path in (
             "src/rag_core/ingest_states.py",
-            "src/rag_core/core_lifecycle.py",
-            "src/rag_core/core_builders.py",
+            "src/rag_core/_engine/core_lifecycle.py",
+            "src/rag_core/_engine/core_builders.py",
             "src/rag_core/ingest_result_payloads.py",
             "src/rag_core/remote_ingest_results.py",
         )
@@ -140,7 +140,7 @@ def test_ingest_progress_statuses_have_single_owner() -> None:
             "src/rag_core/local_ingest_runner.py",
             "src/rag_core/remote_ingest_progress.py",
             "src/rag_core/remote_ingest_runner.py",
-            "src/rag_core/core_archive_runner.py",
+            "src/rag_core/_engine/core_archive_runner.py",
             "src/rag_core/events/ingest_events.py",
         )
     }

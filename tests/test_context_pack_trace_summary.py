@@ -8,7 +8,7 @@ import pytest
 
 from rag_core import ContextPack, RAGCore
 from rag_core.events import EventBuffer, summarize_search_trace_payload_runs
-from rag_core.core_retrieval import retrieve_context_with_core
+from rag_core._engine.core_retrieval import retrieve_context_with_core
 from rag_core.events.types import SearchStageCompleted, StageError
 from rag_core.search.pipeline_runner import SearchRequest, SearchRunResult
 
@@ -105,7 +105,7 @@ def test_context_pack_failure_emits_sanitized_terminal_stage_error() -> None:
         events = EventBuffer()
         with pytest.MonkeyPatch.context() as monkeypatch:
             monkeypatch.setattr(
-                "rag_core.core_retrieval.build_context_pack",
+                "rag_core._engine.core_retrieval.build_context_pack",
                 lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
             )
             with pytest.raises(RuntimeError, match="boom"):

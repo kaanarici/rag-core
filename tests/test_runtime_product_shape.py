@@ -176,7 +176,7 @@ def test_self_host_docs_cover_selectable_vector_store_config() -> None:
         (root / path).read_text(encoding="utf-8")
         for path in (
             "src/rag_core/cli_config_parser.py",
-            "src/rag_core/core_config_cli.py",
+            "src/rag_core/_engine/core_config_cli.py",
             "src/rag_core/config/embedding_config.py",
             "src/rag_core/config/ingest_config.py",
             "src/rag_core/config/qdrant_config.py",
@@ -225,8 +225,8 @@ def test_vector_store_env_names_have_config_owners() -> None:
             "src/rag_core/config/vector_store_config.py",
             "src/rag_core/config/__init__.py",
             "src/rag_core/cli_config_parser.py",
-            "src/rag_core/core_config_cli.py",
-            "src/rag_core/core_runtime.py",
+            "src/rag_core/_engine/core_config_cli.py",
+            "src/rag_core/_engine/core_runtime.py",
             "src/rag_core/search/providers/vector_store_diagnostics.py",
         )
     }

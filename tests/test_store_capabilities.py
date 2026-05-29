@@ -17,7 +17,7 @@ from typing import Sequence
 import pytest
 
 from rag_core import RAGCore
-from rag_core.core_ingest import CoreIngestor
+from rag_core._engine.core_ingest import CoreIngestor
 from rag_core.core_models import PreparedDocument, ProcessingFingerprint
 from rag_core.search.indexer import DocumentIndexer, IndexRequest
 from rag_core.search.providers.memory_store import InMemoryVectorStore

@@ -1,14 +1,19 @@
 import asyncio
 import tempfile
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, Callable, cast
 
 import pytest
 
 from rag_core import RAGCore
-from rag_core.core_builders import OCR_METADATA_KEY
-from rag_core.core_lifecycle import compute_content_sha256
+from rag_core.config import (
+    SKIP_UNCHANGED_FAST,
+    SKIP_UNCHANGED_MATERIALIZE,
+    SkipUnchangedMode,
+)
+from rag_core._engine.core_builders import OCR_METADATA_KEY
+from rag_core._engine.core_lifecycle import compute_content_sha256
 from rag_core.core_models import (
     IngestedDocument,
     OcrMetadata,
@@ -16,7 +21,7 @@ from rag_core.core_models import (
     PreparedChunk,
     PreparedDocument,
 )
-from rag_core.core_runtime import resolve_processing_version
+from rag_core._engine.core_runtime import resolve_processing_version
 from rag_core.documents.ocr_provider_names import (
     DEFAULT_MISTRAL_OCR_MODEL,
     MISTRAL_OCR_PROVIDER,
@@ -48,13 +53,15 @@ def _make_core(
     store: RecordingVectorStore | None = None,
     *,
     search_sidecar: SearchSidecar | None = None,
+    skip_unchanged: SkipUnchangedMode = SKIP_UNCHANGED_FAST,
 ) -> tuple[RAGCore, RecordingVectorStore]:
     store = store if store is not None else RecordingVectorStore()
+    base_config = make_test_config(
+        embedding_model="text-embedding-3-small",
+        embedding_dimensions=4,
+    )
     core = RAGCore(
-        make_test_config(
-            embedding_model="text-embedding-3-small",
-            embedding_dimensions=4,
-        ),
+        replace(base_config, ingest=replace(base_config.ingest, skip_unchanged=skip_unchanged)),
         embedding_provider=FakeEmbeddingProvider(),
         sparse_embedder=FakeSparseEmbedder(),
         vector_store=store,
@@ -132,7 +139,8 @@ def test_ingest_skips_reindex_when_content_is_unchanged() -> None:
         core, store = _make_core(
             RecordingVectorStore(
                 document_records={("team-space", "corpus-1", "doc_unchanged"): existing},
-            )
+            ),
+            skip_unchanged=SKIP_UNCHANGED_MATERIALIZE,
         )
 
         try:

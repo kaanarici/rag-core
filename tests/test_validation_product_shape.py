@@ -196,11 +196,9 @@ def test_search_pipeline_runner_replaced_internal_orchestrator_name() -> None:
     text = "\n".join(
         (root / path).read_text(encoding="utf-8")
         for path in (
-            "docs/plans/retrieval-engine-reality-notebook.md",
-            "docs/plans/engineering-improvement-areas.md",
             "docs/stability.md",
             "src/rag_core/core.py",
-            "src/rag_core/core_assembly.py",
+            "src/rag_core/_engine/core_assembly.py",
             "src/rag_core/search/pipeline_runner.py",
             "src/rag_core/search/pipeline_runner_defaults.py",
             "tests/test_search_pipeline_runner.py",

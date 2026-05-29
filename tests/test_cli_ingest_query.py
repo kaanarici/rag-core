@@ -18,8 +18,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from rag_core.cli import _build_parser
-from rag_core.core_ingest import CoreIngestor
-from rag_core.core_lifecycle import compute_content_sha256
+from rag_core.config import SKIP_UNCHANGED_MATERIALIZE
+from rag_core._engine.core_ingest import CoreIngestor
+from rag_core._engine.core_lifecycle import compute_content_sha256
 from rag_core.core_models import (
     CorpusManifestEntry,
     PreparedChunk,
@@ -171,6 +172,7 @@ def _make_ingestor(
     *,
     manifest_directory: Path | None,
     store: RecordingVectorStore | None = None,
+    skip_unchanged: str = SKIP_UNCHANGED_MATERIALIZE,
 ) -> tuple[CoreIngestor, AsyncMock]:
     indexer = AsyncMock()
     indexer.index_document = AsyncMock(
@@ -214,6 +216,7 @@ def _make_ingestor(
         sidecar=None,
         prepare_bytes=_prepare_bytes,
         manifest_directory=manifest_directory,
+        skip_unchanged=skip_unchanged,
     )
     return ingestor, indexer
 

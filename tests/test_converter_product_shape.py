@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from rag_core.core_file_io import detect_local_mime_type
+from rag_core._engine.core_file_io import detect_local_mime_type
 from rag_core.documents.converters import get_converter
 from rag_core.documents.converters.converter_keys import CONVERTER_KEYS
 from rag_core.documents.converters.format_support import FORMAT_SUPPORT_MATRIX

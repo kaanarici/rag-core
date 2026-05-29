@@ -9,7 +9,7 @@ from typing import cast
 import pytest
 
 from rag_core.cli_inputs import cli_error_message, parse_metadata_fields
-from rag_core.core_lifecycle import compute_content_sha256
+from rag_core._engine.core_lifecycle import compute_content_sha256
 from rag_core.core_models import CorpusManifestEntry, IngestedDocument
 from rag_core.events.sinks import EventBuffer
 from rag_core.events.types import (

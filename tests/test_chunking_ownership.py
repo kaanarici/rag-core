@@ -1,7 +1,7 @@
 import pytest
 
 from rag_core.config import CODE_CHUNKING_STRATEGY, MARKDOWN_CHUNKING_STRATEGY
-from rag_core.core_prepare import prepare_text_chunks
+from rag_core._engine.core_prepare import prepare_text_chunks
 from rag_core.documents.chunking.router import chunk_text, is_code_content
 
 
