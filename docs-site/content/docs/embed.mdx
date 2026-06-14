@@ -1,0 +1,300 @@
+---
+title: Embed in an application
+description: Use RAGCore inside an application with app-owned scope, providers, retrieval, and evals.
+---
+
+Use `RAGCore` when your application owns lifecycle, scope, providers, and model calls.
+
+## Files to context
+
+Create one `RAGCore` instance per worker process. Ingest files into an
+application-bound scope, then retrieve cited context for the model.
+
+```python
+import asyncio
+from rag_core import RAGCore, RAGCoreConfig
+
+async def main(folder: str, question: str) -> None:
+    async with RAGCore(RAGCoreConfig.local()) as core:
+        await core.ingest_files(
+            folder,
+            namespace="acme",  # bound from your auth
+            corpus_id="help",
+        )
+        pack = await core.retrieve_context(
+            query=question,
+            namespace="acme",
+            corpus_ids=["help"],
+            limit=8,
+        )
+        print(pack.as_prompt_text())
+        print(pack.prompt_citation_summary)
+
+asyncio.run(main("./docs", "How can customers pay?"))
+```
+
+`RAGCoreConfig.local()` uses embedded Qdrant and FastEmbed
+`BAAI/bge-small-en-v1.5` for real semantic retrieval. The model downloads once
+on first use, then runs locally.
+
+<Callout type="info">
+  The local embedding model is about 100 MB and is reused after the first download.
+</Callout>
+
+## Configured Qdrant and OpenAI
+
+Use `RAGCoreConfig.qdrant(...)` when you already run Qdrant and want hosted
+embeddings.
+
+```python
+import asyncio
+from rag_core import RAGCore, RAGCoreConfig
+
+async def main() -> None:
+    config = RAGCoreConfig.qdrant(
+        url="http://127.0.0.1:6333",
+        embedding_provider="openai",
+        model="text-embedding-3-small",
+    )
+    async with RAGCore(config) as core:
+        await core.ingest_files("./docs", namespace="acme", corpus_id="help")
+        pack = await core.retrieve_context(
+            query="How can customers pay?",
+            namespace="acme",
+            corpus_ids=["help"],
+        )
+        print(pack.as_prompt_text())
+
+asyncio.run(main())
+```
+
+Known local and OpenAI models infer dimensions automatically. Set
+`embedding_dimensions` only for custom or unknown provider and model pairs.
+
+```python
+config = RAGCoreConfig.qdrant(
+    url="http://127.0.0.1:6333",
+    embedding_provider="custom",
+    model="custom-embeddings-v1",
+    embedding_dimensions=768,
+)
+```
+
+For offline smoke checks, `from rag_core.demo import build_demo_core` gives
+deterministic demo embeddings. That path checks wiring, not semantic retrieval.
+
+## Ingest bytes
+
+Use `ingest_bytes` when your application already has source bytes.
+
+```python
+await core.ingest_bytes(
+    file_bytes=b"Invoices can be paid by card or ACH.",
+    filename="billing.txt",
+    mime_type="text/plain",
+    namespace="acme",
+    corpus_id="help",
+)
+```
+
+## Bind tenancy
+
+- **`namespace`**. Opaque tenant or workspace key bound from your auth layer.
+- **`corpus_id`**. Logical corpus inside that namespace, such as a product area,
+  knowledge base, or project.
+- **`document_id` / `document_key`**. Stable document identity. Your application
+  can supply external IDs. Otherwise, core derives deterministic keys from
+  filename, path, and URL inputs, then hashes them into document IDs.
+
+<Callout type="warn">
+  Never accept raw `namespace` or `corpus_id` from model tool calls without binding them to the authenticated session in your HTTP handler.
+</Callout>
+
+## Reconcile sources
+
+Use your application or worker queue to discover changed sources. Then call core
+ingest and delete primitives with stable `document_key` values.
+
+When a manifest directory is configured, local and URL ingest can report
+unchanged, changed, missing, orphaned, and duplicate source states. The
+status-only primitives are available from `rag_core.manifest_reconciliation`:
+`ManifestSource`, `reconcile_entries`, and `ManifestReconciliation`.
+
+rag-core does not own connector cursors, polling schedules, webhooks, or
+deleted-source policy.
+
+Batch resume is a rerun against the same corpus and vector store, not a
+separate checkpoint file. Completed items have per-item manifest records.
+Unchanged content is skipped by hash on the next ingest. If a local or URL batch
+aborts after some items complete, rerun the same source list with the same
+manifest directory to skip those items and finish the remaining ones.
+
+## Retrieval defaults
+
+| Surface | Default search behavior | Rerank |
+| --- | --- | --- |
+| `RAGCore.search` / `retrieve_context` | capability-aware default query plan; `balanced` when dense+sparse hybrid RRF is supported | off unless `rerank=True` and reranker configured |
+| CLI `search` / `search --context` | same default unless `--search-profile` or `--query-plan-preset` is passed | `--rerank` to enable |
+| HTTP `POST /v1/search` | same default through the configured runtime providers | `"rerank": true` in JSON body |
+
+`use_lexical_search` is the request flag for configured lexical and exact-match
+expansion. Sparse query-plan channels and named search profiles are separate
+retrieval primitives. The `lexical` search profile means sparse BM25 retrieval,
+not the portable exact-match sidecar.
+
+Default limits are surface-specific. Search entrypoints return 10 hits,
+first-run `local-search` returns 5 hits, context entrypoints return 8 snippets,
+and prompt-facing `search_user_documents` tools default to 5 snippets to keep
+prompt payloads compact.
+
+In Python, `RAGCore.search` and `RAGCore.retrieve_context` accept
+`document_ids`, `content_types`, and `metadata_filter` as app-owned narrowing
+filters inside the bound namespace and corpus scope.
+
+Pass `rerank=True` only when `RAGCoreConfig.reranker` or CLI flags point at a
+real reranker provider. See [Retrieval outputs and defaults](/docs/expectations).
+
+## Query expansion
+
+The search pipeline is an experimental construction surface for retrieval
+experiments that should not become config or CLI defaults yet. Multi-query
+expansion fans out the original query plus generated variants. A client-side RRF
+fuser deduplicates overlapping hits.
+
+```python
+from rag_core.search.pipeline import (
+    AnthropicQueryVariantGenerator,
+    HybridRetrieve,
+    MultiQueryTransform,
+    PassThroughRerank,
+    RetrievalPipeline,
+    RrfFuse,
+)
+from rag_core.search.pipeline_runner import SearchPipelineRunner
+
+generator = AnthropicQueryVariantGenerator()
+pipeline = RetrievalPipeline(
+    retrieve=HybridRetrieve(),
+    fuse=RrfFuse(),
+    rerank=PassThroughRerank(),
+    query_transforms=(MultiQueryTransform(generator, variant_count=3),),
+)
+
+runner = SearchPipelineRunner(
+    embedding_provider=embedding_provider,
+    sparse_embedder=sparse_embedder,
+    vector_store=vector_store,
+    pipeline=pipeline,
+)
+```
+
+HyDE uses the same generator seam, but embeds the hypothetical passage only for
+dense retrieval. Sparse and lexical matching keep the original query terms.
+
+```python
+from rag_core.search.pipeline import HydeTransform
+
+pipeline = RetrievalPipeline(
+    retrieve=HybridRetrieve(),
+    fuse=RrfFuse(),
+    rerank=PassThroughRerank(),
+    query_transforms=(HydeTransform(generator),),
+)
+```
+
+Generator failures fall back to the original query and emit a non-fatal
+`query_transform` stage event. This surface is construction-only. There are no
+profiles, config knobs, or CLI flags for query expansion.
+
+## Chunking
+
+`RAGCoreConfig.chunking` controls the public prepare and ingest path. Use `auto`
+for normal files, `markdown` for prose and docs, `code` when you want code-aware
+line locators, and `semantic` for beta semantic chunking. Lower-level chunking
+strategies remain pluggable through the chunking registry for experiments.
+
+## Agent tools
+
+`rag_core.contracts` parses model tool payloads and provides helpers for
+app-bound retrieval scope. Your endpoint still owns auth and calls
+`retrieve_context`.
+
+Examples:
+[search_endpoint.py](https://github.com/kaanarici/rag-core/blob/main/examples/search_endpoint.py),
+[vercel_ai_sdk_search_tool.ts](https://github.com/kaanarici/rag-core/blob/main/examples/vercel_ai_sdk_search_tool.ts).
+
+The Vercel AI SDK example targets stable AI SDK v6 tool contracts verified by
+`./scripts/verify_vercel_ai_sdk_example.sh` against current published
+`ai@^6.0.0` TypeScript declarations. Tools use `inputSchema`. The streamed text
+branch follows the installed `fullStream` declaration. Tool results expose
+payloads as `output`, not the older `parameters` or `result` names.
+
+The example uses `toModelOutput` to send compact prompt-facing context text as a
+`text` tool output while keeping the full typed search payload available to
+application code through `toolResults` and stream `tool-result` parts. The
+streaming path also handles `tool-error` and `error` stream parts explicitly.
+
+The example model id is illustrative. Verify the current Vercel AI Gateway model
+list before copying it into an application. If Vercel narrative docs and the
+published declarations disagree on stream part labels, this repo treats the
+typecheck gate as proof of declaration compatibility only.
+
+It is not a v7 beta contract.
+
+Optional integration adapters follow the same boundary. Bind `namespace`,
+`corpus_ids`, and optional `content_types` in application code. Use the contract
+scope helpers for static document allowlists. Treat a tool-call `document_ids`
+value as only a narrowing filter inside that bound scope. Bind advanced
+retrieval controls such as `query_plan` in application code too. Do not expose
+them as model-call inputs.
+
+## Worker lifecycle
+
+Long-running applications should construct `RAGCore` once and reuse it. See
+[embedded_service.py](https://github.com/kaanarici/rag-core/blob/main/examples/embedded_service.py).
+
+## Evals in your repo
+
+Keep labeled cases in your application repository and run `rag_core.evals`
+against your configured embeddings, not the library's CI fixture corpus. See
+[retrieval_eval.py](https://github.com/kaanarici/rag-core/blob/main/examples/retrieval_eval.py).
+
+Use `expected_ids` for the relevant chunk or document ids you expect retrieval
+to return. Add context-level assertions when you want to verify prompt-safe
+output: `expected_context_contains`, `forbidden_context_contains`,
+`forbidden_private_identifiers`, `expected_citation_count_min`, and
+`max_context_chars`.
+
+For a no-key folder check before wiring real providers, `local-eval` indexes a
+local file or folder with deterministic demo embeddings. It infers `namespace`
+and `corpus_id` from the JSONL cases and emits the same redacted eval report.
+
+```bash
+uv run rag-core local-eval examples/demo_corpus examples/eval_cases.jsonl --json
+```
+
+For local folder cases, `expected_ids` may use relative paths such as
+`billing.md`. `local-eval` resolves them to the indexed local document keys. This
+no-key path uses deterministic demo embeddings, so treat it as wiring proof, not
+semantic retrieval-quality proof.
+
+## Configured example
+
+This path requires credentials.
+
+```bash
+export OPENAI_API_KEY=sk-...
+uv run python -m examples.configured_retrieval
+```
+
+This command is not executed by default CI because it requires credentials. The
+example file is still source-checked and packaged. Smoke without keys:
+`python -m rag_core.quickstart` or `examples/embedded_service`.
+
+## Next steps
+
+<Cards>
+  <Card title="Configure providers" href="/docs/providers" description="Select vector stores, embeddings, rerankers, and provider extras." />
+  <Card title="Integrate with agents" href="/docs/agent-integration" description="Bind retrieval scope for tools, MCP, LangChain, and OpenAI Agents." />
+  <Card title="Evaluate retrieval quality" href="/docs/eval-quality" description="Run retrieval and context checks against app-owned cases." />
+</Cards>

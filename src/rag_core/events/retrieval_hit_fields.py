@@ -1,0 +1,33 @@
+"""Field names for observability retrieval-hit exports."""
+
+from __future__ import annotations
+
+from typing import Final
+
+RETRIEVAL_HIT_ID_FIELD: Final[str] = "id"
+RETRIEVAL_HIT_CONTENT_FIELD: Final[str] = "content"
+RETRIEVAL_HIT_SCORE_FIELD: Final[str] = "score"
+RETRIEVAL_HIT_DOCUMENT_ID_FIELD: Final[str] = "document_id"
+RETRIEVAL_HIT_DOCUMENT_KEY_FIELD: Final[str] = "document_key"
+RETRIEVAL_HIT_CORPUS_ID_FIELD: Final[str] = "corpus_id"
+RETRIEVAL_HIT_NAMESPACE_FIELD: Final[str] = "namespace"
+RETRIEVAL_HIT_TITLE_FIELD: Final[str] = "title"
+RETRIEVAL_HIT_CHUNK_INDEX_FIELD: Final[str] = "chunk_index"
+RETRIEVAL_HIT_SECTION_PATH_FIELD: Final[str] = "section_path"
+RETRIEVAL_HIT_METADATA_FIELD: Final[str] = "metadata"
+
+RETRIEVAL_HIT_CORE_FIELDS: Final[tuple[str, ...]] = (
+    RETRIEVAL_HIT_ID_FIELD,
+    RETRIEVAL_HIT_CONTENT_FIELD,
+    RETRIEVAL_HIT_SCORE_FIELD,
+)
+RETRIEVAL_HIT_OPTIONAL_FIELDS: Final[tuple[str, ...]] = (
+    RETRIEVAL_HIT_DOCUMENT_ID_FIELD,
+    RETRIEVAL_HIT_DOCUMENT_KEY_FIELD,
+    RETRIEVAL_HIT_CORPUS_ID_FIELD,
+    RETRIEVAL_HIT_NAMESPACE_FIELD,
+    RETRIEVAL_HIT_TITLE_FIELD,
+    RETRIEVAL_HIT_CHUNK_INDEX_FIELD,
+    RETRIEVAL_HIT_SECTION_PATH_FIELD,
+    RETRIEVAL_HIT_METADATA_FIELD,
+)

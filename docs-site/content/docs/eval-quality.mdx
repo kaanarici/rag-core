@@ -1,0 +1,93 @@
+---
+title: Evaluate retrieval quality
+description: Run retrieval and context evals against real embeddings and app-owned cases.
+---
+
+Use retrieval evals when you need evidence from your own corpus, providers, and expected results.
+
+## Run a configured folder eval
+
+From a checkout:
+
+```bash
+uv run python -m examples.configured_eval examples/demo_corpus examples/eval_cases.jsonl
+```
+
+The default uses `RAGCoreConfig.local()`: embedded Qdrant plus the local
+FastEmbed `BAAI/bge-small-en-v1.5` model. It needs no API key, downloads the
+model once on first use, and then runs locally.
+
+To compare the same eval shape with OpenAI embeddings:
+
+```bash
+export OPENAI_API_KEY=sk-...
+uv run python -m examples.configured_eval ./docs ./eval_cases.jsonl --provider openai
+```
+
+The example ingests the folder into `namespace="acme"` and
+`corpus_id="help-center"`, matching the bundled cases. Keep your JSONL cases in
+the same scope or copy the example and change those constants.
+
+<Callout type="warn">
+  Demo-hash examples and `rag-core local-eval` are wiring checks, not semantic ranking proof.
+</Callout>
+
+## Cases JSONL
+
+Each non-empty line is one JSON object.
+
+```json
+{"case_id":"billing","query":"How can invoices be paid?","namespace":"acme","corpus_ids":["help-center"],"expected_ids":["billing.md"],"expected_context_contains":["ACH"],"expected_citation_count_min":1}
+```
+
+Fields:
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `query` | yes | User-style retrieval query. |
+| `namespace` | yes | Scope passed to `core.search`; keep it app-owned. |
+| `corpus_ids` | yes | One or more corpus ids to search. |
+| `expected_ids` | yes | Relevant chunk, `document_id`, or `document_key` ids. |
+| `expected_grades` | no | Integer relevance grades for nDCG; ids must be present in `expected_ids`. |
+| `case_id` | no | Stable label for reporting and duplicate detection. |
+| `expected_context_contains` | no | Strings that must appear in packed prompt-safe context. |
+| `forbidden_context_contains` | no | Strings that must not appear in packed context. |
+| `forbidden_private_identifiers` | no | Private ids or keys that must not leak into packed context. |
+| `expected_citation_count_min` | no | Minimum citation count when context checks run. |
+| `expected_source_count_min` | no | Minimum source preview count when context checks run. |
+| `max_context_chars` | no | Maximum packed context character count. |
+| `max_context_tokens` | no | Maximum packed context token estimate. |
+
+## Interpret metrics honestly
+
+`recall_at_5` answers whether expected ids appeared in the top five hits. `mrr`
+rewards putting the first relevant hit earlier. `ndcg_at_10` uses
+`expected_grades` when present. Otherwise, it falls back to binary relevance
+from `expected_ids`.
+
+Small corpora can make metrics look perfect for the wrong reason. Use the demo
+corpus only to prove the path runs. For product thresholds, build cases from
+real misses, near-duplicate documents, old and new policy pages, short and long
+queries, and privacy or context expectations.
+
+## Wire into CI
+
+Keep a no-download smoke in the default tier, such as `configured_eval --help`.
+Run the real local provider in an explicit live lane because the first run may
+download the FastEmbed model.
+
+```bash
+RAG_CORE_RUN_FASTEMBED_LIVE=1 uv run pytest -q -m live tests/test_examples.py -k configured_eval
+```
+
+Treat the JSON report as the handoff boundary for app-owned CI policy. rag-core
+reports retrieval and context metrics. Your CI can compare `report["metrics"]`
+against the thresholds that fit your corpus.
+
+## Next steps
+
+<Cards>
+  <Card title="Retrieval outputs and defaults" href="/docs/expectations" description="See the fields and metrics that evals assert." />
+  <Card title="Embed in an application" href="/docs/embed" description="Run evals against the same providers your app uses." />
+  <Card title="Configure providers" href="/docs/providers" description="Select embeddings and vector stores before comparing retrieval quality." />
+</Cards>

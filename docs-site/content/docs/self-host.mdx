@@ -1,0 +1,219 @@
+---
+title: Self-host the HTTP API
+description: Run the optional HTTP runtime with health, ingest jobs, search, context retrieval, and app-owned auth.
+---
+
+Use `rag-core serve` when you want a thin HTTP layer over the same `RAGCore` library surface.
+
+The runtime exposes health, runtime description, async ingest jobs, search,
+context retrieval, and document delete. It does not expose eval HTTP.
+
+Contract:
+[openapi.yaml](https://github.com/kaanarici/rag-core/blob/main/docs/self-host/openapi.yaml).
+Retrieval shapes:
+[Retrieval outputs and defaults](/docs/expectations).
+
+## Docker Compose
+
+```bash
+docker compose up -d --build
+curl -s http://127.0.0.1:8787/health/ready
+```
+
+The default Compose file uses demo embeddings and Qdrant so the runtime can boot
+without provider keys. Use the configured runtime path below for OpenAI
+embeddings, or treat `.env.example` as a starting point for your deployment
+wrapper.
+
+## Local serve
+
+This path uses no API keys.
+
+```bash
+uv sync --extra runtime
+uv run rag-core serve \
+  --host 127.0.0.1 --port 8787 \
+  --ingest-root "$PWD" \
+  --job-db-path .rag-core/runtime/jobs.sqlite3 \
+  --qdrant-location :memory: \
+  --embedding-provider demo \
+  --embedding-model demo-dense-v1 \
+  --embedding-dimensions 64
+```
+
+```bash
+export BASE_URL=http://127.0.0.1:8787
+curl -s "$BASE_URL/health/ready"
+
+JOB=$(curl -s -X POST "$BASE_URL/v1/ingest" \
+  -H 'Content-Type: application/json' \
+  -d "{\"path\":\"$PWD/examples/demo_corpus/billing.md\",\"namespace\":\"acme\",\"corpus_id\":\"help\"}" \
+  | python -c 'import sys,json; print(json.load(sys.stdin)["job_id"])')
+# paths must be absolute and under a configured --ingest-root
+
+# Stream status changes until the terminal status:
+curl -N "$BASE_URL/v1/ingest/$JOB/events" \
+  -H 'Accept: text/event-stream' \
+  | sed -n '/^data: /p'
+
+until curl -s "$BASE_URL/v1/ingest/$JOB" | grep -q '"status": "completed"'; do sleep 0.2; done
+
+curl -s -X POST "$BASE_URL/v1/search" \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"How can invoices be paid?","namespace":"acme","corpus_ids":["help"],"limit":3}'
+```
+
+You can also run
+[./scripts/self_host_smoke.sh](https://github.com/kaanarici/rag-core/blob/main/scripts/self_host_smoke.sh)
+with the server already running.
+
+## Configured runtime
+
+This path uses Qdrant and OpenAI.
+
+```bash
+docker compose up -d qdrant
+export RAG_CORE_QDRANT_URL=http://127.0.0.1:6333
+export OPENAI_API_KEY=sk-...
+uv run rag-core serve --host 0.0.0.0 --bind-non-loopback --port 8787 \
+  --qdrant-url "$RAG_CORE_QDRANT_URL" \
+  --embedding-provider openai --embedding-model text-embedding-3-small
+```
+
+`--bind-non-loopback` is an explicit opt-in. The server must sit behind your
+application gateway.
+
+`POST /v1/ingest` `path` must exist on the server host. By default, `serve`
+accepts ingest paths under the server working directory only. If you pass
+`--ingest-root /srv/docs`, the allowlist becomes the explicit roots you
+configured.
+
+## Operational boundary
+
+`serve` is a thin adapter intended to sit behind an application gateway. Put
+auth, API-key management, tenancy, rate limits, connector sync, retry
+scheduling, and deleted-source policy in your gateway, BFF, or worker system.
+Bind `namespace`, `corpus_id`, `corpus_ids`, and the selected ingest root from
+the authenticated session before proxying requests.
+
+<Callout type="warn">
+  Never expose `serve` on the public internet without auth.
+</Callout>
+
+## HTTP surface
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/health` | Liveness |
+| `GET` | `/health/ready` | Readiness (`503` when not ready) |
+| `GET` | `/v1/runtime` | `describe_runtime()` JSON |
+| `POST` | `/v1/ingest` | Start job and return `202` plus `job_id` |
+| `GET` | `/v1/ingest/{job_id}` | Job status |
+| `GET` | `/v1/ingest/{job_id}/events` | Job status changes as `text/event-stream`; closes after terminal status |
+| `POST` | `/v1/search` | Search hits JSON (`SearchResult`) |
+| `POST` | `/v1/search/context` | App-facing context pack + prompt-safe `context_text` |
+| `DELETE` | `/v1/documents/{document_id}` | Purge one document from index, sidecars, caches, and manifest |
+
+Errors use a JSON envelope with `error.code`, `error.message`, and
+`error.details`. See the OpenAPI contract.
+
+Retrieval requests accept optional `content_types` and `document_ids` to narrow
+the app-bound namespace and corpus scope. Search and context retrieval also
+accept `use_lexical_search` to disable configured lexical and exact-match
+expansion for a request.
+
+The HTTP runtime does not accept raw `query_plan` or `search_profile` fields. It
+uses the configured runtime providers' capability-aware defaults. Only
+`/v1/search/context` accepts `max_chars` and `max_tokens` prompt-context budgets.
+
+## Configuration
+
+| Environment variable | CLI flag | Notes |
+|---------------------|----------|-------|
+| `RAG_CORE_VECTOR_STORE` | `--vector-store` | `qdrant` by default; `turbopuffer` requires the optional extra |
+| `RAG_CORE_QDRANT_URL` | `--qdrant-url` | Use **one** of URL or location |
+| `RAG_CORE_QDRANT_LOCATION` | `--qdrant-location` | `:memory:` for smoke |
+| `RAG_CORE_QDRANT_API_KEY` | `--qdrant-api-key` | Cloud Qdrant |
+| `RAG_CORE_QDRANT_COLLECTION` | `--qdrant-collection` | default `rag_core_chunks` |
+| `RAG_CORE_QDRANT_DIMENSION_AWARE_COLLECTION` | `--dimension-aware-collection` / `--no-dimension-aware-collection` | defaults on; includes embedding dimensions in automatic collection names |
+| `RAG_CORE_TURBOPUFFER_NAMESPACE` | `--turbopuffer-namespace` | Physical TurboPuffer namespace; distinct from request `namespace` tenancy |
+| `TURBOPUFFER_API_KEY` | `--turbopuffer-api-key` | TurboPuffer credentials |
+| `TURBOPUFFER_REGION` | `--turbopuffer-region` | TurboPuffer region |
+| `TURBOPUFFER_BASE_URL` | `--turbopuffer-base-url` | Optional TurboPuffer API base URL |
+| `RAG_CORE_TURBOPUFFER_DISTANCE_METRIC` | `--turbopuffer-distance-metric` | default `cosine_distance` |
+| `RAG_CORE_TURBOPUFFER_DELETE_CONTINUATION_LIMIT` | `--turbopuffer-delete-continuation-limit` | fail closed after this many partial delete continuations |
+| `RAG_CORE_EMBEDDING_PROVIDER` | `--embedding-provider` | `demo` for no-key |
+| `RAG_CORE_EMBEDDING_MODEL` | `--embedding-model` | |
+| `RAG_CORE_EMBEDDING_DIMENSIONS` | `--embedding-dimensions` | Required for `demo`; use for custom or unknown models |
+| `RAG_CORE_EMBEDDING_BATCH_SIZE` | `--embedding-batch-size` | document embedding batch size |
+| `OPENAI_API_KEY` | none | OpenAI embeddings |
+| `RAG_CORE_RERANKER_PROVIDER` | `--reranker-provider` | optional |
+| `RAG_CORE_RERANKER_MODEL` | `--reranker-model` | optional |
+| `RAG_CORE_PROCESSING_VERSION` | `--processing-version` | reindex trigger |
+| `RAG_CORE_RUNTIME_JOB_DB_PATH` | `--job-db-path` | SQLite path for ingest job status persistence |
+| `RAG_CORE_RUNTIME_JOB_RETENTION_SECONDS` | `--job-retention-seconds` | optional completed/failed job retention TTL |
+
+Serve-only flags: `--host`, `--port`, `--ingest-root`, `--job-db-path`,
+`--job-retention-seconds`, `--unix-socket`, `--bind-non-loopback`,
+`--max-body-bytes`, `--ingest-concurrency`, `--limit-concurrency`.
+
+Ingest jobs persist to `.rag-core/runtime/jobs.sqlite3` under the server working
+directory unless `--job-db-path` or `RAG_CORE_RUNTIME_JOB_DB_PATH` overrides it.
+Mount the parent directory for container restarts. This persists job history and
+terminal statuses only. In-flight `pending` or `running` background jobs are not
+resumed after process restart.
+
+On startup, the runtime sweeps any row left in `pending` or `running` from a
+prior process and flips it to `failed` with `error_type=OrphanedByRestart` and
+`error_code=orphaned_by_restart`. Your gateway sees a terminal status. Retry
+orchestration is the gateway's responsibility. rag-core never resumes
+mid-flight work itself.
+
+Set `--job-retention-seconds` or `RAG_CORE_RUNTIME_JOB_RETENTION_SECONDS` to
+prune old completed and failed rows opportunistically at startup and when a job
+becomes terminal. Pending and running rows are never pruned by retention.
+
+## Auth
+
+`serve` does not ship accounts, API keys, or tenancy. Put auth in your gateway
+or BFF:
+
+1. Terminate TLS at the gateway.
+2. Validate identity before proxying to `serve`.
+3. Map the principal to `namespace` / `corpus_id` server-side. Do not trust unvalidated client tenancy fields.
+
+Health routes are often left open for deployment health checks. Lock them down
+if required.
+
+Example API-key middleware for your deployment wrapper:
+
+```python
+import os
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from rag_core.runtime.errors import api_error
+
+class ApiKeyMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path.startswith("/health"):
+            return await call_next(request)
+        if request.headers.get("x-api-key") != os.environ["RAG_CORE_API_KEY"]:
+            return api_error(code="unauthorized", message="Invalid or missing API key", status_code=401)
+        return await call_next(request)
+```
+
+## Troubleshooting
+
+- **`ModuleNotFoundError: starlette`**. Run `uv sync --extra runtime`.
+- **Qdrant errors**. Use exactly one of `--qdrant-url` or `--qdrant-location`.
+- **Embedding auth**. Use Path A demo flags or `OPENAI_API_KEY` for OpenAI.
+- **Ingest failed**. `path` must exist on the server and stay under an ingest root; check job status and logs.
+
+## Next steps
+
+<Cards>
+  <Card title="Configure providers" href="/docs/providers" description="Choose the vector store and embedding providers for the runtime." />
+  <Card title="Retrieval outputs and defaults" href="/docs/expectations" description="See the search and context response shapes." />
+  <Card title="Integrate with agents" href="/docs/agent-integration" description="Bind scope in a gateway or tool endpoint before calling the runtime." />
+</Cards>

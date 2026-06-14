@@ -1,0 +1,108 @@
+---
+title: Public API and stability
+description: Defines the beta public surface, experimental surfaces, and imports that are not stability contracts.
+---
+
+Use this page to decide which imports are intended public contracts during the `0.1.x` beta.
+
+`0.1.x` is beta. Breaking changes are allowed with reason, tests, and doc
+updates.
+
+## Top-level surface
+
+`rag_core.__all__` is intentionally small.
+
+```python
+["index", "Rag", "RAGCore", "RAGCoreConfig", "ContextPack", "SearchResult"]
+```
+
+`index` and `Rag` are the easy path. `RAGCore`, `RAGCoreConfig`, `ContextPack`,
+and `SearchResult` are the first advanced names users naturally meet after that.
+
+## Advanced data shapes
+
+These names remain importable from `rag_core`, but they stay out of
+`rag_core.__all__` so the first surface stays small.
+
+```python
+from rag_core import (
+    ContextSnippet,
+    CorpusManifest,
+    CorpusManifestEntry,
+    DeleteDocumentResult,
+    IngestedDocument,
+    OcrMetadata,
+    OcrRoutingSignal,
+    ParsedDocument,
+    PreparedChunk,
+    PreparedDocument,
+    ProcessingFingerprint,
+    SourceLocator,
+    SourcePreview,
+    SourceReference,
+)
+```
+
+## Public beta surface
+
+| Surface | Notes |
+| --- | --- |
+| `RAGCore` | Parse/prepare bytes or files; ingest bytes, one file, local file/directory paths via `ingest_files`, ZIP archives, URLs, or URL lists; delete documents; search; retrieve context; close |
+| `RAGCoreConfig` + `rag_core.config` dataclasses/constants | CLI and library config shapes, including `RAGCoreConfig.local()` and `RAGCoreConfig.qdrant(...)` factories |
+| Curated `rag_core.search` public surface | Query plans, search profiles, profile/catalog description helpers, filters, result/context data types |
+| `rag_core.contracts` | Tool request parsing and bound retrieval-scope helpers for app-owned HTTP/tool endpoints |
+
+`ContextPack` intentionally has two projections. `to_payload()` / `as_text()`
+are app-facing and may include stable source identity for traces, UI, or
+debugging. `to_prompt_payload()` / `as_prompt_text()` are prompt-safe and use
+rank-local citations for model and tool responses.
+
+## Experimental surfaces
+
+These surfaces may change during the beta.
+
+| Surface | Notes |
+| --- | --- |
+| `rag-core serve` | Thin HTTP wrapper; ingest jobs use server-local `path` |
+| Remote / manifest CLI | Maintainer ops; not the core embed surface |
+| `RAGCore` manifest helpers | Available on the facade, but not the main embed/search contract |
+| `RAGCore` health/runtime introspection | Useful for diagnostics and `serve`, but may change while runtime hardens |
+| `rag_core.ingest_results` | Curated aggregator for local and remote ingest result/outcome dataclasses (`LocalIngestResult`, `RemoteUrlIngestResult`, success/failure rows, plans) |
+| Source owner modules | Local, archive, remote, document-key, and manifest reconciliation primitives live in `rag_core.local_sources`, `rag_core.archive_sources`, `rag_core.remote_sources`, `rag_core.remote_document_keys`, and `rag_core.manifest_reconciliation` |
+| `rag_core.integrations` | LangChain, OpenAI Agents, and MCP helper builders |
+| `rag_core.evals` | `load_cases`, `run_eval`, metrics, run in your repo |
+| `rag_core.events` | Event types, event sinks, JSONL export, trace summaries |
+| TurboPuffer adapter | Optional extra; query-plan support evolves |
+| Provider registry entries/names | New providers and extras may ship without minor bump |
+| Curated `rag_core.search.providers` provider surface | Provider factories, registries, caches, and the default Qdrant vector-store adapter; optional/utility vector stores stay in their owning modules or config/registry selection |
+| `rag_core.search.pipeline` | Typed pipeline stages and experimental retrieval construction helpers |
+| `rag_core.documents.converters` | Converter base/result types and `get_converter` / `convert_file` lookup |
+| `rag_core.documents` extension surface | OCR providers, contextualizer providers, chunking registry, and local parse helper |
+| `rag_core.search.pipeline_runner` | Search pipeline internals, including `SearchRequest` and `SearchExecutionOptions` |
+| Low-level `rag_core.search.provider_protocols` protocols | Provider-author contracts for custom providers; app code should prefer curated imports from `rag_core.search` |
+
+## Not public
+
+Do not import these modules as stability contracts.
+
+- `rag_core.demo`: smoke helpers only.
+- `tests.support`: test package, not shipped in wheel.
+- `rag_core._engine`: private implementation package behind the facade.
+- Undocumented `cli_*` modules: internal command wiring.
+
+## Rerank and hybrid defaults
+
+See [Retrieval outputs and defaults](/docs/expectations). Library defaults use a
+capability-aware query plan: `balanced` hybrid RRF when supported, and a narrower
+dense or sparse plan when not. Rerank remains off until you pass `rerank=True`
+with a configured reranker. `use_lexical_search` is the request flag for the
+configured lexical/exact-match sidecar path, not a query-plan or search-profile
+selector.
+
+## Next steps
+
+<Cards>
+  <Card title="Embed in an application" href="/docs/embed" description="Use the stable top-level facade from application code." />
+  <Card title="Configure providers" href="/docs/providers" description="See provider contracts and optional adapter maturity." />
+  <Card title="Retrieval outputs and defaults" href="/docs/expectations" description="Understand stable output shapes and beta defaults." />
+</Cards>

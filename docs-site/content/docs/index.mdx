@@ -1,0 +1,45 @@
+---
+title: Introduction
+description: rag-core is an embeddable Python retrieval engine for RAG. Index a folder, ask a question, and get back ranked context with citations.
+---
+
+rag-core is an embeddable Python retrieval engine for RAG. You point it at a
+folder, ask a question, and get back prompt-ready context with citations. It runs
+locally with no API key, and it scales up to configured vector stores and
+providers when your application needs them.
+
+rag-core owns ingest, chunking, indexing, search, context packing, traces, and
+eval hooks. Your application owns authentication, tenancy, connectors, chat, and
+generation. The library stays a retrieval core, not a hosted service.
+
+## Install
+
+```bash
+pip install rag-core   # or: uv add rag-core
+```
+
+## Index a folder
+
+```python
+import rag_core
+
+rag = rag_core.index("./docs")
+print(rag.ask("How can invoices be paid?"))
+```
+
+`index()` embeds the folder with a local model (FastEmbed, no API key) and returns
+a handle. `ask()` returns prompt-ready context with citations. `search()` returns
+the ranked hits when you want to build the prompt yourself.
+
+<Callout type="info">
+  The first run downloads the local embedding model. Later runs reuse the cached model.
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card title="Quickstart" href="/docs/quickstart" description="Index a folder and search it from Python or the CLI." />
+  <Card title="Core concepts" href="/docs/concepts" description="Corpus, document, chunk, index, search, context, citation." />
+  <Card title="Embed in an application" href="/docs/embed" description="Use the async core with your own scope and providers." />
+  <Card title="CLI" href="/docs/cli" description="The nine commands and what each one does." />
+</Cards>

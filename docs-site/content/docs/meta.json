@@ -1,0 +1,20 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "---Getting started---",
+    "index",
+    "quickstart",
+    "concepts",
+    "---Guides---",
+    "embed",
+    "providers",
+    "eval-quality",
+    "agent-integration",
+    "self-host",
+    "---Reference---",
+    "cli",
+    "expectations",
+    "stability",
+    "formats"
+  ]
+}

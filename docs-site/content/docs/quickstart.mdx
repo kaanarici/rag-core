@@ -1,0 +1,60 @@
+---
+title: Quickstart
+description: Index a folder and search it from Python or the command line, with no API key.
+---
+
+This guide takes you from install to your first cited answer. It uses a local
+embedding model, so you need no API key and no external services.
+
+## Install
+
+```bash
+pip install rag-core   # or: uv add rag-core
+```
+
+## Index a folder in Python
+
+```python
+import rag_core
+
+rag = rag_core.index("./docs")
+print(rag.ask("How can invoices be paid?"))
+```
+
+`index()` reads the supported files in the folder, embeds them locally, and
+returns a handle. `ask()` returns prompt-ready context with citations.
+
+Close the handle when you are done, or use it as a context manager:
+
+```python
+with rag_core.index("./docs") as rag:
+    hits = rag.search("billing policy", limit=3)
+```
+
+`search()` returns ranked `SearchResult` objects when you want to build the
+prompt yourself.
+
+## Search from the command line
+
+`local-search` indexes a file or folder and searches it in one step:
+
+```bash
+uv run rag-core local-search ./docs "billing policy" --json
+```
+
+It returns the top five hits by default. Add `--events-jsonl traces.jsonl` to
+record a trace of the search.
+
+<Callout type="info">
+  The first run downloads the local embedding model. To run without any download,
+  add `--demo`, which uses deterministic embeddings for wiring checks only.
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card title="Core concepts" href="/docs/concepts" description="The terms behind ingest and retrieval." />
+  <Card title="Embed in an application" href="/docs/embed" description="Use the async core with your own scope and providers." />
+  <Card title="Configure providers" href="/docs/providers" description="Qdrant, pgvector, TurboPuffer, and real embeddings." />
+  <Card title="CLI" href="/docs/cli" description="Every command and flag." />
+</Cards>

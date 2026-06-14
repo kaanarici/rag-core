@@ -1,0 +1,62 @@
+---
+title: Core concepts
+description: The vocabulary rag-core uses for ingest, retrieval, and scope.
+---
+
+rag-core keeps its concepts small and concrete. This page defines each term you
+meet when you ingest documents and run a search.
+
+## Data model
+
+**Corpus.** A named collection of documents that you search over. A corpus is
+scoped by a namespace and a corpus id, so one tenant's data stays separate from
+another's.
+
+**Source.** Where a document comes from: a local file, a member of a ZIP archive,
+or a URL.
+
+**Document.** One ingested item from a source, identified by a stable document
+key so re-ingesting the same file updates it instead of duplicating it.
+
+**Chunk.** A passage of a document. Retrieval ranks and returns chunks, not whole
+documents.
+
+## Retrieval
+
+**Index.** The searchable representation of your chunks inside a vector store.
+Ingesting a document writes its chunks to the index.
+
+**Search.** Ranking chunks for a query and returning the top hits as
+`SearchResult` objects. Use search when you want to build the prompt yourself.
+
+**Context.** The assembled, prompt-safe text plus citations returned by
+`retrieve_context` as a `ContextPack`. Use context when you want text you can pass
+straight to a model.
+
+**Citation.** A rank-local label, such as `[S1]`, that ties a passage in the
+context back to its source. Citations never leak storage identifiers into the
+prompt.
+
+## Operations
+
+**Trace.** A JSONL record of what a search did: the channels it used, fusion, and
+result counts. Traces exist to debug retrieval quality.
+
+**Eval.** A set of cases with expected results that you run to measure retrieval
+quality on your own data.
+
+## Configuration
+
+**Provider.** A pluggable embedder, reranker, or vector store. You select
+providers through configuration, not by editing the core.
+
+**Vector store.** Where embeddings and chunks live and are searched. rag-core
+supports Qdrant, an in-memory store, pgvector, and TurboPuffer.
+
+## Next steps
+
+<Cards>
+  <Card title="Quickstart" href="/docs/quickstart" description="Index a folder and search it." />
+  <Card title="Retrieval outputs and defaults" href="/docs/expectations" description="What hits and context packs contain." />
+  <Card title="Configure providers" href="/docs/providers" description="Vector stores and embedding or rerank providers." />
+</Cards>

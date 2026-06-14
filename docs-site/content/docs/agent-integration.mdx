@@ -1,0 +1,534 @@
+---
+title: Integrate with agents
+description: Bind rag-core retrieval into Python apps, FastAPI endpoints, LangChain, OpenAI Agents, MCP, evals, and serve.
+---
+
+Use these recipes when a coding agent, model tool, or application endpoint needs scoped retrieval from rag-core.
+
+The rule is the same for every integration. Bind `namespace`, `corpus_id` or
+`corpus_ids`, content-type allowlists, and document allowlists from your auth or
+worker scope. Model or tool input may supply a `query` and optional narrowing
+filters inside that bound scope. It must not supply the scope itself.
+
+For no-key semantic retrieval, use either the Python `RAGCoreConfig.local()`
+path below or the CLI `local-search` command. Add `--demo` to `local-search`
+only for deterministic no-download smoke tests.
+
+## Embedded Python
+
+Install:
+
+```bash
+pip install rag-core
+```
+
+Code:
+
+```python
+# app_retrieval.py
+from __future__ import annotations
+
+import asyncio
+import sys
+
+from rag_core import RAGCore, RAGCoreConfig
+
+NAMESPACE = "acme"
+CORPUS_ID = "help"
+
+
+async def main() -> None:
+    if len(sys.argv) < 3:
+        raise SystemExit("usage: app_retrieval <folder> <question>")
+    folder, question = sys.argv[1], " ".join(sys.argv[2:])
+
+    async with RAGCore(RAGCoreConfig.local()) as core:
+        ingested = await core.ingest_files(
+            folder,
+            namespace=NAMESPACE,
+            corpus_id=CORPUS_ID,
+        )
+        if ingested.succeeded_count == 0:
+            raise SystemExit(f"ingest failed for every file in {folder}")
+
+        context = await core.retrieve_context(
+            query=question,
+            namespace=NAMESPACE,
+            corpus_ids=[CORPUS_ID],
+            limit=5,
+        )
+
+    print(context.as_prompt_text())
+    if context.prompt_citation_summary:
+        print(f"\nCitations:\n{context.prompt_citation_summary}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+Scope binding: the constants above are a local demo shape. In an application,
+derive them from the authenticated user, workspace, project, or worker job, not
+from model or chat input.
+
+Validation:
+
+```bash
+python app_retrieval.py ./docs "How can invoices be paid?"
+```
+
+Checkout equivalent:
+
+```bash
+uv run python -m examples.ask_folder examples/demo_corpus "How can invoices be paid?"
+```
+
+For a configured Qdrant/OpenAI stack, keep the same `RAGCore` calls and switch
+only the config factory to
+`RAGCoreConfig.qdrant(url=..., embedding_provider="openai", model="text-embedding-3-small")`.
+
+## FastAPI endpoint
+
+Install:
+
+```bash
+pip install rag-core fastapi uvicorn
+```
+
+Code:
+
+```python
+# app.py
+from __future__ import annotations
+
+from collections.abc import Mapping
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from fastapi import Depends, FastAPI, HTTPException, Request
+
+from rag_core import RAGCore, RAGCoreConfig
+from rag_core.contracts import (
+    normalize_static_content_types,
+    normalize_static_retrieval_scope,
+    parse_search_user_documents_request,
+    scope_document_ids,
+    search_user_documents_tool_result,
+    validate_bound_namespace,
+)
+
+
+@dataclass(frozen=True)
+class RetrievalScope:
+    namespace: str
+    corpus_ids: tuple[str, ...]
+    document_ids: tuple[str, ...] | None = None
+    content_types: tuple[str, ...] | None = None
+
+
+APP_SCOPE = RetrievalScope(namespace="acme", corpus_ids=("help",))
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with RAGCore(RAGCoreConfig.local()) as core:
+        docs_dir = Path("docs")
+        if docs_dir.exists():
+            await core.ingest_files(
+                docs_dir,
+                namespace=APP_SCOPE.namespace,
+                corpus_id=APP_SCOPE.corpus_ids[0],
+            )
+        app.state.rag_core = core
+        yield
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+def resolve_scope() -> RetrievalScope:
+    return APP_SCOPE
+
+
+@app.post("/tools/search_user_documents")
+async def search_user_documents(
+    request: Request,
+    scope: RetrievalScope = Depends(resolve_scope),
+) -> dict[str, object]:
+    payload: Any = await request.json()
+    if not isinstance(payload, Mapping):
+        raise HTTPException(status_code=400, detail="expected JSON object")
+
+    try:
+        parsed = parse_search_user_documents_request(payload)
+        namespace = validate_bound_namespace(scope.namespace)
+        corpus_ids, allowed_document_ids = normalize_static_retrieval_scope(
+            corpus_ids=scope.corpus_ids,
+            document_ids=scope.document_ids,
+            limit=parsed.limit,
+        )
+        content_types = normalize_static_content_types(scope.content_types)
+        document_ids = scope_document_ids(
+            requested=parsed.document_ids,
+            configured=allowed_document_ids,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    core: RAGCore = request.app.state.rag_core
+    pack = await core.retrieve_context(
+        query=parsed.query,
+        namespace=namespace,
+        corpus_ids=list(corpus_ids),
+        limit=parsed.limit,
+        content_types=list(content_types) if content_types is not None else None,
+        document_ids=document_ids,
+        rerank=parsed.rerank,
+        use_lexical_search=parsed.use_lexical_search,
+        max_chars=parsed.max_chars,
+        max_tokens=parsed.max_tokens,
+    )
+    return search_user_documents_tool_result(pack)
+```
+
+Scope binding: replace `resolve_scope()` with your authenticated-session lookup.
+Do not accept `namespace` or `corpus_ids` in the model tool request body.
+
+Validation:
+
+```bash
+uvicorn app:app --reload
+curl -s -X POST http://127.0.0.1:8000/tools/search_user_documents \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"How can invoices be paid?","limit":3}' \
+  | python -m json.tool
+```
+
+The helper shape mirrors
+[examples/search_endpoint.py](https://github.com/kaanarici/rag-core/blob/main/examples/search_endpoint.py):
+parse the public tool payload, apply app-bound scope, call
+`RAGCore.retrieve_context`, then return `search_user_documents_tool_result(pack)`.
+
+## LangChain retriever and tool
+
+Install:
+
+```bash
+pip install "rag-core[langchain]"
+```
+
+Code:
+
+```python
+# langchain_retrieval.py
+from __future__ import annotations
+
+import asyncio
+
+from rag_core import RAGCore, RAGCoreConfig
+from rag_core.integrations import (
+    build_langchain_retriever,
+    create_langchain_context_tool,
+    create_langchain_retriever_tool,
+)
+
+NAMESPACE = "acme"
+CORPUS_IDS = ("help",)
+
+
+async def main() -> None:
+    async with RAGCore(RAGCoreConfig.local()) as core:
+        await core.ingest_files("./docs", namespace=NAMESPACE, corpus_id=CORPUS_IDS[0])
+
+        retriever = build_langchain_retriever(
+            core,
+            namespace=NAMESPACE,
+            corpus_ids=CORPUS_IDS,
+            limit=5,
+            rerank=False,
+        )
+        retriever_tool = create_langchain_retriever_tool(
+            retriever,
+            name="knowledge_lookup",
+            description="Search app-owned help documents.",
+        )
+        print(await retriever_tool.ainvoke({"query": "How can customers pay?"}))
+
+        context_tool = create_langchain_context_tool(
+            core,
+            namespace=NAMESPACE,
+            corpus_ids=CORPUS_IDS,
+            name="search_user_documents",
+            description="Search app-owned help documents and return cited context.",
+            limit=5,
+            rerank=False,
+        )
+        print(await context_tool.ainvoke({"query": "How can customers pay?", "limit": 3}))
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+Scope binding: `build_langchain_retriever()` and
+`create_langchain_context_tool()` bind `namespace` and `corpus_ids` when the
+tool is constructed. Use values from your app authorization layer. Pass
+`audit_context` when the adapter should stamp retrieval events with the
+authenticated actor or request id.
+
+Validation:
+
+```bash
+python langchain_retrieval.py
+```
+
+## OpenAI Agents tool
+
+Install:
+
+```bash
+pip install "rag-core[openai-agents]"
+```
+
+Code:
+
+```python
+# openai_agents_retrieval.py
+from __future__ import annotations
+
+import asyncio
+
+from agents import Agent, Runner
+
+from rag_core import RAGCore, RAGCoreConfig
+from rag_core.integrations import build_retrieve_context_tool
+
+NAMESPACE = "acme"
+CORPUS_IDS = ("help",)
+
+
+async def main() -> None:
+    async with RAGCore(RAGCoreConfig.local()) as core:
+        await core.ingest_files("./docs", namespace=NAMESPACE, corpus_id=CORPUS_IDS[0])
+        search_tool = build_retrieve_context_tool(
+            core,
+            namespace=NAMESPACE,
+            corpus_ids=CORPUS_IDS,
+            tool_name="search_user_documents",
+            default_limit=5,
+            return_payload=True,
+        )
+        agent = Agent(
+            name="Docs assistant",
+            instructions="Answer using search_user_documents when app documents are relevant.",
+            tools=[search_tool],
+        )
+        result = await Runner.run(agent, "How can customers pay invoices?")
+        print(result.final_output)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+Scope binding: `build_retrieve_context_tool()` binds `namespace` and
+`corpus_ids` before the model can call the tool. A model-supplied
+`document_ids` value is only a narrowing filter inside that bound scope. Pass
+`audit_context` when the tool should stamp retrieval events with the
+authenticated actor or request id.
+
+Validation:
+
+```bash
+export OPENAI_API_KEY=sk-...
+python openai_agents_retrieval.py
+```
+
+## MCP server
+
+Install:
+
+```bash
+pip install "rag-core[mcp]"
+```
+
+Launch after the target corpus has already been indexed in the configured vector
+store:
+
+```bash
+rag-core mcp \
+  --namespace acme \
+  --corpus-id help \
+  --qdrant-url http://127.0.0.1:6333 \
+  --embedding-provider openai \
+  --embedding-model text-embedding-3-small
+```
+
+Claude Code `mcpServers` shape:
+
+```json
+{
+  "mcpServers": {
+    "rag-core": {
+      "command": "rag-core",
+      "args": [
+        "mcp",
+        "--namespace", "acme",
+        "--corpus-id", "help",
+        "--qdrant-url", "http://127.0.0.1:6333",
+        "--embedding-provider", "openai",
+        "--embedding-model", "text-embedding-3-small"
+      ]
+    }
+  }
+}
+```
+
+Tools:
+
+- `search_user_documents` accepts `query` and optional `limit`. It returns compact hits with text, score, document key, and locator fields.
+- `retrieve_context` accepts `query` and optional `limit`. It returns prompt-safe `context_text`, snippets, and citation summaries.
+
+Scope binding: `rag-core mcp` binds `namespace`, `corpus_ids`, and rerank at
+process launch. The model cannot change corpus scope. Unknown tool arguments
+such as `namespace` or `corpus_ids` are rejected by the MCP tool schema before
+`RAGCore.search` or `RAGCore.retrieve_context` is called.
+
+## Eval harness
+
+Install:
+
+```bash
+pip install rag-core
+```
+
+Code:
+
+```python
+# app_eval.py
+from __future__ import annotations
+
+import asyncio
+import json
+from pathlib import Path
+
+from rag_core import RAGCore, RAGCoreConfig
+from rag_core.evals import (
+    eval_report,
+    load_cases,
+    redact_eval_report,
+    run_eval,
+)
+from rag_core.search import search_profile
+
+NAMESPACE = "acme"
+CORPUS_ID = "help"
+CORPUS_DIR = Path("docs")
+CASES_PATH = Path("eval_cases.jsonl")
+
+
+async def run() -> dict[str, object]:
+    async with RAGCore(RAGCoreConfig.local()) as core:
+        await core.ingest_files(CORPUS_DIR, namespace=NAMESPACE, corpus_id=CORPUS_ID)
+        results = await run_eval(
+            core,
+            load_cases(CASES_PATH),
+            rerank=False,
+            query_plan=search_profile("balanced", limit=10),
+        )
+
+    report = eval_report(
+        results,
+        run={
+            "mode": "local",
+            "vector_store": "embedded_qdrant",
+            "embedding_model": "BAAI/bge-small-en-v1.5",
+        },
+    )
+    return report
+
+
+if __name__ == "__main__":
+    report = asyncio.run(run())
+    print(json.dumps(redact_eval_report(report), indent=2, sort_keys=True))
+    failure_count = report.get("failure_count")
+    raise SystemExit(1 if isinstance(failure_count, int) and failure_count > 0 else 0)
+```
+
+Scope binding: cases should use the same `namespace` and `corpus_ids` your
+application uses for the indexed corpus. Do not let the model choose eval scope.
+
+Validation:
+
+```bash
+cat > eval_cases.jsonl <<'JSONL'
+{"case_id":"billing","query":"How can invoices be paid?","namespace":"acme","corpus_ids":["help"],"expected_context_contains":["invoice"],"expected_citation_count_min":1}
+JSONL
+python app_eval.py
+```
+
+Use [Evaluate retrieval quality](/docs/eval-quality) and
+[examples/configured_eval.py](https://github.com/kaanarici/rag-core/blob/main/examples/configured_eval.py)
+when you need the same path with real local or OpenAI embeddings.
+
+## Optional serve sidecar
+
+Install:
+
+```bash
+pip install "rag-core[runtime]"
+```
+
+Run:
+
+```bash
+rag-core serve \
+  --host 127.0.0.1 --port 8787 \
+  --ingest-root "$PWD" \
+  --job-db-path .rag-core/runtime/jobs.sqlite3 \
+  --qdrant-location :memory: \
+  --embedding-provider demo \
+  --embedding-model demo-dense-v1 \
+  --embedding-dimensions 64
+```
+
+Scope binding: `serve` is a thin sidecar. Put auth in your gateway, then map the
+principal to `namespace`, `corpus_id`, and `corpus_ids` before proxying. The
+request JSON below is a local smoke shape, not a public unauthenticated
+contract.
+
+Validation:
+
+```bash
+export BASE_URL=http://127.0.0.1:8787
+
+JOB=$(curl -s -X POST "$BASE_URL/v1/ingest" \
+  -H 'Content-Type: application/json' \
+  -d "{\"path\":\"$PWD/examples/demo_corpus/billing.md\",\"namespace\":\"acme\",\"corpus_id\":\"help\"}" \
+  | python -c 'import json,sys; print(json.load(sys.stdin)["job_id"])')
+# paths must be absolute and under a configured --ingest-root
+
+until curl -s "$BASE_URL/v1/ingest/$JOB" | grep -q '"status": "completed"'; do
+  sleep 0.2
+done
+
+curl -s -X POST "$BASE_URL/v1/search" \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"How can invoices be paid?","namespace":"acme","corpus_ids":["help"],"limit":3}' \
+  | python -m json.tool
+
+curl -s -X POST "$BASE_URL/v1/search/context" \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"How can invoices be paid?","namespace":"acme","corpus_ids":["help"],"limit":3,"max_chars":1200}' \
+  | python -m json.tool
+```
+
+## Next steps
+
+<Cards>
+  <Card title="Embed in an application" href="/docs/embed" description="Use the core facade before adding model-tool adapters." />
+  <Card title="Self-host the HTTP API" href="/docs/self-host" description="Put the optional runtime behind your gateway." />
+  <Card title="Evaluate retrieval quality" href="/docs/eval-quality" description="Test retrieval and context quality with app-owned cases." />
+</Cards>

@@ -1,0 +1,132 @@
+---
+title: CLI
+description: The rag-core command line. Nine commands for local search, ingest, search, eval, and serving.
+---
+
+The `rag-core` command line has nine commands. `local-search` needs no setup.
+The configured commands operate on a vector store that you point them at.
+
+Run `rag-core <command> --help` for the full flag list of any command.
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `local-search` | Index a file or folder and search it in one step, with no API key. |
+| `ingest` | Ingest files, a ZIP archive, a URL, or a URL list into a configured store. |
+| `search` | Search a configured store, optionally returning a context pack. |
+| `manifest` | Preview a manifest entry, or compact a corpus manifest. |
+| `local-eval` | Index a folder and run JSONL retrieval eval cases. |
+| `doctor` | Inspect the resolved provider and vector store configuration. |
+| `demo` | Print deterministic demo output with no API key or external store. |
+| `serve` | Run the optional HTTP runtime. |
+| `mcp` | Run a stdio MCP server bound to one scope. |
+
+## local-search
+
+Index a path and search it locally. This is the fastest way to see results.
+
+```bash
+rag-core local-search ./docs "billing policy" --json
+```
+
+| Flag | Description |
+| --- | --- |
+| `--limit` | Number of hits to return. Default 5. |
+| `--namespace`, `--corpus-id` | Scope for the indexed documents. |
+| `--max-files` | Cap on files indexed from a folder. |
+| `--demo` | Use deterministic embeddings for a no-download smoke. Not semantic retrieval. |
+| `--events-jsonl <path>` | Append a JSONL trace of the search. |
+| `--json` | Emit JSON. |
+
+## ingest
+
+Ingest into a configured store. The source can be a file, a folder, a `.zip`
+archive, or an `https://` URL. Pass `--url-list <file.txt>` to ingest a text file
+of URLs.
+
+```bash
+rag-core ingest ./docs --namespace acme --corpus-id help \
+  --qdrant-url http://127.0.0.1:6333 \
+  --embedding-provider openai --embedding-model text-embedding-3-small
+```
+
+`--namespace` and `--corpus-id` are required. Use `--force-reindex` to re-embed
+unchanged documents, `--metadata KEY=VALUE` to attach metadata, and `--plan-json`
+to preview the ingest plan without writing. The store and provider flags below
+apply.
+
+## search
+
+Search a configured store. Add `--context` to return a prompt-safe context pack
+instead of raw hits.
+
+```bash
+rag-core search "billing policy" --namespace acme --corpus-id help --context --json
+```
+
+| Flag | Description |
+| --- | --- |
+| `--limit` | Number of hits. |
+| `--rerank` | Apply the configured reranker. Off by default. |
+| `--search-profile` | One of `balanced`, `fast`, `lexical`, `coverage`, `diverse`. |
+| `--context` | Return a context pack with citations. |
+| `--max-context-chars`, `--max-context-tokens` | Bound the context size. |
+| `--metadata-filter KEY=VALUE` | Filter by document metadata. |
+
+## manifest
+
+Preview the manifest entry for a file, or compact a corpus manifest to the latest
+entry per document.
+
+```bash
+rag-core manifest ./docs/billing.md
+rag-core manifest --compact manifest.jsonl
+```
+
+## local-eval
+
+Index a folder and run JSONL eval cases, reporting retrieval and context metrics.
+
+```bash
+rag-core local-eval examples/demo_corpus examples/eval_cases.jsonl --json
+```
+
+## doctor
+
+Report the resolved RAGCore and provider shape. Add `--check-store` to verify the
+vector store, and `--fix` to apply safe corrections.
+
+```bash
+rag-core doctor --qdrant-url http://127.0.0.1:6333 \
+  --embedding-provider openai --embedding-model text-embedding-3-small --json
+```
+
+## serve and mcp
+
+`serve` runs the optional HTTP runtime, and `mcp` runs a stdio MCP server bound to
+one scope. Both are thin layers over `RAGCore`. See
+[Self-host the HTTP API](/docs/self-host) and
+[Integrate with agents](/docs/agent-integration).
+
+## Store and provider flags
+
+The configured commands (`ingest`, `search`, `doctor`, `serve`, `mcp`) share the
+same flags for selecting a store and providers:
+
+| Flag | Description |
+| --- | --- |
+| `--vector-store` | `qdrant` (default), `pgvector`, or `turbopuffer`. |
+| `--qdrant-url` or `--qdrant-location` | Qdrant endpoint or local path. Pass exactly one. |
+| `--embedding-provider`, `--embedding-model` | The embedding provider and model. |
+| `--embedding-dimensions` | Required only for custom or unknown models. |
+| `--reranker-provider`, `--reranker-model` | The reranker, when you use `--rerank`. |
+| `--pgvector-dsn`, `--pgvector-table` | pgvector connection and table. |
+| `--turbopuffer-namespace`, `--turbopuffer-region` | TurboPuffer location. |
+
+## Next steps
+
+<Cards>
+  <Card title="Configure providers" href="/docs/providers" description="Vector stores and embedding or rerank providers." />
+  <Card title="Retrieval outputs and defaults" href="/docs/expectations" description="What hits and context packs contain." />
+</Cards>

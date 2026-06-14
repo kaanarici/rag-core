@@ -1,0 +1,37 @@
+# Minimal image for ``rag-core serve`` (Journey C compose).
+FROM python:3.12-slim-bookworm
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml README.md LICENSE MANIFEST.in ./
+COPY src ./src
+COPY examples/demo_corpus ./examples/demo_corpus
+
+RUN pip install --no-cache-dir '.[runtime]'
+
+EXPOSE 8787
+
+# Override via compose command / environment (see https://kaanarici.github.io/rag-core/docs/self-host).
+CMD [
+  "rag-core",
+  "serve",
+  "--host",
+  "0.0.0.0",
+  "--bind-non-loopback",
+  "--port",
+  "8787",
+  "--ingest-root",
+  "/app/examples/demo_corpus",
+  "--qdrant-url",
+  "http://qdrant:6333",
+  "--embedding-provider",
+  "demo",
+  "--embedding-model",
+  "demo-dense-v1",
+  "--embedding-dimensions",
+  "64",
+]
