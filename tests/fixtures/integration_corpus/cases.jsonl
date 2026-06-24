@@ -1,0 +1,10 @@
+{"query": "How can invoices be paid?", "expected_document_ids": ["billing"]}
+{"query": "SAML single sign-on setup", "expected_document_ids": ["auth", "enterprise"]}
+{"query": "verify webhook hmac signature", "expected_document_ids": ["webhooks"]}
+{"query": "cursor pagination next page", "expected_document_ids": ["pagination"]}
+{"query": "AES encryption at rest", "expected_document_ids": ["encryption"]}
+{"query": "customs forms international shipping", "expected_document_ids": ["shipping"]}
+{"query": "audit export enterprise plan", "expected_document_ids": ["enterprise"]}
+{"query": "event log retention policy", "expected_document_ids": ["retention"]}
+{"query": "HTTP 429 rate limit retry", "expected_document_ids": ["limits"]}
+{"query": "NDJSON bulk export invoices", "expected_document_ids": ["ndjson", "billing"]}

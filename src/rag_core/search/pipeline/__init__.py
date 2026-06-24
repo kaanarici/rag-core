@@ -1,0 +1,75 @@
+"""Linear retrieval pipeline.
+
+The pipeline is the extension point for advanced and experimental retrieval
+techniques (HyDE, multi-query, MMR, reranker cascades, parent-child expansion,
+etc.). Stages are typed protocols; the runner is a frozen dataclass with five
+fields.
+"""
+
+from __future__ import annotations
+
+from rag_core.search.pipeline.merge_strategies import (
+    PreferMaxScoreMerge,
+    PreferSidecarMerge,
+    ScoreBlendMerge,
+    SidecarMergeStrategy,
+)
+from rag_core.search.pipeline.runner import RetrievalPipeline
+from rag_core.search.pipeline.stages.hybrid_retrieve import HybridRetrieve
+from rag_core.search.pipeline.stages.identity import (
+    IdentityFuse,
+    IdentityPostprocess,
+    IdentityQueryTransform,
+    PassThroughRerank,
+)
+from rag_core.search.pipeline.stages.query_expansion import (
+    AnthropicQueryVariantGenerator,
+    HydeTransform,
+    MultiQueryTransform,
+    QueryVariantGenerator,
+)
+from rag_core.search.pipeline.stages.neighbor_expand import NeighborExpandPostprocess
+from rag_core.search.pipeline.stages.reranker_stage import ProviderRerankStage
+from rag_core.search.pipeline.stages.rrf_fuse import RrfFuse
+from rag_core.search.pipeline.stages.sidecar_postprocess import (
+    SidecarPostprocess,
+    SidecarPrefetchTransform,
+)
+from rag_core.search.pipeline.types import (
+    FuseStage,
+    PipelineContext,
+    PipelineQuery,
+    Postprocess,
+    QueryTransform,
+    Rerank,
+    Retrieve,
+)
+
+__all__ = (
+    "FuseStage",
+    "AnthropicQueryVariantGenerator",
+    "HydeTransform",
+    "HybridRetrieve",
+    "IdentityFuse",
+    "IdentityPostprocess",
+    "IdentityQueryTransform",
+    "MultiQueryTransform",
+    "NeighborExpandPostprocess",
+    "PassThroughRerank",
+    "PipelineContext",
+    "PipelineQuery",
+    "Postprocess",
+    "PreferMaxScoreMerge",
+    "PreferSidecarMerge",
+    "ProviderRerankStage",
+    "QueryTransform",
+    "QueryVariantGenerator",
+    "Rerank",
+    "Retrieve",
+    "RetrievalPipeline",
+    "RrfFuse",
+    "ScoreBlendMerge",
+    "SidecarMergeStrategy",
+    "SidecarPostprocess",
+    "SidecarPrefetchTransform",
+)

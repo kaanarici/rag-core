@@ -1,0 +1,691 @@
+openapi: 3.0.3
+info:
+  title: rag-core serve
+  description: |
+    Thin HTTP runtime over the same ``Engine`` library you embed in your app.
+    v1 exposes health, runtime description, async ingest jobs, search, and
+    context retrieval only (no eval HTTP).
+
+    Hit shapes follow [expectations.md](../expectations.md).
+  version: 0.1.0
+servers:
+  - url: http://127.0.0.1:8787
+    description: "Local ``rag-core serve`` default"
+tags:
+  - name: health
+  - name: runtime
+  - name: ingest
+  - name: retrieval
+  - name: documents
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness
+      description: "Process is up. Does not initialize ``Engine`` or touch dependencies."
+      operationId: getHealth
+      responses:
+        "200":
+          description: Alive
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LivenessResponse"
+  /health/ready:
+    get:
+      tags: [health]
+      summary: Readiness
+      description: |
+        Initializes ``Engine`` if needed and reports vector-store health.
+        Returns 503 when dependencies are not ready.
+      operationId: getHealthReady
+      responses:
+        "200":
+          description: Ready
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+        "503":
+          description: Not ready
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+  /v1/runtime:
+    get:
+      tags: [runtime]
+      summary: Runtime description
+      operationId: getRuntime
+      responses:
+        "200":
+          description: "``describe_runtime()`` payload"
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /v1/ingest:
+    post:
+      tags: [ingest]
+      summary: Start ingest job
+      operationId: createIngestJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestRequest"
+      responses:
+        "202":
+          description: Job accepted
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestJobCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "503":
+          $ref: "#/components/responses/Busy"
+  /v1/ingest/{job_id}:
+    get:
+      tags: [ingest]
+      summary: Ingest job status
+      operationId: getIngestJob
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job record
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestJobStatus"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/ingest/{job_id}/events:
+    get:
+      tags: [ingest]
+      summary: Stream ingest job status changes
+      description: |
+        Server-sent event stream for the current job status and later status
+        changes. Each ``event: status`` frame carries a JSON
+        ``IngestJobStatus`` payload in ``data``. Heartbeat comments may be
+        sent while a job remains non-terminal. The stream closes after the
+        terminal ``completed`` or ``failed`` status frame.
+      operationId: streamIngestJobEvents
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Status-change SSE stream; closes after terminal status
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: "Server-sent event frames; each ``data:`` line is an ``IngestJobStatus`` JSON object."
+              example: |
+                event: status
+                data: {"job_id":"abc123","status":"completed","path":"/data/doc.md","namespace":"acme","collection":"help"}
+
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/search:
+    post:
+      tags: [retrieval]
+      summary: Search (scored chunk hits)
+      operationId: search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchEndpointRequest"
+      responses:
+        "200":
+          description: Hit list
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SearchHit"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+  /v1/search/context:
+    post:
+      tags: [retrieval]
+      summary: Context pack with prompt-safe text
+      operationId: retrieveContext
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContextRetrievalRequest"
+      responses:
+        "200":
+          description: "App-facing context pack plus prompt-safe ``context_text``"
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContextResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+  /v1/documents/{document_id}:
+    delete:
+      tags: [documents]
+      summary: Right-to-forget delete (vector store, sidecar, caches, manifest)
+      description: |
+        Purges a single document across every wired surface: vector store
+        first, then lexical sidecar, then scoped embedding cache, then scoped
+        chunk-context cache, then manifest. A delete-recovery journal entry
+        records each transition so a crash between stages is replayable on
+        next ingest of the same ``(namespace, collection, document_id)``
+        triple. ``collection`` is required; ``namespace`` defaults to the
+        server's default namespace unless the runtime is bound to one.
+      operationId: deleteDocument
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            pattern: "\\S"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteDocumentRequest"
+      responses:
+        "200":
+          description: Honest per-surface delete result
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteDocumentResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+components:
+  schemas:
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - invalid_json
+                - invalid_request
+                - not_found
+                - busy
+                - payload_too_large
+                - http_error
+                - internal_error
+            message:
+              type: string
+            details:
+              type: object
+              properties:
+                max_bytes:
+                  type: integer
+                  minimum: 1
+              additionalProperties: true
+    LivenessResponse:
+      type: object
+      required: [ok, status, live]
+      properties:
+        ok:
+          type: boolean
+        status:
+          type: string
+          enum: [ok]
+        live:
+          type: boolean
+    ReadinessResponse:
+      type: object
+      required: [ok, status, ready, live, checks]
+      properties:
+        ok:
+          type: boolean
+        status:
+          type: string
+          enum: [ok, degraded]
+        ready:
+          type: boolean
+        live:
+          type: boolean
+        checks:
+          type: object
+          additionalProperties: true
+        degraded:
+          type: boolean
+          description: "Present and true when the configured event sink has recorded failures; readiness stays true"
+        event_sink:
+          type: object
+          properties:
+            failure_count:
+              type: integer
+          additionalProperties: true
+    IngestRequest:
+      type: object
+      additionalProperties: false
+      required: [path, collection]
+      properties:
+        path:
+          type: string
+          minLength: 1
+          pattern: "\\S"
+          description: "Absolute path to an existing regular file under a configured server ingest root. Relative paths, ~, and environment prefixes are rejected; the gateway expands user paths before forwarding."
+        namespace:
+          type: string
+          minLength: 1
+          pattern: "\\S"
+          description: Optional tenant partition; defaults to the runtime namespace.
+        collection:
+          type: string
+          minLength: 1
+          pattern: "\\S"
+    IngestJobCreated:
+      type: object
+      required: [job_id, status]
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+    IngestJobStatus:
+      type: object
+      required: [job_id, status, path, namespace, collection]
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+        path:
+          type: string
+        namespace:
+          type: string
+        collection:
+          type: string
+        result:
+          type: object
+          additionalProperties: true
+        error:
+          type: object
+          required: [error_type, error_code]
+          description: "Present when ``status`` is ``failed``; sanitized public error shape"
+          properties:
+            error_type:
+              type: string
+            error_code:
+              type: string
+          additionalProperties: false
+    SearchEndpointRequest:
+      type: object
+      additionalProperties: false
+      required: [query]
+      oneOf:
+        - required: [collection]
+        - required: [collections]
+      properties:
+        query:
+          type: string
+          minLength: 1
+          pattern: "\\S"
+        namespace:
+          type: string
+          minLength: 1
+          pattern: "\\S"
+          description: Optional tenant partition; defaults to the runtime namespace.
+        collection:
+          type: string
+          minLength: 1
+          pattern: "\\S"
+        collections:
+          type: array
+          description: Advanced multi-collection retrieval scope.
+          minItems: 1
+          items:
+            type: string
+            minLength: 1
+            pattern: "\\S"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 10
+        content_types:
+          type: array
+          description: Optional content types inside the selected collection scope
+          items:
+            type: string
+            minLength: 1
+            pattern: "\\S"
+        document_ids:
+          type: array
+          description: Optional document IDs inside the selected collection scope
+          items:
+            type: string
+            minLength: 1
+            pattern: "\\S"
+        rerank:
+          type: boolean
+          default: false
+        use_lexical_search:
+          type: boolean
+          default: true
+          description: Controls configured lexical/exact-match expansion only; query-plan defaults remain provider capability-aware.
+    ContextRetrievalRequest:
+      type: object
+      additionalProperties: false
+      required: [query]
+      oneOf:
+        - required: [collection]
+        - required: [collections]
+      properties:
+        query:
+          type: string
+          minLength: 1
+          pattern: "\\S"
+        namespace:
+          type: string
+          minLength: 1
+          pattern: "\\S"
+          description: Optional tenant partition; defaults to the runtime namespace.
+        collection:
+          type: string
+          minLength: 1
+          pattern: "\\S"
+        collections:
+          type: array
+          description: Advanced multi-collection retrieval scope.
+          minItems: 1
+          items:
+            type: string
+            minLength: 1
+            pattern: "\\S"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 8
+        content_types:
+          type: array
+          description: Optional content types inside the selected collection scope
+          items:
+            type: string
+            minLength: 1
+            pattern: "\\S"
+        document_ids:
+          type: array
+          description: Optional document IDs inside the selected collection scope
+          items:
+            type: string
+            minLength: 1
+            pattern: "\\S"
+        rerank:
+          type: boolean
+          default: false
+        use_lexical_search:
+          type: boolean
+          default: true
+          description: Controls configured lexical/exact-match expansion only; query-plan defaults remain provider capability-aware.
+        context_order:
+          type: string
+          enum: [rank, extrema]
+          default: rank
+          description: Prompt context render order; structured context pack fields stay rank-ordered.
+        max_chars:
+          type: integer
+          minimum: 256
+          maximum: 12000
+          description: Optional character budget for prompt-safe context text
+        max_tokens:
+          type: integer
+          minimum: 64
+          maximum: 4000
+          description: Optional token budget for prompt-safe context text
+    SearchHit:
+      type: object
+      required: [id, text, score, content_type, source_type]
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        score:
+          type: number
+        content_type:
+          type: string
+        source_type:
+          type: string
+        document_id:
+          type: string
+        collection:
+          type: string
+        document_key:
+          type: string
+        title:
+          type: string
+        chunk_index:
+          type: integer
+        metadata:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+    ContextResponse:
+      type: object
+      required:
+        - query
+        - context_text
+        - snippets
+        - citations
+        - source_previews
+        - citation_summary
+        - dropped_count
+        - max_snippets
+        - max_chars
+        - max_tokens
+        - token_estimate
+        - char_count
+        - truncated
+      properties:
+        query:
+          type: string
+        context_text:
+          type: string
+          description: "Prompt-safe text from ``Context.as_prompt_text()``"
+        snippets:
+          type: array
+          description: App-facing context snippets from ``Context.to_payload()``
+          items:
+            type: object
+            additionalProperties: true
+        citations:
+          type: array
+          description: App-facing source references from ``Context.to_payload()``
+          items:
+            type: object
+            additionalProperties: true
+        source_previews:
+          type: array
+          description: App-facing source previews from ``Context.to_payload()``
+          items:
+            type: object
+            additionalProperties: true
+        citation_summary:
+          type: string
+          description: App-facing citation summary from ``Context.to_payload()``
+        dropped_count:
+          type: integer
+          minimum: 0
+        max_snippets:
+          type: integer
+          minimum: 1
+        max_chars:
+          type: integer
+          nullable: true
+        max_tokens:
+          type: integer
+          nullable: true
+        token_estimate:
+          type: integer
+          minimum: 0
+        char_count:
+          type: integer
+          minimum: 0
+          description: App-facing rendered context length from ``Context.to_payload()``, not the length of ``context_text``
+        truncated:
+          type: boolean
+      additionalProperties: true
+    DeleteDocumentRequest:
+      type: object
+      additionalProperties: false
+      required: [collection]
+      properties:
+        namespace:
+          type: string
+          minLength: 1
+          pattern: "\\S"
+          description: Optional tenant partition; defaults to the runtime namespace.
+        collection:
+          type: string
+          minLength: 1
+          pattern: "\\S"
+    DeleteDocumentResponse:
+      type: object
+      required:
+        - document_id
+        - namespace
+        - collection
+        - index_deleted
+        - vector_store_acked
+      properties:
+        document_id:
+          type: string
+        namespace:
+          type: string
+        collection:
+          type: string
+        index_deleted:
+          type: boolean
+          description: Vector-store ack (mirrors ``vector_store_acked``).
+        vector_store_acked:
+          type: boolean
+        sidecar_deleted:
+          type: boolean
+          nullable: true
+        lexical_sidecar_purged:
+          type: boolean
+          nullable: true
+        embedding_cache_purged:
+          type: boolean
+          nullable: true
+          description: "``True`` when the scoped purge ran; ``null`` when no cache is wired or the cache cannot scope-delete; ``False`` when a recovery-journal entry now tracks a failed purge."
+        chunk_context_cache_purged:
+          type: boolean
+          nullable: true
+        manifest_entry_deleted:
+          type: boolean
+          nullable: true
+        manifest_removed:
+          type: boolean
+          nullable: true
+      additionalProperties: true
+  headers:
+    XRequestId:
+      description: "Correlation id; echoed from the request's X-Request-Id or minted as a UUIDv4 hex when absent"
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: Invalid request
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    NotFound:
+      description: Resource not found
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    PayloadTooLarge:
+      description: "Request body exceeds the configured cap (``error.code`` is ``payload_too_large``; ``error.details.max_bytes`` carries the cap)"
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    Busy:
+      description: "Ingest is at the per-process concurrency cap (``error.code`` is ``busy``); retry with backoff"
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"

@@ -1,0 +1,259 @@
+---
+title: Search and rank
+description: Run searches, read SearchResult fields, set default limits, select profiles and query plans, filter, and rerank.
+---
+
+`Engine.search(...)` returns ranked `SearchResult` hits from the bound
+collection. Use it when your application wants the raw hits. Use
+[`Engine.context(...)`](/docs/context) when the model needs trimmed text,
+citations, and token estimates.
+
+## Run a search
+
+`search` is keyword-only and async. Open an `Engine`, add files to a
+collection, then query that collection.
+
+```python
+import asyncio
+from rag_core import Engine, Config
+
+async def main() -> None:
+    async with Engine(Config.local()) as core:
+        await core.add("./docs", collection="help")
+        hits = await core.search(
+            query="billing policy",
+            collection="help",
+            limit=5,
+        )
+        for hit in hits:
+            print(hit.score, hit.title, hit.document_key)
+            print(hit.text)
+
+asyncio.run(main())
+```
+
+`Config.local()` uses embedded Qdrant and a local FastEmbed model for real
+semantic retrieval. See [providers](/docs/providers) for hosted Qdrant and
+embedding configuration.
+
+The signature is:
+
+```python
+async def search(
+    *,
+    query: str,
+    collection: str | None = None,
+    collections: Sequence[str] | None = None,
+    namespace: str | None = None,
+    limit: int = 10,
+    content_types: list[str] | None = None,
+    document_ids: list[str] | None = None,
+    rerank: bool = False,
+    use_lexical_search: bool = True,
+    query_plan: QueryPlan | None = None,
+    metadata_filter: Filter | None = None,
+    rerank_budget: RerankBudget | None = None,
+) -> list[SearchResult]: ...
+```
+
+Pass `collection` or `collections`, not both. `namespace=None` resolves to the
+empty namespace `""`. Collection and namespace are scope: bind them from your
+application's auth, never from model input. See
+[multi-tenancy](/docs/multi-tenancy).
+
+## SearchResult fields
+
+`SearchResult` is a frozen dataclass. `score` is the retrieval or fusion score
+from the vector store. Reranker scores, when applied, live under
+`metadata["rerank"]` so retrieval and rerank signals stay comparable.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | `str` | Chunk point id |
+| `text` | `str` | Clean retrieved chunk body for display or prompt context |
+| `score` | `float` | Retrieval or fusion score from the vector store |
+| `content_type` | `str` | `document`, `code`, etc. |
+| `source_type` | `str` | Source category for the hit |
+| `document_id` | `str \| None` | Stable document identity |
+| `collection` | `str \| None` | Collection the hit belongs to |
+| `document_key` | `str \| None` | App-facing locator (path, URL key) |
+| `content_sha256` | `str \| None` | Content hash |
+| `title` | `str \| None` | Document title |
+| `section_id` | `str \| None` | Section identity |
+| `section_title` | `str \| None` | Section heading |
+| `section_path` | `str \| None` | Section path for citations |
+| `document_path` | `str \| None` | Document path |
+| `chunk_index` | `int \| None` | Chunk position in the document |
+| `chunk_word_count` | `int \| None` | Word count of the chunk |
+| `chunk_token_estimate` | `int \| None` | Estimated chunk tokens |
+| `start_char` | `int \| None` | Chunk start offset |
+| `end_char` | `int \| None` | Chunk end offset |
+| `embedding_model` | `str \| None` | Model that embedded the chunk |
+| `chunker_strategy` | `str \| None` | Chunker that produced the chunk |
+| `result_type` | `str \| None` | Result kind (`text` by default) |
+| `figure_id` | `str \| None` | Figure identity when present |
+| `figure_thumbnail_url` | `str \| None` | Figure thumbnail when present |
+| `namespace` | `str \| None` | Namespace the hit belongs to |
+| `metadata` | `dict[str, object]` | Filterable payload fields; reranker scores under `metadata["rerank"]` |
+
+## Default limits
+
+Defaults differ by surface:
+
+| Surface | Default limit |
+| --- | --- |
+| `Engine.search`, CLI `search`, HTTP `POST /v1/search` | 10 hits |
+| CLI `search` with a local path | 5 hits |
+| Context entrypoints (`Engine.context`, CLI `context`) | 8 snippets |
+
+`DEFAULT_SEARCH_LIMIT` is 10 and `DEFAULT_CONTEXT_LIMIT` is 8.
+
+## CLI
+
+`rag-core search` queries the configured vector store. Supply a local path to
+index it first, then search it.
+
+```bash
+rag-core search "billing policy" ./docs --json
+```
+
+```json
+[
+  {
+    "id": "5f1c9d2e-7a3b-4c6e-9f01-2a3b4c5d6e7f",
+    "text": "Invoices are billed monthly. Outstanding balances are due within 30 days of the invoice date.",
+    "score": 0.8123,
+    "content_type": "document",
+    "source_type": "local",
+    "document_id": "doc_9a1f",
+    "collection": "local",
+    "document_key": "docs/billing.md",
+    "title": "Billing policy",
+    "section_title": "Payment terms",
+    "section_path": "Billing policy > Payment terms",
+    "chunk_index": 2,
+    "namespace": "local"
+  },
+  {
+    "id": "b2d4e6f8-1357-4a9c-8e0d-1f2a3b4c5d6e",
+    "text": "Late payments accrue a 1.5% monthly fee until the balance is settled.",
+    "score": 0.7415,
+    "content_type": "document",
+    "source_type": "local",
+    "document_id": "doc_9a1f",
+    "collection": "local",
+    "document_key": "docs/billing.md",
+    "title": "Billing policy",
+    "section_title": "Late payments",
+    "section_path": "Billing policy > Late payments",
+    "chunk_index": 5,
+    "namespace": "local"
+  }
+]
+```
+
+`None` fields are omitted from JSON output. Full flag set:
+
+```bash
+rag-core search "<text>" [path] \
+  [--collection c | --collections a,b] [--namespace n] [--limit N] \
+  [--rerank] \
+  [--search-profile balanced|fast|lexical|coverage|diverse] \
+  [--plan hybrid_rrf|dense_only|sparse_only|hybrid_dbsf|hybrid_with_mmr] \
+  [--content-type T] [--document-id ID] [--metadata-filter KEY=VALUE] \
+  [--demo] [--json]
+```
+
+`--demo` uses deterministic embeddings for deterministic offline output; it does
+not produce semantic retrieval. See the [CLI reference](/docs/cli). The Python facade
+is documented in the [Python API](/docs/api-python).
+
+## Search profiles and query plans
+
+Default retrieval is capability-aware. When the active vector store supports
+dense plus sparse hybrid RRF, the engine uses the `balanced` profile. Otherwise
+it falls back to a narrower dense-only or sparse-only plan. The engine embeds
+only the query channels the selected plan and store can use.
+
+Search profiles are named query-plan presets:
+
+| Profile | Plan | Retrieval |
+| --- | --- | --- |
+| `balanced` | `hybrid_rrf` | Dense plus sparse, reciprocal rank fusion (default when hybrid is supported) |
+| `fast` | `dense_only` | Dense vectors only |
+| `lexical` | `sparse_only` | Sparse BM25 only |
+| `coverage` | `hybrid_dbsf` | Dense plus sparse, distribution-based score fusion |
+| `diverse` | `hybrid_with_mmr` | Hybrid RRF followed by MMR diversity reranking |
+
+In Python, build a profile or preset plan and pass it as `query_plan`:
+
+```python
+from rag_core.search.planning import search_profile
+
+plan = search_profile("coverage", limit=5)
+hits = await core.search(query="billing policy", collection="help", query_plan=plan)
+```
+
+On the CLI, `--search-profile` and `--plan` select the same presets and are
+mutually exclusive. An explicit `query_plan` wins over any profile or default.
+
+<Callout type="warn">
+  The `lexical` profile means sparse BM25 retrieval. It is a different thing
+  from the `use_lexical_search` flag, which gates a separate exact-match
+  sidecar.
+</Callout>
+
+## Filters
+
+`content_types`, `document_ids`, and `metadata_filter` narrow results inside the
+bound collection and namespace. `metadata_filter` is a `Filter` AST node, such
+as a `Term` exact match or an `And` over several terms.
+
+```python
+from rag_core.search import Term
+
+hits = await core.search(
+    query="billing policy",
+    collection="help",
+    content_types=["document"],
+    metadata_filter=Term(field="language", value="en"),
+)
+```
+
+`use_lexical_search=True` (the default) gates the configured lexical or
+exact-match sidecar. It is not a query-plan or profile selector.
+
+## Reranking
+
+Reranking is off unless `rerank=True` and a reranker provider is configured. If
+you request rerank without a provider, the search still completes: it records
+`requested_rerank=true`, `attempted_rerank=false`, and emits no rerank stage
+event.
+
+Reranking is fail-open by default. `RerankBudget(fallback_on_error=True)`
+returns the original retrieval ordering when the reranker errors or times out,
+and records the fallback reason. Pass `fallback_on_error=False` to make a
+rerank failure fail the request.
+
+```python
+from rag_core.search import RerankBudget
+
+hits = await core.search(
+    query="billing policy",
+    collection="help",
+    rerank=True,
+    rerank_budget=RerankBudget(timeout_seconds=2.0, fallback_on_error=False),
+)
+```
+
+<Callout type="info">
+  See [providers](/docs/providers) for configuring a reranker. Reranker scores
+  appear under `metadata["rerank"]` on each hit when reranking runs.
+</Callout>
+
+## search or context
+
+Use `search` when your application ranks, renders, or post-processes raw hits
+itself. Use [`context`](/docs/context) when the model needs prompt-safe text:
+it trims to a budget, attaches citations and source previews, and omits private
+identifiers from the prompt projection.

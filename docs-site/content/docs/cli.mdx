@@ -1,0 +1,120 @@
+---
+title: CLI
+description: The rag-core command line for context, search, add, eval, diagnostics, serving, and MCP.
+---
+
+The `rag-core` command line has eight public commands. `context` and `search`
+can run directly on a local path with no API key. Configured commands operate on
+the vector store and providers you point them at.
+
+Run `rag-core <command> --help` for the full flag list of any command.
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `context` | Index a local path and emit prompt-safe context, or query a configured store. |
+| `search` | Index a local path and return ranked hits, or query a configured store. |
+| `add` | Add files, a ZIP archive, a URL, or a URL list into a configured store. |
+| `eval` | Index a folder and run JSONL retrieval eval cases. |
+| `doctor` | Inspect the resolved provider and vector store configuration. |
+| `demo` | Print deterministic demo output with no API key or external store. |
+| `serve` | Run the optional HTTP runtime. |
+| `mcp` | Run a stdio MCP server bound to one scope. |
+
+## context
+
+Index a path and return cited context. This is the shortest path from a folder
+to prompt-ready text.
+
+```bash
+rag-core context "billing policy" ./docs --json
+```
+
+| Flag | Description |
+| --- | --- |
+| `--limit` | Number of snippets. |
+| `--collection` | Logical scope. Optional for local path search. |
+| `--namespace` | Optional tenant or workspace partition. |
+| `--max-context-chars`, `--max-context-tokens` | Bound the context size. |
+| `--max-files` | Cap on files indexed from a folder. |
+| `--demo` | Use deterministic embeddings with no download. Not semantic retrieval. |
+| `--trace-jsonl <path>` | Append a JSONL trace of the search. |
+| `--json` | Emit JSON. |
+
+## search
+
+Return raw ranked hits instead of packed context.
+
+```bash
+rag-core search "billing policy" ./docs --json
+rag-core search "billing policy" --collection help \
+  --qdrant-url http://127.0.0.1:6333 \
+  --embedding-provider openai --embedding-model text-embedding-3-small --json
+```
+
+| Flag | Description |
+| --- | --- |
+| `--limit` | Number of hits. |
+| `--collection`, `--collections` | One or more collections for configured search. |
+| `--namespace` | Optional tenant or workspace partition. |
+| `--rerank` | Apply the configured reranker. Off by default. |
+| `--search-profile` | One of `balanced`, `fast`, `lexical`, `coverage`, `diverse`. |
+| `--metadata-filter KEY=VALUE` | Filter by document metadata. |
+
+## add
+
+Add content into a configured store. The source can be a file, a folder, a
+`.zip` archive, or an `https://` URL. Pass `--url-list <file.txt>` to add a text
+file of URLs.
+
+```bash
+rag-core add ./docs --collection help \
+  --qdrant-url http://127.0.0.1:6333 \
+  --embedding-provider openai --embedding-model text-embedding-3-small
+```
+
+`--collection` is required for configured add. `--namespace` is optional. Use
+`--force-reindex` to re-embed unchanged documents, `--metadata KEY=VALUE` to
+attach metadata, and `--dry-run --json` to preview without writing. The store
+and provider flags below apply.
+
+## eval
+
+Index a folder and run JSONL eval cases, reporting retrieval and context metrics.
+
+```bash
+rag-core eval examples/demo_corpus examples/eval_cases.jsonl --json
+```
+
+## doctor
+
+Report the resolved Engine and provider shape. Add `--check-store` to verify the
+vector store, and `--fix` to apply safe corrections.
+
+```bash
+rag-core doctor --qdrant-url http://127.0.0.1:6333 \
+  --embedding-provider openai --embedding-model text-embedding-3-small --json
+```
+
+## serve and mcp
+
+`serve` runs the optional HTTP runtime, and `mcp` runs a stdio MCP server bound to
+one scope. Both are thin layers over `Engine`. See
+[Self-host the HTTP API](/docs/self-host) and
+[Integrate with agents](/docs/agent-integration).
+
+## Store and provider flags
+
+The configured commands (`add`, `search`, `context`, `doctor`, `serve`, `mcp`)
+share the same flags for selecting a store and providers:
+
+| Flag | Description |
+| --- | --- |
+| `--store` | `qdrant` (default), `pgvector`, or `turbopuffer`. |
+| `--qdrant-url` or `--qdrant-location` | Qdrant endpoint or local path. Pass exactly one. |
+| `--embedding-provider`, `--embedding-model` | The embedding provider and model. |
+| `--embedding-dimensions` | Required only for custom or unknown models. |
+| `--reranker-provider`, `--reranker-model` | The reranker, when you use `--rerank`. |
+| `--pgvector-dsn`, `--pgvector-table` | pgvector connection and table. |
+| `--turbopuffer-namespace`, `--turbopuffer-region` | TurboPuffer location. |

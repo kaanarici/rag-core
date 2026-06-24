@@ -1,0 +1,105 @@
+---
+title: Configuration reference
+description: Every Config field, environment variable, and CLI flag for stores, embeddings, rerankers, ingest, and the runtime.
+---
+
+This reference lists the configuration surface shared by the library, CLI, and
+HTTP runtime. Library code builds a [`Config`](/docs/api-python#config); the CLI
+and runtime accept the equivalent flags and environment variables. When a CLI
+flag is omitted, the matching `RAG_CORE_*` environment variable is used as the
+fallback.
+
+<Callout type="warn">
+  Pass secrets through environment variables, not flags. The CLI prints a stderr
+  warning when it sees `--qdrant-api-key`, `--pgvector-dsn`, or
+  `--turbopuffer-api-key` on the command line, because flags land in shell
+  history.
+</Callout>
+
+## Vector store
+
+| Environment variable | CLI flag | Default | Notes |
+| --- | --- | --- | --- |
+| `RAG_CORE_VECTOR_STORE` | `--store` | `qdrant` | `qdrant`, `pgvector`, or `turbopuffer` |
+| `RAG_CORE_QDRANT_URL` | `--qdrant-url` | none | Remote Qdrant endpoint. Use one of URL or location |
+| `RAG_CORE_QDRANT_LOCATION` | `--qdrant-location` | none | Local path or `:memory:` for in-process Qdrant |
+| `RAG_CORE_QDRANT_API_KEY` | `--qdrant-api-key` | none | Cloud Qdrant credential |
+| `RAG_CORE_QDRANT_COLLECTION` | `--qdrant-collection` | `rag_core_chunks` | Physical store collection name |
+| `RAG_CORE_QDRANT_DIMENSION_AWARE_COLLECTION` | `--dimension-aware-collection` / `--no-dimension-aware-collection` | on | Include embedding dimensions in automatic collection names |
+
+## Embeddings
+
+| Environment variable | CLI flag | Default | Notes |
+| --- | --- | --- | --- |
+| `RAG_CORE_EMBEDDING_PROVIDER` | `--embedding-provider` | `openai` | `openai`, `local`, `demo`, `cohere`, `voyage`, `gemini`, `mistral`, and others |
+| `RAG_CORE_EMBEDDING_MODEL` | `--embedding-model` | per provider | `text-embedding-3-large` for openai, `BAAI/bge-small-en-v1.5` for local, `demo-dense-v1` for demo |
+| `RAG_CORE_EMBEDDING_DIMENSIONS` | `--embedding-dimensions` | model default | Required for `demo` and for custom or unknown models |
+| `RAG_CORE_EMBEDDING_BATCH_SIZE` | `--embedding-batch-size` | `50` | Document embedding batch size |
+
+Provider API keys use the provider's own variable name, not a `RAG_CORE_`
+prefix: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `COHERE_API_KEY` (or
+`CO_API_KEY`), `GOOGLE_API_KEY` (or `GEMINI_API_KEY`), `MISTRAL_API_KEY`,
+`VOYAGE_API_KEY`, `ZEROENTROPY_API_KEY`.
+
+<Callout type="info">
+  Known local and OpenAI models infer their dimensions automatically. Set
+  `--embedding-dimensions` only for the `demo` provider or for custom or unknown
+  provider and model pairs.
+</Callout>
+
+## Reranker
+
+| Environment variable | CLI flag | Default | Notes |
+| --- | --- | --- | --- |
+| `RAG_CORE_RERANKER_PROVIDER` | `--reranker-provider` | `none` | `none` disables reranking |
+| `RAG_CORE_RERANKER_MODEL` | `--reranker-model` | none | Required when reranking is enabled |
+
+Reranking runs only when a request sets `rerank=True` (or the CLI passes
+`--rerank`) and a reranker provider is configured. See
+[Search and rank](/docs/search).
+
+## Ingest and pipeline
+
+| Environment variable | CLI flag | Default | Notes |
+| --- | --- | --- | --- |
+| `RAG_CORE_PROCESSING_VERSION` | `--pipeline-version` | `rag_core_processing_v3` | Changing it triggers reindex |
+| `RAG_CORE_MANIFEST_DIR` | `--manifest-dir` | `.rag-core/manifest` | JSONL manifest directory |
+
+`IngestConfig.skip_unchanged` (`fast` by default, or `materialize`),
+`enable_lexical_search`, `lexical_search_provider`, `embedding_cache_provider`,
+and the chunking strategy are set through [`Config`](/docs/api-python#nested-config)
+in library code. See [Keep an index in sync](/docs/sync) and
+[RAG modes](/docs/rag-modes).
+
+## pgvector
+
+| Environment variable | CLI flag | Default | Notes |
+| --- | --- | --- | --- |
+| `RAG_CORE_PGVECTOR_DSN` | `--pgvector-dsn` | none | Required with `--store pgvector` |
+| `RAG_CORE_PGVECTOR_TABLE` | `--pgvector-table` | collection name | PostgreSQL table identifier |
+| `RAG_CORE_PGVECTOR_SCHEMA` | `--pgvector-schema` | `public` | PostgreSQL schema |
+
+## TurboPuffer
+
+| Environment variable | CLI flag | Default | Notes |
+| --- | --- | --- | --- |
+| `RAG_CORE_TURBOPUFFER_NAMESPACE` | `--turbopuffer-namespace` | none | Physical namespace, distinct from request `namespace` |
+| `TURBOPUFFER_API_KEY` | `--turbopuffer-api-key` | none | Vendor-native variable name |
+| `TURBOPUFFER_REGION` | `--turbopuffer-region` | none | Vendor-native variable name |
+| `TURBOPUFFER_BASE_URL` | `--turbopuffer-base-url` | none | Optional API base URL (HTTPS) |
+| `RAG_CORE_TURBOPUFFER_DISTANCE_METRIC` | `--turbopuffer-distance-metric` | `cosine_distance` | Or `euclidean_squared` |
+| `RAG_CORE_TURBOPUFFER_DELETE_CONTINUATION_LIMIT` | `--turbopuffer-delete-continuation-limit` | `1000` | Fail closed after this many partial delete continuations |
+
+## HTTP runtime
+
+These apply only to `rag-core serve`. See [Self-host the HTTP API](/docs/self-host)
+and the [HTTP API reference](/docs/http).
+
+| Environment variable | CLI flag | Default | Notes |
+| --- | --- | --- | --- |
+| `RAG_CORE_RUNTIME_JOB_DB_PATH` | `--job-db-path` | `.rag-core/runtime/jobs.sqlite3` | SQLite path for ingest job status |
+| `RAG_CORE_RUNTIME_JOB_RETENTION_SECONDS` | `--job-retention-seconds` | unbounded | Prune old terminal job rows |
+
+Serve-only flags without an environment variable: `--host`, `--port`,
+`--ingest-root`, `--unix-socket`, `--bind-non-loopback`, `--max-body-bytes`,
+`--ingest-concurrency`, and `--limit-concurrency`.

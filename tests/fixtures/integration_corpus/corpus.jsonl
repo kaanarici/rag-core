@@ -1,0 +1,10 @@
+{"document_id": "billing", "title": "Billing", "body": "Invoices are due monthly. Customers can pay by ACH, credit card, or wire transfer. Refunds post within five business days."}
+{"document_id": "auth", "title": "Authentication", "body": "Single sign-on authentication uses SAML metadata and rotates session tokens every hour."}
+{"document_id": "webhooks", "title": "Webhooks", "body": "Webhook deliveries include an HMAC signature header. Retry with exponential backoff when endpoints return 5xx."}
+{"document_id": "pagination", "title": "Pagination", "body": "List endpoints return a cursor token. Pass the cursor on the next page request to continue through large result sets."}
+{"document_id": "encryption", "title": "Encryption", "body": "Data at rest uses AES-256. API keys are encrypted with envelope encryption and rotated quarterly."}
+{"document_id": "shipping", "title": "Shipping", "body": "International shipping requires customs forms and carrier tracking numbers for each parcel."}
+{"document_id": "enterprise", "title": "Enterprise", "body": "Enterprise plans include dedicated support, audit exports, and SAML SSO with custom attribute mapping."}
+{"document_id": "retention", "title": "Retention", "body": "Event logs are retained for ninety days by default. Enterprise tenants can configure longer retention windows."}
+{"document_id": "limits", "title": "Rate limits", "body": "API rate limits apply per workspace. Exceeding limits returns HTTP 429 with a Retry-After header."}
+{"document_id": "ndjson", "title": "NDJSON export", "body": "Bulk exports stream NDJSON records for invoices, payments, and delivery confirmations."}

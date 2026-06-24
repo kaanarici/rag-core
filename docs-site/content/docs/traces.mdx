@@ -1,0 +1,158 @@
+---
+title: Traces and observability
+description: Capture pipeline events from ingest and search, write them as JSONL, and export retrieval hits to LangSmith, OpenInference, and OpenTelemetry.
+---
+
+`rag-core` emits structured events as it parses files, plans a search, runs
+retrieval stages, and reranks. These events exist to debug retrieval quality:
+to see what a search actually did and why a result was or was not returned.
+They are not a product surface and not a compliance-grade audit transport.
+
+The default sink is `NoOpSink`. Wiring an event sink is opt-in. If you do not
+pass one, no events are emitted and there is no added overhead.
+
+## Write a trace from the CLI
+
+`--trace-jsonl <path>` appends pipeline events as one JSON object per line.
+The flag is available on `rag-core search`, `rag-core context`, `rag-core add`,
+`rag-core local-search`, and `rag-core eval`.
+
+```bash
+uv run rag-core local-search examples/demo_corpus "How can invoices be paid?" \
+  --demo --trace-jsonl /tmp/trace.jsonl
+```
+
+Each line is one event with its `event_type` and the fields for that stage.
+Representative lines from a search run:
+
+```json
+{"event_type": "parse.completed", "filename": "invoices.md", "parser": "markdown", "quality_verdict": "ok", "meaningful_ratio": 0.98, "char_count": 1840, "duration_ms": 3.1}
+{"event_type": "search.planned", "channels": ["dense"], "final_limit": 5, "rerank_fallback_on_error": true, "use_lexical_search": false}
+{"event_type": "search.stage.completed", "stage": "retrieve", "candidate_count": 12, "result_count": 5, "duration_ms": 8.4}
+{"event_type": "rerank.applied", "provider": "cohere", "succeeded": false, "fallback_reason": "timeout", "accepted_count": 0, "result_count": 5}
+{"event_type": "search.completed", "result_count": 5, "requested_rerank": true, "applied_rerank": false, "succeeded": true, "duration_ms": 22.7}
+```
+
+`parse.completed` carries quality fields (`quality_verdict`, `meaningful_ratio`,
+`mojibake_ratio`, `extraction_ratio`) that explain why a document parsed cleanly
+or needed OCR. `rerank.applied` records `succeeded`, `fallback_reason`, and the
+accepted and dropped counts, so a reranker that timed out and fell back to the
+base ranking is visible in the trace rather than silent.
+
+<Callout type="info">
+Field values for caller-supplied identifiers and raw messages are sanitized or
+omitted before they reach a sink. The JSONL file is not flushed per write and is
+not an audit copy. Treat it as a developer inspection artifact.
+</Callout>
+
+## Capture events in your application
+
+Pass an `EventSink` to `Engine(event_sink=...)`. The built-in sinks live in
+`rag_core.events`:
+
+| Sink | Behavior |
+| --- | --- |
+| `NoOpSink` | Drop every event. The default. |
+| `LoggingSink` | Forward each event to stdlib `logging`. |
+| `JsonlSink` | Append each event as one JSON line to a path. |
+| `EventBuffer` | Keep every event in memory. |
+| `MultiSink` | Fan one event out to several sinks. |
+| `OpenTelemetrySink` | Emit events as span events on the current span. Requires `opentelemetry-api`. |
+
+`EventBuffer` keeps events in memory for inspection. It exposes `.events` and
+`.by_type(event_type)`:
+
+```python
+import asyncio
+from rag_core import Engine, Config
+from rag_core.events import EventBuffer
+
+async def main() -> None:
+    buffer = EventBuffer()
+    async with Engine(Config.local(), event_sink=buffer) as core:
+        await core.add("./docs", collection="help")
+        await core.search(query="billing policy", collection="help", limit=5)
+
+    for event in buffer.by_type("search.stage.completed"):
+        print(event.stage, event.candidate_count, event.result_count, event.duration_ms)
+
+asyncio.run(main())
+```
+
+`JsonlSink` writes the same JSONL stream the CLI flag produces. It opens its
+target lazily and exposes `close()` to flush the handle:
+
+```python
+from rag_core.events import JsonlSink
+
+sink = JsonlSink("/tmp/trace.jsonl")
+# pass to Engine(event_sink=sink); call sink.close() when done
+```
+
+Use `MultiSink(buffer, JsonlSink(path))` to keep events in memory and on disk at
+the same time.
+
+<Callout type="warn">
+A failing sink never raises. The error is recorded so a broken observer cannot
+break ingest or search. Read `Engine.describe_event_sink_status()` to see the
+sink kind and its failure count.
+</Callout>
+
+## Summarize a search trace
+
+`rag_core.events` exposes helpers that fold a stream of search events into a
+single `SearchTraceSummary` with the resolved plan, per-stage counts, and rerank
+outcome:
+
+- `summarize_search_trace(events)` returns one `SearchTraceSummary`.
+- `summarize_search_trace_runs(events)` splits a multi-search stream into one
+  summary per run.
+- `summarize_search_trace_payloads(payloads)` and
+  `summarize_search_trace_payload_runs(payloads)` accept JSONL-decoded mappings,
+  so you can summarize a `--trace-jsonl` file after the fact.
+
+```python
+from rag_core.events import summarize_search_trace
+
+summary = summarize_search_trace(buffer.events)
+print(summary.channels, summary.result_count, summary.applied_rerank)
+for stage in summary.stages:
+    print(stage.stage, stage.candidate_count, stage.result_count)
+```
+
+## Export retrieval hits to observability tools
+
+`rag_core.events.export.to_retrieval_hits(results)` maps a sequence of
+`SearchResult` rows to a stable JSON shape for tracing SDKs. It renames the
+result body from `.text` to a `content` field and keeps `id` and `score`,
+matching common `gen_ai.retrieval.documents` and `scored_chunks` conventions
+used by LangSmith, OpenInference, and OpenTelemetry gen_ai spans.
+
+```python
+from rag_core.events.export import to_retrieval_hits
+
+hits = await core.search(query="billing policy", collection="help", limit=5)
+documents = to_retrieval_hits(hits)
+# each document: {"id", "content", "score", and present locators such as
+# "document_id", "document_key", "collection", "title", "chunk_index",
+# "section_path", "metadata"}
+```
+
+Locator fields are included only when present on the result. Empty metadata is
+dropped rather than emitted as an empty object.
+
+## HTTP runtime and audit lines
+
+Event sinks are wired on the `Engine`, not exposed over HTTP. The optional
+[HTTP runtime](/docs/self-host) reads `X-Request-Id` from the caller (and mints a
+UUIDv4 when absent), echoes it on the `X-Request-Id` response header, and reads
+`X-Actor` and `X-Ingest-Id` for audit correlation. Those identifiers flow into
+event fields (`request_id`, `actor`, `ingest_id`) but the runtime does not
+serve the event stream itself. To capture events behind `rag-core serve`,
+construct the `Engine` with a sink in your runtime wrapper.
+
+## Related
+
+- [Search and rank](/docs/search) for `SearchResult` fields and query plans.
+- [Eval and retrieval quality](/docs/eval-quality) for measuring retrieval.
+- [CLI reference](/docs/cli) for the full flag surface.

@@ -1,0 +1,180 @@
+---
+title: HTTP API
+description: Routes, request and response shapes, and error envelope for the optional rag-core serve runtime.
+---
+
+The optional `rag-core serve` runtime is a thin HTTP layer over `Engine`. This
+page is the wire reference for its routes. For deployment, auth, and operational
+boundaries, see [Self-host the HTTP API](/docs/self-host). The machine-readable
+contract is
+[openapi.yaml](https://github.com/kaanarici/rag-core/blob/main/docs/self-host/openapi.yaml).
+
+The runtime exposes health, runtime description, async ingest jobs, search,
+context retrieval, and document delete. It does not expose eval over HTTP.
+
+## Routes
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/health` | Liveness. Process-up check only |
+| `GET` | `/health/ready` | Readiness. Initializes the engine and probes the store. `503` when not ready |
+| `GET` | `/v1/runtime` | `describe_runtime()` JSON |
+| `POST` | `/v1/ingest` | Start an ingest job. Returns `202` with `job_id` |
+| `GET` | `/v1/ingest/{job_id}` | Job status |
+| `GET` | `/v1/ingest/{job_id}/events` | Job status changes as `text/event-stream`. Closes after a terminal status |
+| `POST` | `/v1/search` | Ranked hits (`SearchResult` array) |
+| `POST` | `/v1/search/context` | Context pack plus prompt-safe `context_text` |
+| `DELETE` | `/v1/documents/{document_id}` | Purge one document across index, sidecars, caches, and manifest |
+
+Every response carries an `X-Request-Id` header, echoed from the request or
+minted as a UUID. The runtime also reads `X-Actor` and `X-Ingest-Id` for audit
+lines.
+
+## POST /v1/ingest
+
+Request:
+
+```json
+{
+  "path": "/srv/docs/billing.md",
+  "collection": "help",
+  "namespace": "acme"
+}
+```
+
+`path` must be absolute and resolve under a configured `--ingest-root`. Relative
+paths, `~`, symlinks escaping the root, and non-regular files are rejected with
+`400`. `namespace` defaults to the runtime namespace. Unknown fields return
+`400`.
+
+Response `202`:
+
+```json
+{ "job_id": "5f3c...e1", "status": "pending" }
+```
+
+Other statuses: `413` when the body exceeds `--max-body-bytes` (4 MiB default),
+`503` with `code="busy"` when `--ingest-concurrency` slots are full.
+
+### GET `/v1/ingest/{job_id}`
+
+```json
+{
+  "job_id": "5f3c...e1",
+  "status": "completed",
+  "path": "/srv/docs/billing.md",
+  "namespace": "acme",
+  "collection": "help",
+  "result": { "document_id": "...", "chunk_count": 3, "ingest_state": "created" }
+}
+```
+
+`status` is `pending`, `running`, `completed`, or `failed`. `result` is present
+only on `completed`. On `failed`, an `error` object carries `error_type` (the
+exception class name) and a stable `error_code`. The exception message is never
+included. After a process restart, in-flight jobs become `failed` with
+`error_code="orphaned_by_restart"`.
+
+### GET `/v1/ingest/{job_id}/events`
+
+`Content-Type: text/event-stream`. Emits `event: status` frames whose `data` is
+the job-status JSON above, with `: heartbeat` comments while the job is not
+terminal. The stream closes after the first `completed` or `failed` frame.
+
+## POST /v1/search
+
+Request:
+
+```json
+{
+  "query": "How can invoices be paid?",
+  "collections": ["help"],
+  "namespace": "acme",
+  "limit": 10,
+  "content_types": ["document"],
+  "document_ids": ["billing.md"],
+  "rerank": false,
+  "use_lexical_search": true
+}
+```
+
+Pass `collection` or `collections`, not both. `limit` is an integer from 1 to 20,
+default `10`. Unknown fields return `400`.
+
+Response `200` is an array of hits. `None` fields are omitted:
+
+```json
+[
+  {
+    "id": "acme:help:billing.md:0",
+    "text": "Invoices can be paid by card, ACH, or wire transfer.",
+    "score": 0.83,
+    "content_type": "document",
+    "source_type": "file",
+    "document_id": "billing.md",
+    "collection": "help",
+    "document_key": "billing.md",
+    "title": "Billing",
+    "chunk_index": 0
+  }
+]
+```
+
+The field names match [`SearchResult`](/docs/api-python#searchresult).
+
+## POST /v1/search/context
+
+The request is the search request plus three optional fields: `context_order`
+(`"rank"` or `"extrema"`), `max_chars` (256 to 12000), and `max_tokens` (64 to
+4000). The default `limit` is `8`, not `10`.
+
+Response `200`:
+
+```json
+{
+  "query": "How can invoices be paid?",
+  "context_text": "[S1] Billing\nInvoices can be paid by card, ACH, or wire transfer.",
+  "snippets": [ ... ],
+  "citations": [ ... ],
+  "source_previews": [ ... ],
+  "citation_summary": "[S1] Billing (chunk 0)",
+  "dropped_count": 0,
+  "max_snippets": 8,
+  "token_estimate": 18,
+  "char_count": 64,
+  "truncated": false
+}
+```
+
+`context_text` is the prompt-safe rendering with rank-local `S{n}` citations. The
+structured fields match [`Context`](/docs/api-python#context).
+
+## DELETE `/v1/documents/{document_id}`
+
+Request:
+
+```json
+{ "collection": "help", "namespace": "acme" }
+```
+
+Response `200` reports which surfaces were purged, matching
+[`DeleteDocumentResult`](/docs/api-python#ingesteddocument-and-deletedocumentresult).
+A cross-namespace delete attempt returns `400`.
+
+## Error envelope
+
+Every error response uses one envelope:
+
+```json
+{
+  "error": {
+    "code": "invalid_request",
+    "message": "Human-readable description",
+    "details": { "missing_fields": ["collection"] }
+  }
+}
+```
+
+`code` is one of `invalid_json`, `invalid_request`, `not_found`, `busy`,
+`payload_too_large`, `http_error`, or `internal_error`. Exception messages are
+never placed in error bodies.

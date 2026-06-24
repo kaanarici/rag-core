@@ -1,0 +1,138 @@
+---
+title: Supported file formats
+description: Lists supported file formats, maturity, caveats, metadata, and extraction-quality limits.
+---
+
+This page lists what a folder add can read and where extraction quality is still
+document-dependent.
+
+## What you can ingest
+
+| Format | Maturity | Note |
+| --- | --- | --- |
+| Text and markdown | stable | Plain text, docs, config, logs, and markdown are the strongest path. |
+| Source code | stable | Text source files only. Binary-like files with code extensions can be rejected. |
+| CSV and TSV | stable | Rows are converted to markdown tables for retrieval. |
+| JSON, JSONL, and NDJSON | stable | Structured data is emitted as formatted text. |
+| XML | stable | Parsed safely and emitted as text. |
+| HTML | stable | Static extraction only. JavaScript-rendered page state is not captured. |
+| PDF | beta | Text PDFs are searchable, but layout, tables, scanned pages, and slide-heavy files vary. |
+| DOCX | beta | Real OOXML text and simple tables work. Image-heavy or image-only docs need OCR. |
+| PPTX | beta | Slide text is kept. Visuals, charts, pictures, and visual layout are not understood. |
+| XLSX | beta | Sheet content is emitted as text. Formulas are not evaluated. |
+| Images | beta | Recognized by the converter registry, but not default-ingestable without OCR. |
+
+Default local add accepts the non-image formats above. Images require an
+injected OCR provider, so default folder add skips or rejects image files rather
+than pretending OCR happened.
+
+## Caveats
+
+PDF support is beta and document-shape dependent. Text PDFs are searchable, but
+they are not layout-faithful. Dense filings can have word-joining and table
+damage. Slide decks and chart-heavy PDFs are unreliable for factual extraction.
+Mixed or scanned PDFs require OCR, and without OCR they can fail per file during
+folder add.
+
+Images are recognized, but they are not default-ingestable without OCR. Use an
+`OcrProvider` when image content should become searchable text.
+
+HTML extraction reads static file text. It does not run a browser, execute
+JavaScript, follow client-side routes, or capture dashboard state produced after
+render.
+
+Source code means plain text source. A file with a code extension can still be
+rejected if it is binary-like, empty after decoding, or not usable as text.
+
+XLSX formulas are emitted as text. rag-core does not evaluate formulas or
+recalculate workbooks.
+
+PPTX keeps text. It does not preserve visual meaning from charts, pictures,
+slide design, or layout.
+
+Binary Office extensions `.doc`, `.ppt`, and `.xls`, plus their binary Office
+MIME types, are unsupported.
+
+## Converter entrypoint
+
+Use the converter package entrypoint when you need direct file conversion:
+
+```python
+from rag_core.documents.converters import convert_file
+```
+
+The full path is `rag_core.documents.converters.convert_file`.
+
+## Metadata and internals
+
+The converter registry is used by `Engine.parse_bytes`, `Engine.prepare_bytes`,
+`Engine.add_bytes`, folder add, and local path search and context. Converters
+emit parser metadata under `metadata["parser"]`, naming the extraction
+implementation that produced the text.
+
+Extraction quality is visible in parsed-document metadata, trace events, indexed
+payloads, and `Context` snippets. `parse_bytes`, `prepare_bytes`, and
+`add_bytes` attach structured `metadata["quality"]` with verdict, details,
+character count, meaningful-character ratio, mojibake ratio, text-to-page ratio,
+and page count when the converter reports a quality score.
+
+`parse.completed` events expose the same quality fields, plus OCR page counts,
+OCR page indices, and extraction ratio when parser metadata is present. Indexed
+chunks flatten those values into `quality_*` metadata fields so search JSON and
+`Context` `retrieval_metadata["quality"]` can explain bad extraction without
+exposing converter internals.
+
+Markdown-style headings add `section_path` and `section_title` metadata to
+prepared chunks. `Slide N` and `Sheet: ... (Rows A-B)` headings also add
+`slide_number`, `sheet_name`, and `row_range` locators. Code chunking adds
+`line_start` and `line_end` locators. Converter-emitted figure metadata can add
+`figure_id` and `figure_caption` to the matching prepared chunk. These locators
+flow into indexing payloads, `Context` snippets, and source previews when
+present.
+
+## Registry matrix
+
+| Key | Formats | Maturity | Default local ingest | OCR behavior | Extensions | MIME types |
+| --- | --- | --- | --- | --- | --- | --- |
+| `text` | Text and markdown | `stable` | yes | none | `.txt`, `.md`, `.markdown`, `.yaml`, `.yml`, `.toml`, `.rst`, `.adoc`, `.tex`, `.ini`, `.cfg`, `.conf`, `.env`, `.properties`, `.log` | `text/plain`, `text/markdown`, `text/x-markdown`, `text/yaml`, `text/x-yaml`, `application/x-yaml`, `application/toml`, `image/svg+xml` |
+| `code` | Source code | `stable` | yes | none | `.py`, `.js`, `.ts`, `.tsx`, `.jsx`, `.java`, `.c`, `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`, `.m`, `.cs`, `.go`, `.rs`, `.rb`, `.php`, `.swift`, `.kt`, `.kts`, `.scala`, `.d`, `.jl`, `.ex`, `.exs`, `.erl`, `.clj`, `.groovy`, `.dart`, `.hs`, `.ml`, `.fs`, `.nim`, `.cr`, `.zig`, `.lua`, `.pl`, `.r`, `.sh`, `.bash`, `.zsh`, `.ps1`, `.bat`, `.cmd`, `.sql`, `.graphql`, `.gql`, `.proto`, `.tf`, `.tfvars`, `.hcl`, `.gradle`, `.cmake`, `.make`, `.mak`, `.css`, `.scss`, `.sass`, `.less`, `.vue`, `.svelte` | none |
+| `html` | HTML | `stable` | yes | none | `.html`, `.htm` | `text/html`, `application/xhtml+xml` |
+| `csv` | CSV and TSV | `stable` | yes | none | `.csv`, `.tsv` | `text/csv`, `text/tab-separated-values` |
+| `json` | JSON, JSONL, and NDJSON | `stable` | yes | none | `.json`, `.jsonl`, `.ndjson` | `application/json`, `application/jsonl`, `application/ndjson`, `application/x-ndjson` |
+| `xml` | XML | `stable` | yes | none | `.xml` | `application/xml`, `text/xml` |
+| `pdf` | PDF | `beta` | yes | optional_pages | `.pdf` | `application/pdf` |
+| `docx` | DOCX | `beta` | yes | quality_fallback | `.docx` | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` |
+| `pptx` | PPTX | `beta` | yes | quality_fallback | `.pptx` | `application/vnd.openxmlformats-officedocument.presentationml.presentation` |
+| `xlsx` | XLSX | `beta` | yes | none | `.xlsx` | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` |
+| `image` | Images | `beta` | no | required | `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.bmp`, `.tiff`, `.tif` | `image/jpeg`, `image/png`, `image/gif`, `image/webp`, `image/bmp`, `image/tiff` |
+
+## Extraction quality in practice
+
+Text, Markdown, source code, CSV, and JSON are the most reliable. Text PDF
+transcripts and simple filings are searchable, and DOCX text and simple tables
+are usable. Static HTML extracts partially, since dynamic page state is not
+captured.
+
+The known soft spots are the beta formats above: dense PDFs, slide-heavy or
+chart-heavy PDFs, and mixed or scanned PDFs that need OCR. Binary-like files with
+code extensions and image-only documents are the other caveats. The quality
+metadata described above reports per-document extraction quality so your
+application can detect a bad extraction at ingest time rather than at retrieval
+time.
+
+## Archives and fetches
+
+ZIP archives are supported as an explicit source path through
+`ZipArchiveSourceReader`, `Engine.add_archive(...)`, and
+`rag-core add <archive.zip>`. Archive add reads only supported member formats,
+rejects unsafe member paths instead of extracting to disk, and enforces
+entry-count, per-entry byte, and total-byte limits. It is not part of default
+folder add, so local directory traversal and archive member traversal stay
+explicit.
+
+Remote fetch defaults allow registered converter MIME types that do not require
+OCR. SVG (`image/svg+xml`) is allowed because it routes through the text
+converter. OCR-required image MIME types remain excluded from the default remote
+fetch allowlist because image parsing requires an injected OCR provider. Use
+explicit fetch limits and an OCR-capable add path when fetching images
+intentionally.

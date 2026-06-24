@@ -1,0 +1,34 @@
+# rag-core
+
+Embeddable Python retrieval core for app-owned RAG. Use these docs to wire
+ingest, search, prompt-safe context, citations, traces, and evals behind your
+own auth, tenancy, connectors, and model orchestration.
+
+## First run
+
+- [README](README.md): Install, local semantic context path, examples, and validation gates.
+- [Quickstart](https://kaanarici.github.io/rag-core/docs/quickstart): Index a folder and search it from Python or the command line.
+
+## Integrate
+
+- [Agent integration recipes](https://kaanarici.github.io/rag-core/docs/agent-integration): Copy-paste recipes for Embedded Python, FastAPI, LangChain, OpenAI Agents, MCP, evals, and optional `serve`.
+- [Embed guide](https://kaanarici.github.io/rag-core/docs/embed): Worker lifecycle, tenancy boundary, retrieval defaults, tool contracts, and eval setup.
+
+## Public Surface
+
+- [Stability](https://kaanarici.github.io/rag-core/docs/stability): Public beta imports, experimental surfaces, and non-public modules.
+- [Expectations](https://kaanarici.github.io/rag-core/docs/expectations): Hit/context shapes, default limits, proof labels, and trace expectations.
+
+## Providers
+
+- [Providers](https://kaanarici.github.io/rag-core/docs/providers): Vector stores, embeddings, optional extras, registries, and provider contract rules.
+
+## Self-Host
+
+- [Self-host HTTP](https://kaanarici.github.io/rag-core/docs/self-host): Optional thin `rag-core serve` runtime and app-owned gateway boundary.
+- [OpenAPI](docs/self-host/openapi.yaml): HTTP request and response contract for the optional runtime.
+
+## Eval
+
+- [Eval quality](https://kaanarici.github.io/rag-core/docs/eval-quality): Real-embedding folder evals, JSONL case fields, metric interpretation, and CI gates.
+- [Retrieval eval example](examples/retrieval_eval.py): App-owned eval cases, metrics, and quality gates.

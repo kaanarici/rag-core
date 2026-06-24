@@ -1,0 +1,504 @@
+---
+title: Python API
+description: Method-level reference for the rag-core public Python surface, including Engine, Index, Config, and the result types.
+---
+
+This is the method-level reference for the public Python surface. For the
+stability guarantees behind each name, see [Public API and stability](/docs/stability).
+For task-oriented usage, start with [Add documents](/docs/ingest),
+[Search and rank](/docs/search), and [Build context for a prompt](/docs/context).
+
+Keyword-only parameters are shown with `*`. `collection` and `collections` are
+mutually exclusive on every method that accepts both. `namespace=None` resolves
+to the empty string.
+
+## Top-level facade
+
+`import rag_core` exposes a deliberately small surface:
+
+```python
+__all__ = ["index", "Index", "Engine", "Config", "Context", "SearchResult"]
+```
+
+### `rag_core.index`
+
+```python
+def index(
+    folder: str | Path,
+    *,
+    collection: str = "default",
+    namespace: str | None = None,
+) -> Index
+```
+
+Indexes `folder` with the local FastEmbed model and an in-process Qdrant store,
+then returns a synchronous `Index`. No API key. Raises `RuntimeError` if no files
+were indexed.
+
+### `class Index`
+
+The synchronous handle returned by `index()`. Wraps `Engine` with blocking
+methods.
+
+```python
+def context(self, question: str, *, limit: int = 5) -> str
+def search(self, question: str, *, limit: int = 5) -> list[SearchResult]
+def close(self) -> None
+def __enter__(self) -> Index
+def __exit__(self, *exc: object) -> None
+```
+
+`context()` returns prompt-ready text with an appended citation block.
+`search()` returns ranked hits for building your own prompt.
+
+## Engine
+
+`Engine` is the async core. Construct one per worker process and reuse it.
+
+```python
+class Engine:
+    def __init__(
+        self,
+        config: Config,
+        *,
+        embedding_provider: EmbeddingProvider | None = None,
+        sparse_embedder: SparseEmbedder | None = None,
+        vector_store: VectorStore | None = None,
+        reranker: RerankerProvider | None = None,
+        ocr_provider: OcrProvider | None = None,
+        search_sidecar: SearchSidecar | None = None,
+        event_sink: EventSink | None = None,
+        chunk_contextualizer: ChunkContextualizer | None = None,
+        chunk_context_cache: ChunkContextCache | None = None,
+        embedding_cache: EmbeddingCache | None = None,
+    ) -> None
+```
+
+The keyword arguments inject application-owned providers and override the
+`Config`-driven defaults. See [RAG modes](/docs/rag-modes).
+
+### Lifecycle
+
+```python
+async def __aenter__(self) -> Engine
+async def __aexit__(self, *exc) -> None
+async def ensure_ready(self) -> None
+async def close(self) -> None
+```
+
+`async with Engine(config) as core:` calls `ensure_ready()` on entry and
+`close()` on exit. When you manage the instance yourself, call
+`await core.ensure_ready()` once before the first operation to create the store
+collection.
+
+### Retrieval
+
+```python
+async def search(
+    self,
+    *,
+    query: str,
+    collection: str | None = None,
+    collections: Sequence[str] | None = None,
+    namespace: str | None = None,
+    limit: int = 10,
+    content_types: list[str] | None = None,
+    document_ids: list[str] | None = None,
+    rerank: bool = False,
+    use_lexical_search: bool = True,
+    query_plan: QueryPlan | None = None,
+    metadata_filter: Filter | None = None,
+    rerank_budget: RerankBudget | None = None,
+    audit_context: AuditContext | None = None,
+) -> list[SearchResult]
+
+async def context(
+    self,
+    *,
+    query: str,
+    collection: str | None = None,
+    collections: Sequence[str] | None = None,
+    namespace: str | None = None,
+    limit: int = 8,
+    content_types: list[str] | None = None,
+    document_ids: list[str] | None = None,
+    rerank: bool = False,
+    use_lexical_search: bool = True,
+    query_plan: QueryPlan | None = None,
+    metadata_filter: Filter | None = None,
+    rerank_budget: RerankBudget | None = None,
+    max_chars: int | None = None,
+    max_tokens: int | None = None,
+    audit_context: AuditContext | None = None,
+) -> Context
+```
+
+`search()` returns ranked hits. `context()` returns assembled, cited context. See
+[Search and rank](/docs/search) and [Build context for a prompt](/docs/context).
+
+### Ingest
+
+```python
+async def add(
+    self, path: str | Path, *,
+    collection: str | None = None, namespace: str | None = None,
+    metadata: dict[str, str] | None = None, force_reindex: bool = False,
+    max_concurrency: int = 1, manifest_dir: str | Path | None = None,
+) -> LocalIngestResult
+
+async def add_bytes(
+    self, *, file_bytes: bytes, filename: str, mime_type: str,
+    collection: str | None = None, namespace: str | None = None,
+    document_id: str | None = None, document_key: str | None = None,
+    path: str | None = None, metadata: dict[str, str] | None = None,
+    force_reindex: bool = False,
+) -> IngestedDocument
+
+async def add_file(
+    self, path: str | Path, *,
+    collection: str | None = None, namespace: str | None = None,
+    document_id: str | None = None, document_key: str | None = None,
+    metadata: dict[str, str] | None = None, force_reindex: bool = False,
+) -> IngestedDocument
+
+async def add_archive(
+    self, archive_path: str | Path, *,
+    collection: str | None = None, namespace: str | None = None,
+    metadata: dict[str, str] | None = None, force_reindex: bool = False,
+    max_concurrency: int = 1, archive_limits: ArchiveLimits | None = None,
+    manifest_dir: str | Path | None = None,
+) -> LocalIngestResult
+
+async def add_url(
+    self, url: str, *,
+    collection: str | None = None, namespace: str | None = None,
+    document_id: str | None = None, metadata: dict[str, str] | None = None,
+    force_reindex: bool = False, fetch_client: FetchClient | None = None,
+    fetch_policy: FetchSecurityPolicy | None = None, fetch_limits: FetchLimits | None = None,
+) -> IngestedDocument
+
+async def add_urls(
+    self, url_file: str | Path | None = None, *,
+    urls: Sequence[str] | None = None,
+    collection: str | None = None, namespace: str | None = None,
+    metadata: dict[str, str] | None = None, force_reindex: bool = False,
+    max_concurrency: int = 1, manifest_dir: str | Path | None = None,
+) -> RemoteUrlIngestResult
+```
+
+`add()`, `add_archive()`, and `add_urls()` return batch results with
+`planned_count`, `written_count`, `skipped_count`, `failed_count`, and
+`succeeded_count`. The single-document methods return an `IngestedDocument`. See
+[Add documents](/docs/ingest).
+
+### Delete
+
+```python
+async def delete_document(
+    self, *, document_id: str,
+    collection: str | None = None, namespace: str | None = None,
+) -> DeleteDocumentResult
+
+async def delete_collection(
+    self, *, collection: str | None = None, namespace: str | None = None,
+) -> None
+
+async def delete_namespace(self, *, namespace: str) -> None
+```
+
+`delete_collection()` and `delete_namespace()` are deliberate wide-delete
+surfaces, kept separate to prevent accidental scope widening. See
+[Keep an index in sync](/docs/sync).
+
+### Prepare and inspect
+
+```python
+async def parse_bytes(
+    self, *, file_bytes: bytes, filename: str, mime_type: str, path: str | None = None,
+) -> ParsedDocument
+
+async def prepare_bytes(
+    self, *, file_bytes: bytes, filename: str, mime_type: str, path: str | None = None,
+    namespace: str = "", collection: str = "", document_id: str = "",
+) -> PreparedDocument
+
+async def prepare_file(self, path: str | Path, *, mime_type: str | None = None) -> PreparedDocument
+```
+
+`parse_bytes()` parses to Markdown without chunking. `prepare_bytes()` parses,
+chunks, and optionally contextualizes without indexing. Use them to inspect the
+extraction and chunking path. See [Supported file formats](/docs/formats).
+
+### Introspection
+
+```python
+async def check_health(self) -> dict[str, object]
+def describe_runtime(self) -> dict[str, object]
+def describe_event_sink_status(self) -> dict[str, object]
+```
+
+`describe_runtime()` reports the resolved config and provider names.
+`build_manifest_entry()`, `manifest_bytes()`, `manifest_file()`, and
+`build_collection_manifest()` build manifest records for app-owned sync.
+
+## Config
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class Config:
+    qdrant: QdrantConfig
+    vector_store: VectorStoreConfig
+    embedding: EmbeddingConfig
+    reranker: RerankerConfig
+    contextualizer: ContextualizerConfig
+    chunking: ChunkingConfig
+    ingest: IngestConfig
+    policy: VectorStorePolicy
+    collection_policy: CollectionPolicy | None = None
+```
+
+### Factories
+
+```python
+@classmethod
+def local(cls, persist_dir: str | Path | None = None) -> Config
+# In-process Qdrant (in-memory when persist_dir is None) with the local
+# FastEmbed model BAAI/bge-small-en-v1.5. No API key.
+
+@classmethod
+def qdrant(
+    cls, *, url: str,
+    embedding_provider: str = "openai", model: str | None = None,
+    embedding_dimensions: int | None = None, embedding_api_key: str | None = None,
+    embedding_base_url: str | None = None, qdrant_api_key: str | None = None,
+    store_collection: str = "rag_core_chunks", dimension_aware_collection: bool = True,
+) -> Config
+# Remote Qdrant plus a hosted embedding provider.
+```
+
+Build a `Config` directly for full control, or use `dataclasses.replace(...)` to
+adjust one field. See [Configuration reference](/docs/config) for the field-level
+table and environment variables.
+
+### Nested config
+
+```python
+@dataclass(frozen=True)
+class ChunkingConfig:
+    strategy: Literal["auto", "markdown", "semantic", "code"] = "auto"
+    max_chars: int = 2000
+    overlap: int = 200
+
+@dataclass(frozen=True)
+class EmbeddingConfig:
+    provider: str = "openai"
+    model: str = "text-embedding-3-large"
+    dimensions: int | None = None
+    api_key: str | None = None
+    base_url: str | None = None
+    batch_size: int = 50
+    region: str | None = None
+
+@dataclass(frozen=True)
+class RerankerConfig:
+    provider: str = "none"   # "none" disables reranking
+    model: str | None = None
+    api_key: str | None = None
+
+@dataclass(frozen=True)
+class ContextualizerConfig:
+    provider: str = "anthropic"
+    model: str | None = None
+    enabled: bool = False
+    contextualizer_chunk_cap: int | None = None
+
+@dataclass(frozen=True)
+class IngestConfig:
+    processing_version: str = "rag_core_processing_v3"
+    enable_lexical_search: bool = False
+    manifest_directory: Path | None = None
+    lexical_search_provider: str | None = None
+    embedding_cache_provider: str | None = None
+    skip_unchanged: Literal["fast", "materialize"] = "fast"
+```
+
+## Result types
+
+### SearchResult
+
+```python
+@dataclass(frozen=True)
+class SearchResult:
+    id: str
+    text: str
+    score: float
+    content_type: str
+    source_type: str
+    document_id: str | None = None
+    collection: str | None = None
+    document_key: str | None = None
+    content_sha256: str | None = None
+    title: str | None = None
+    section_id: str | None = None
+    section_title: str | None = None
+    section_path: str | None = None
+    document_path: str | None = None
+    chunk_index: int | None = None
+    chunk_word_count: int | None = None
+    chunk_token_estimate: int | None = None
+    start_char: int | None = None
+    end_char: int | None = None
+    embedding_model: str | None = None
+    chunker_strategy: str | None = None
+    result_type: str | None = None
+    figure_id: str | None = None
+    figure_thumbnail_url: str | None = None
+    namespace: str | None = None
+    metadata: dict[str, object] = field(default_factory=dict)
+```
+
+`metadata["rerank"]` holds reranker scores when reranking is applied.
+
+### Context
+
+```python
+@dataclass(frozen=True)
+class Context:
+    query: str
+    snippets: tuple[ContextSnippet, ...]
+    dropped_count: int
+    max_snippets: int
+    max_chars: int | None = None
+    max_tokens: int | None = None
+    token_estimate: int = 0
+    char_count: int = 0
+    truncated: bool = False
+```
+
+Properties and methods:
+
+| Member | Returns |
+| --- | --- |
+| `citations` | `tuple[Citation, ...]` stable source identities |
+| `source_previews` | app-facing source chips (stable ids) |
+| `prompt_source_previews` | prompt-safe previews (`S{n}` ids) |
+| `citation_summary` | newline-joined sources with stable ids |
+| `prompt_citation_summary` | same with rank-local `S{n}` ids |
+| `as_text()` | app-facing text (stable ids) |
+| `as_prompt_text(*, context_order="rank")` | prompt-safe text (`S{n}` ids); `"extrema"` reorders |
+| `to_payload()` | app-facing structured payload |
+| `to_prompt_payload()` | prompt-safe payload (omits private ids and source hash) |
+
+<Callout type="warn">
+  The `as_prompt_text` / `to_prompt_payload` / `prompt_*` projections are the
+  only ones safe to put in a model prompt. The plain `as_text` / `to_payload` /
+  `citation_summary` projections carry private identifiers and are for traces and
+  UI only.
+</Callout>
+
+### ContextSnippet, Citation, SourceLocator
+
+```python
+@dataclass(frozen=True)
+class ContextSnippet:
+    citation_id: str
+    rank: int
+    text: str
+    score: float
+    source: Citation
+    locator: SourceLocator
+    token_estimate: int
+    char_count: int
+    retrieval_metadata: dict[str, object] | None = None
+    truncated: bool = False
+    # header, prompt_header, prompt_citation_id; as_text/as_prompt_text/to_payload/to_prompt_payload
+```
+
+`Citation` carries stable source identity (`document_id`, `document_key`,
+`collection`, `title`, `section_*`, `chunk_index`, `content_sha256`,
+`source_type`, `result_type`). `SourceLocator` carries position hints
+(`page_number`, `slide_number`, `sheet_name`, `row_range`, `line_start`,
+`line_end`, `start_offset`, `end_offset`, `bbox`, `figure_id`). Both expose
+`to_payload()` and a `to_prompt_payload()` that drops the source hash.
+
+### IngestedDocument and DeleteDocumentResult
+
+```python
+@dataclass(frozen=True, kw_only=True)
+class IngestedDocument:
+    document_id: str
+    collection: str
+    namespace: str
+    chunk_count: int
+    filename: str
+    mime_type: str
+    document_key: str | None = None
+    content_sha256: str | None = None
+    ingest_state: str = "created"
+    replaced_existing: bool = False
+    embedding_model: str | None = None
+    processing_version: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+@dataclass(frozen=True, kw_only=True)
+class DeleteDocumentResult:
+    document_id: str
+    namespace: str
+    collection: str
+    index_deleted: bool
+    vector_store_acked: bool = False
+    sidecar_deleted: bool | None = None
+    lexical_sidecar_purged: bool | None = None
+    embedding_cache_purged: bool | None = None
+    chunk_context_cache_purged: bool | None = None
+    manifest_entry_deleted: bool | None = None
+    manifest_removed: bool | None = None
+```
+
+On `DeleteDocumentResult`, a boolean field is `True` when the purge succeeded,
+`False` when it failed and a recovery journal was written, and `None` when that
+surface is not wired on this `Engine`.
+
+## contracts
+
+`rag_core.contracts` parses model tool payloads and binds retrieval scope for
+app-owned endpoints. See [Multi-tenancy and scope](/docs/multi-tenancy).
+
+```python
+def parse_search_user_documents_request(payload: Mapping[str, object], *, ...) -> SearchUserDocumentsRequest
+def validate_bound_namespace(namespace: str) -> str
+def normalize_static_retrieval_scope(*, collection=None, collections=None, document_ids, limit) -> tuple[tuple[str, ...], tuple[str, ...] | None]
+def normalize_static_content_types(content_types: Sequence[str] | None) -> tuple[str, ...] | None
+def scope_document_ids(*, requested: tuple[str, ...] | None, configured: tuple[str, ...] | None) -> list[str] | None
+def search_user_documents_tool_result(pack, *, context_order="rank") -> dict[str, object]
+def search_user_documents_tool_contract() -> ToolContract
+```
+
+## integrations
+
+`rag_core.integrations` builds retrieval tools for common frameworks. See
+[Integrate with agents](/docs/agent-integration).
+
+```python
+def build_langchain_retriever(core: Engine, *, namespace, collections, limit=5, ...) -> BaseRetriever
+def create_langchain_retriever_tool(retriever, *, name, description, ...) -> Tool
+def create_langchain_context_tool(core: Engine, *, namespace, collections, name="search_user_documents", ...) -> Tool
+def build_retrieve_context_tool(core, *, namespace, collections, tool_name="search_user_documents", ...) -> FunctionTool   # OpenAI Agents SDK
+def build_mcp_server(core, *, namespace, collections, limit_cap=10, server_name="rag-core", ...) -> Server
+```
+
+## evals
+
+`rag_core.evals` runs retrieval and context evals against app-owned cases. See
+[Evaluate retrieval quality](/docs/eval-quality).
+
+```python
+def load_cases(path: Path) -> list[EvalCase]
+async def run_eval(core: Engine, cases: Sequence[EvalCase], k_values=(5, 10), *, rerank=False, query_plan=None, max_concurrency=1) -> list[EvalResult]
+def eval_report(results: Sequence[EvalResult], *, run: dict | None = None) -> dict[str, object]
+def redact_eval_report(report: Mapping[str, object]) -> dict[str, object]
+```
+
+Aggregate metric keys include `recall_at_5`, `recall_at_10`, `mrr`,
+`ndcg_at_10`, `latency_ms`, `context_recall`, `prompt_safety_pass_rate`, and
+`forbidden_leak_count`.

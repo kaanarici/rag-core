@@ -1,0 +1,193 @@
+---
+title: How retrieval works
+description: The end-to-end path from adding a document to receiving cited, prompt-safe context, and which steps are configurable.
+---
+
+This page walks the full pipeline from adding a document to getting cited
+context, and names where each step is configured. For task-level specifics,
+follow the links to the guides for [ingest](/docs/ingest),
+[search](/docs/search), [context](/docs/context), and
+[providers](/docs/providers).
+
+There are two paths. The ingest path turns bytes into stored, searchable chunks.
+The query path turns a query string into ranked results and assembled context.
+Both run over the same `Engine` (also exported as `RAGCore`).
+
+## Ingest path
+
+`Engine.add_bytes`, folder add, and `Engine.prepare_bytes` run these steps in
+order.
+
+### Parse
+
+The converter registry maps a mime type to a converter and produces markdown or
+text. Each converter is keyed by extension and mime type (`text`, `code`,
+`html`, `csv`, `json`, `xml`, `pdf`, `docx`, `pptx`, `xlsx`, `image`). The entry
+point is stable:
+
+```python
+from rag_core.documents.converters import convert_file
+```
+
+Converters attach parser metadata under `metadata["parser"]` and, when the
+converter reports a quality score, structured `metadata["quality"]`. See
+[formats](/docs/formats) for the per-format maturity and OCR behavior.
+
+### Chunk
+
+Parsed text is chunked by the configured strategy. The public beta strategies
+are `auto`, `markdown`, `code`, and `semantic`.
+
+- `auto` inspects mime type, filename, and content. Code-like input routes to
+  the code chunker; everything else routes to the markdown chunker.
+- `markdown` splits prose on heading and structural boundaries and records
+  `section_path` and `section_title`.
+- `code` splits source on language-aware boundaries and records `line_start` and
+  `line_end`.
+- `semantic` is beta and uses heuristic boundaries unless a semantic embedding
+  runtime is enabled. It runs through the async chunking path because it can call
+  an embedder.
+
+Each chunk is a `PreparedChunk` with `text` (the clean body), `chunk_index`,
+character span (`start_char` / `end_char`), and word count.
+
+### Contextualize (optional)
+
+If a chunk contextualizer is configured, it produces a short context string per
+chunk that is prepended to the chunk to form retrieval text. It is disabled by
+default: the built-in `NoOpContextualizer` returns an empty string for every
+chunk, so contextualization costs nothing unless enabled. Contextualization
+changes retrieval text only. It never changes `PreparedChunk.text`.
+
+### Embed
+
+The dense embedding provider produces one fixed-dimension vector per chunk. When
+a sparse embedder is active, it also produces a `SparseVector` per chunk. Dense
+is always present; sparse is optional and depends on the configured provider and
+the active vector store.
+
+### Index
+
+Chunks are written to the vector store as points carrying the dense vector, any
+sparse vectors, the chunk payload, and locators. After this step the document is
+searchable.
+
+### Content identity and reindex
+
+Ingest is idempotent by content. A stable `content_sha256` over the input bytes
+drives dedup and skip-by-hash: re-ingesting identical content does not re-embed.
+A separate `processing_version` labels which processing pipeline produced the
+stored chunks. When the runtime `processing_version` differs from what is stored,
+the document auto-reindexes. Unchanged ingest defaults to
+`IngestConfig(skip_unchanged="fast")`, which returns stored document metadata
+without re-parsing when the store can answer the lookup. See
+[ingest](/docs/ingest) for manifest and skip semantics.
+
+## Query path
+
+`Engine.search` and `Engine.context` run a linear pipeline:
+retrieve, fuse, rerank, postprocess. The default pipeline is capability-aware.
+
+### Embed the query
+
+The engine embeds only the channels the selected plan and the active vector store
+can use. A dense-only plan does not initialize sparse retrieval. A hybrid plan is
+selected only when the store declares support. This is capability-aware, not a
+promise that every provider runs hybrid.
+
+The default search profile is `balanced` (dense plus sparse fused with RRF) when
+the active store supports dense+sparse hybrid RRF. When it does not, capability
+aware planning falls back to dense-only or sparse-only. Named profiles:
+
+| Profile | Channels | Fusion / rerank |
+| --- | --- | --- |
+| `balanced` (default) | dense + sparse | RRF |
+| `fast` | dense | none |
+| `lexical` | sparse | none |
+| `coverage` | dense + sparse | DBSF |
+| `diverse` | dense + sparse | RRF + MMR |
+
+Store capabilities are declared per provider. Qdrant declares dense, sparse,
+hybrid RRF/DBSF/weighted-RRF, MMR, boost, and nested prefetch. The in-memory
+store and TurboPuffer declare dense, sparse, and hybrid RRF. pgvector declares
+dense only. The selected plan is intersected with these capabilities before any
+provider call.
+
+### Retrieve
+
+The retrieve stage runs dense and/or sparse retrieval against the vector store
+to produce candidate lists.
+
+### Fuse
+
+When more than one channel is used, candidates are combined into one ranked list.
+RRF is the default. DBSF and weighted RRF are available where the store supports
+them, and MMR re-ranks for diversity on the `diverse` profile. On Qdrant this
+fusion runs server-side inside one query plan; in the engine pipeline the fuse
+stage combines results when needed.
+
+### Rerank (optional)
+
+Reranking is off by default. It runs only when the request asks for it and a real
+reranker provider is configured. If rerank is requested without a configured
+provider, the search completes without reranking and records that rerank was
+requested but not attempted.
+
+Provider reranking is fail-open by default. `RerankBudget(fallback_on_error=True)`
+returns the original ordering with a recorded fallback reason if the reranker
+errors or times out. Pass `fallback_on_error=False` when a rerank failure should
+fail the request instead. See [providers](/docs/providers) and
+[rag-modes](/docs/rag-modes).
+
+### Assemble context
+
+`Engine.search` returns `SearchResult` objects for callers building their own
+prompt. `Engine.context` assembles a `Context`: ranked `ContextSnippet` items,
+rank-local `Citation` values, `SourceLocator` hints (page, slide, sheet, row,
+code line, section, chunk), and char/token budgets. Use search when you build the
+prompt; use context when you want prompt-ready text. See [context](/docs/context).
+
+## What is stored versus what reaches the prompt
+
+A chunk can carry more than one text representation, and they have different
+audiences.
+
+- `PreparedChunk.text` / `SearchResult.text` is the clean chunk body. It is what
+  is displayed and what goes into prompt context.
+- `embedding_text` is the dense-embedding input. It may be enriched (for example
+  by contextualization) and can differ from `text`.
+- `sparse_text` is the lexical-indexing input. It may also be enriched and can
+  include compact structured metadata as a retrieval signal.
+
+Enriched `embedding_text` and `sparse_text` exist for retrieval only. They never
+appear in `SearchResult.text` and never appear in prompt text. `Context`
+serialization is prompt-safe by construction: `as_prompt_text()` and
+`to_prompt_payload()` use rank-local citation IDs such as `S1` and `S2` and omit
+app-private identifiers such as document IDs, document keys, result IDs,
+collection names, namespace values, and source hashes.
+
+<Callout type="warn">
+Do not pass `embedding_text` or `sparse_text` into a prompt. They can contain
+contextualization or metadata that is correct as a retrieval signal but is not the
+clean chunk body. Use `SearchResult.text`, or `Context.as_prompt_text()`.
+</Callout>
+
+## Where each step is configured
+
+| Step | Configured by | Default |
+| --- | --- | --- |
+| Parse | converter registry, by mime type | enabled for registered formats |
+| Chunk | `Config.chunking` (`ChunkingConfig`) | `auto` |
+| Contextualize | `Config.contextualizer`, or an injected `ChunkContextualizer` | disabled (no-op) |
+| Embed (dense) | dense embedding provider | required |
+| Embed (sparse) | sparse embedder provider + store support | optional |
+| Index / store | vector store provider | Qdrant default |
+| Profile / plan | per request: an explicit `query_plan` on `Engine.search`, or `--search-profile` / `--plan` on the CLI and HTTP runtime | capability-aware `balanced` when supported |
+| Rerank | reranker provider + per-request `rerank` flag | off, fail-open |
+
+Chunking, embeddings, reranker, and vector store are selected by configuration or
+provider injection, not by editing the core. Experimental pipeline stages
+(custom `QueryTransform`, `Retrieve`, `Fuse`, `Rerank`, `Postprocess`, and custom
+vector stores or sidecars) are passed into `Engine` when you build it, not
+changed per request. See [providers](/docs/providers) for the provider catalog
+and [concepts](/docs/concepts) for the vocabulary.

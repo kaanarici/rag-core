@@ -1,0 +1,284 @@
+---
+title: "Tutorial: build a retrieval feature"
+description: Build a working retrieval feature end to end, from indexing a folder to a scoped tool endpoint with evaluation.
+---
+
+This tutorial builds a complete retrieval feature for an application: index a
+folder of documents, search it, assemble cited context for a model, keep the
+index current, expose retrieval as a scoped tool endpoint, and measure quality.
+Every step runs locally with no API key, using the on-device embedding model.
+
+It covers the full path for adding rag-core to a project. Each step is runnable
+on its own.
+
+## Prerequisites
+
+```bash
+pip install rag-core   # or: uv add rag-core
+```
+
+The examples use a folder of documents. To follow along with a known corpus,
+clone the repo and use `examples/demo_corpus`, which contains three short
+Markdown files (`billing.md`, `security.md`, `corpus_lifecycle.md`). Any folder
+of text, Markdown, code, CSV, JSON, HTML, PDF, or Office files works. See
+[Supported file formats](/docs/formats).
+
+## Step 1: index a folder and ask one question
+
+Start with the synchronous facade. `rag_core.index()` reads the folder, embeds it
+with the local model, and returns a handle.
+
+```python
+import rag_core
+
+idx = rag_core.index("examples/demo_corpus", collection="help")
+print(idx.context("How can invoices be paid?"))
+idx.close()
+```
+
+`index()` uses FastEmbed (`BAAI/bge-small-en-v1.5`) for real semantic retrieval.
+The model downloads once on first use, then runs locally. `context()` returns
+prompt-ready text with citations. `close()` releases the store, or use the handle
+as a context manager:
+
+```python
+with rag_core.index("examples/demo_corpus", collection="help") as idx:
+    hits = idx.search("billing policy", limit=3)
+    for hit in hits:
+        print(f"{hit.score:.3f}  {hit.document_key}")
+```
+
+`search()` returns ranked `SearchResult` objects when you want to build the
+prompt yourself. `context()` returns assembled, cited text when you want
+something to hand straight to a model.
+
+<Callout type="info">
+  `rag_core.index()` is the synchronous, single-folder entry point. An
+  application that owns its own lifecycle uses the async `Engine` instead, which
+  the next step introduces.
+</Callout>
+
+## Step 2: move to the async Engine
+
+`Engine` is the async core an application embeds. Construct one per worker
+process and reuse it. `Config.local()` gives the same no-key local model backed
+by an in-process Qdrant store.
+
+```python
+import asyncio
+from rag_core import Engine, Config
+
+
+async def main() -> None:
+    async with Engine(Config.local()) as core:
+        result = await core.add("examples/demo_corpus", collection="help")
+        print(f"indexed {result.succeeded_count} files, {result.written_count} written")
+
+        pack = await core.context(
+            query="How can invoices be paid?",
+            collection="help",
+            limit=5,
+        )
+        print(pack.as_prompt_text())
+        print(pack.prompt_citation_summary)
+
+
+asyncio.run(main())
+```
+
+`async with Engine(...)` opens and closes the store for you. `add()` indexes the
+folder and returns counts. `context()` returns a `Context` object;
+`as_prompt_text()` is the prompt-safe rendering and `prompt_citation_summary`
+lists the sources behind it. See [Add documents](/docs/ingest) and
+[Build context for a prompt](/docs/context).
+
+## Step 3: scope retrieval to a tenant
+
+Real applications serve more than one tenant. Retrieval runs inside a
+`namespace` (the tenant) and a `collection` (a knowledge base). Bind both from
+your authenticated session, never from model input.
+
+```python
+NAMESPACE = "acme"        # from the authenticated session
+COLLECTION = "help"       # a logical knowledge base for this tenant
+
+async with Engine(Config.local()) as core:
+    await core.add("examples/demo_corpus", namespace=NAMESPACE, collection=COLLECTION)
+
+    pack = await core.context(
+        query="How can invoices be paid?",
+        namespace=NAMESPACE,
+        collection=COLLECTION,
+        limit=5,
+    )
+    print(pack.as_prompt_text())
+```
+
+The same axes apply to every call. See
+[Multi-tenancy and scope](/docs/multi-tenancy) for the rules and the contract
+helpers that enforce them.
+
+## Step 4: keep the index current
+
+Ingest is idempotent. rag-core fingerprints each document by content hash, so
+re-adding an unchanged folder skips the unchanged files instead of duplicating
+them.
+
+```python
+async with Engine(Config.local()) as core:
+    first = await core.add("examples/demo_corpus", namespace="acme", collection="help")
+    again = await core.add("examples/demo_corpus", namespace="acme", collection="help")
+    # `again.skipped_count` equals the number of unchanged files.
+```
+
+When a document is removed at the source, delete it from the index by its
+`document_id`:
+
+```python
+result = await core.delete_document(
+    document_id=doc_id,
+    namespace="acme",
+    collection="help",
+)
+print(result.index_deleted, result.vector_store_acked)
+```
+
+Your application owns the schedule and the decision of what changed. rag-core
+owns idempotent ingest and the delete primitives. See
+[Keep an index in sync](/docs/sync).
+
+## Step 5: expose retrieval as a scoped tool endpoint
+
+To let a model retrieve through a tool call, parse the model request, bind your
+scope, and return the canonical tool result. The `rag_core.contracts` helpers do
+the validation.
+
+```python
+from collections.abc import Mapping
+from contextlib import asynccontextmanager
+from typing import Any
+
+from fastapi import FastAPI, HTTPException, Request
+
+from rag_core import Engine, Config
+from rag_core.contracts import (
+    parse_search_user_documents_request,
+    validate_bound_namespace,
+    normalize_static_retrieval_scope,
+    scope_document_ids,
+    search_user_documents_tool_result,
+)
+
+NAMESPACE, COLLECTIONS = "acme", ("help",)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with Engine(Config.local()) as core:
+        await core.add("examples/demo_corpus", namespace=NAMESPACE, collection=COLLECTIONS[0])
+        app.state.core = core
+        yield
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+@app.post("/tools/search_user_documents")
+async def search_user_documents(request: Request) -> dict[str, object]:
+    payload: Any = await request.json()
+    if not isinstance(payload, Mapping):
+        raise HTTPException(status_code=400, detail="expected a JSON object")
+    try:
+        parsed = parse_search_user_documents_request(payload)
+        namespace = validate_bound_namespace(NAMESPACE)
+        collections, allowed_ids = normalize_static_retrieval_scope(
+            collections=COLLECTIONS,
+            document_ids=None,
+            limit=parsed.limit,
+        )
+        document_ids = scope_document_ids(
+            requested=parsed.document_ids,
+            configured=allowed_ids,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    core: Engine = request.app.state.core
+    pack = await core.context(
+        query=parsed.query,
+        namespace=namespace,
+        collections=list(collections),
+        limit=parsed.limit,
+        document_ids=document_ids,
+        rerank=parsed.rerank,
+        use_lexical_search=parsed.use_lexical_search,
+        max_chars=parsed.max_chars,
+        max_tokens=parsed.max_tokens,
+    )
+    return search_user_documents_tool_result(pack)
+```
+
+Run it and call the tool:
+
+```bash
+uvicorn app:app --reload
+curl -s -X POST http://127.0.0.1:8000/tools/search_user_documents \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"How can invoices be paid?","limit":3}' | python -m json.tool
+```
+
+The model request body never carries `namespace` or `collections`. The endpoint
+binds them. LangChain, OpenAI Agents, and MCP versions of this tool are in
+[Integrate with agents](/docs/agent-integration).
+
+## Step 6: measure retrieval quality
+
+Before trusting retrieval on real data, write eval cases and run them against the
+same providers your application uses. A case states a query, the scope, and the
+document ids you expect back.
+
+```bash
+uv run rag-core eval examples/demo_corpus examples/eval_cases.jsonl --json
+```
+
+In your own repository, keep labeled cases and run `rag_core.evals` against your
+configured embeddings. The report gives recall, MRR, and nDCG, plus context
+checks such as citation count and prompt-safety. See
+[Evaluate retrieval quality](/docs/eval-quality).
+
+<Callout type="warn">
+  The `--demo` path uses deterministic embeddings and does not reflect retrieval
+  quality. Use `Config.local()` or a configured provider for any quality claim.
+</Callout>
+
+## Step 7: switch to configured providers
+
+The local model is enough for development and small corpora. For production
+scale, keep every `Engine` call the same and change only the config factory to
+point at a running Qdrant and a hosted embedding provider.
+
+```python
+config = Config.qdrant(
+    url="http://127.0.0.1:6333",
+    embedding_provider="openai",
+    model="text-embedding-3-small",
+)
+
+async with Engine(config) as core:
+    await core.add("./docs", collection="help")
+    pack = await core.context(query="How can invoices be paid?", collection="help")
+    print(pack.as_prompt_text())
+```
+
+The retrieval code does not change. See [Configure providers](/docs/providers)
+for vector stores and embedding or rerank options, and
+[Self-host the HTTP API](/docs/self-host) to run the same core behind an HTTP
+boundary.
+
+## Where to go next
+
+- [How retrieval works](/docs/how-retrieval-works) explains the pipeline behind
+  these calls.
+- [Python API](/docs/api-python) is the full method-level reference.
+- [Multi-tenancy and scope](/docs/multi-tenancy) covers the scoping rules in
+  depth.

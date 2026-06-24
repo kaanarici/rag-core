@@ -1,0 +1,14 @@
+include LICENSE
+include README.md
+include llms.txt
+include pyproject.toml
+include compose.yaml
+include Dockerfile
+include .env.example
+
+include docs/release.md
+include docs/self-host/openapi.yaml
+recursive-include examples *.jsonl *.md *.py *.ts
+recursive-include scripts *.py *.sh
+prune tests
+prune docs-site

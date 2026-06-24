@@ -1,0 +1,62 @@
+---
+title: Introduction
+description: rag-core is an embeddable Python retrieval engine for RAG. Index a folder, ask a question, and get back ranked context with citations.
+---
+
+rag-core is an embeddable Python retrieval engine for RAG. Point it at a folder,
+ask a question, and get back prompt-ready context with citations. It runs locally
+with no API key, and the same calls scale to a configured vector store and hosted
+embeddings when your application needs them.
+
+It owns the retrieval path: ingest, chunking, indexing, search, context assembly,
+traces, and eval hooks. Your application keeps authentication, tenancy,
+connectors, chat, and generation. rag-core stays a retrieval core, not a hosted
+service.
+
+## Install
+
+```bash
+pip install rag-core   # or: uv add rag-core
+```
+
+## Index a folder
+
+```python
+import rag_core
+
+idx = rag_core.index("./docs")
+print(idx.context("How can invoices be paid?"))
+```
+
+`index()` embeds the folder with a local model (FastEmbed, no API key) and returns
+a handle. `context()` returns prompt-ready context with citations. `search()`
+returns ranked hits when you want to build the prompt yourself.
+
+<Callout type="info">
+  The first run downloads the local embedding model. Later runs reuse the cached model.
+</Callout>
+
+## Where to start
+
+<Cards>
+  <Card title="Quickstart" href="/docs/quickstart" description="Index a folder and search it from Python or the CLI, with no API key." />
+  <Card title="Tutorial" href="/docs/tutorial" description="Build a retrieval feature end to end: ingest, search, context, a scoped endpoint, and eval." />
+  <Card title="Core concepts" href="/docs/concepts" description="Collection, namespace, document, chunk, index, search, context, citation." />
+  <Card title="Python API" href="/docs/api-python" description="The method-level reference for Engine, Index, Config, and the result types." />
+</Cards>
+
+## How the docs are organized
+
+- **Getting started** installs rag-core and walks the first-run path and the
+  full [tutorial](/docs/tutorial).
+- **Concepts** explain the vocabulary, [how retrieval works](/docs/how-retrieval-works),
+  and the three [RAG modes](/docs/rag-modes).
+- **Guides** are task-oriented: [add documents](/docs/ingest),
+  [keep them in sync](/docs/sync), [search](/docs/search),
+  [build context](/docs/context), [scope to tenants](/docs/multi-tenancy),
+  [configure providers](/docs/providers), [integrate with agents](/docs/agent-integration),
+  [evaluate quality](/docs/eval-quality), [self-host](/docs/self-host), and
+  [trace retrieval](/docs/traces).
+- **Reference** is the exhaustive surface: [Python API](/docs/api-python),
+  [CLI](/docs/cli), [HTTP API](/docs/http), [configuration](/docs/config),
+  [file formats](/docs/formats), and [stability](/docs/stability).

@@ -1,0 +1,162 @@
+---
+title: RAG modes
+description: The three layered RAG modes rag-core supports and exactly where each one is configured.
+---
+
+rag-core is one engine with three layered modes. Basic RAG runs on defaults.
+Advanced RAG turns on optional stages through `Config` and call options.
+Experimental RAG injects application-owned adapters when you build the `Engine`.
+The mode reflects how much you configure, not a separate API.
+Each mode uses the same `Engine`, the same ingest, and the same retrieval
+pipeline.
+
+| Mode | How you select it | Stability |
+| --- | --- | --- |
+| Basic | Defaults, `Config.local()`, or `Config.qdrant(...)` | Beta public surface |
+| Advanced | `Config` fields and search call options | Beta public surface |
+| Experimental | `Engine(...)` injection, registries, custom `RetrievalPipeline` | May change during beta |
+
+## Basic RAG
+
+The default path: parse, chunk, index into the configured vector store, then
+retrieve. It uses local embeddings through `Config.local()` (FastEmbed
+`BAAI/bge-small-en-v1.5`, no API key) or a configured provider through
+`Config.qdrant(...)`. Retrieval is capability-aware: hybrid dense plus sparse
+RRF when the active store declares support, and a narrower dense or sparse plan
+when it does not. No rerank and no contextualization run in this mode.
+
+```python
+import rag_core
+
+index = rag_core.index("./docs", collection="help")
+results = index.search("how do refunds work?")
+```
+
+```python
+from rag_core import Engine, Config
+
+engine = Engine(Config.local())
+```
+
+`rag_core.index(...)` and `Engine(Config.local())` give you this mode with no
+further configuration. Rerank stays off until you pass `rerank=True` with a
+configured reranker, and `use_lexical_search` stays off until you configure a
+sidecar.
+
+See [How retrieval works](/docs/how-retrieval-works) for the end-to-end path and
+[Search and rank](/docs/search) for the exact default query plan.
+
+## Advanced RAG
+
+The same engine with optional stages turned on through `Config` and per-call
+options. You select each stage at config or call time, not by editing the core.
+
+| Stage | Where it is configured |
+| --- | --- |
+| Reranking | `Config.reranker` (provider, model) plus `rerank=True` on the search or context call |
+| Lexical sidecar | `Config.ingest.enable_lexical_search` or `Config.ingest.lexical_search_provider`, plus `use_lexical_search=True` on the call |
+| Chunk contextualization | `Config.contextualizer.enabled=True` with provider `anthropic` |
+| Chunking strategy | `Config.chunking.strategy` (`auto`, `markdown`, `semantic`, `code`) |
+| Embedding cache | `Config.ingest.embedding_cache_provider` |
+| Query plans and search profiles | `query_plan=` on the search call; `rag_core.search.search_profile(...)` and profile description helpers |
+
+```python
+import dataclasses
+from rag_core import Engine, Config
+from rag_core.config import ChunkingConfig, RerankerConfig, ContextualizerConfig
+
+config = dataclasses.replace(
+    Config.local(),
+    reranker=RerankerConfig(provider="cohere", model="rerank-v3.5"),
+    contextualizer=ContextualizerConfig(enabled=True, provider="anthropic"),
+    chunking=ChunkingConfig(strategy="markdown"),
+)
+engine = Engine(config)
+```
+
+Reranking, the lexical sidecar, and query plans are also per-call options. Pass
+`rerank=True` only when a reranker is configured, and `use_lexical_search=True`
+only when a sidecar is configured. `use_lexical_search` is the request flag for
+the lexical/exact-match sidecar path, not a query-plan or search-profile
+selector.
+
+<Callout type="info">
+Contextualization changes the processing fingerprint. A document indexed with a
+different contextualizer setting auto-reindexes on the next ingest.
+</Callout>
+
+See [Search and rank](/docs/search) for rerank, profiles, and query plans,
+[Build context for a prompt](/docs/context) for contextualized retrieval output,
+and [Configure providers](/docs/providers) for provider entrypoints, extras, and
+diagnostics.
+
+## Experimental RAG
+
+The same engine with application-owned adapters injected directly into `Engine`.
+These surfaces have no `Config` or CLI options and may change during the beta.
+
+Inject providers directly into `Engine`:
+
+```python
+from rag_core import Engine
+
+engine = Engine(
+    embedding_provider=my_embedder,
+    vector_store=my_store,
+    reranker=my_reranker,
+    search_sidecar=my_sidecar,
+    chunk_contextualizer=my_contextualizer,
+    event_sink=my_sink,
+)
+```
+
+`Engine` accepts injected `embedding_provider`, `sparse_embedder`,
+`vector_store`, `reranker`, `ocr_provider`, `search_sidecar`, `event_sink`,
+`chunk_contextualizer`, `chunk_context_cache`, and `embedding_cache`. Injection
+takes precedence over `Config` name resolution. You can also register name-resolved
+providers in the typed registries (`EMBEDDING_PROVIDERS`, `RERANKER_PROVIDERS`,
+`VECTOR_STORES`, `SEARCH_SIDECARS`, and the other categories) so they become
+selectable by name.
+
+Build a custom linear `RetrievalPipeline` and pass it to `SearchPipelineRunner`
+for multi-query expansion, HyDE, or neighbor expansion:
+
+```python
+from rag_core.search.pipeline import (
+    AnthropicQueryVariantGenerator,
+    HybridRetrieve,
+    MultiQueryTransform,
+    PassThroughRerank,
+    RetrievalPipeline,
+    RrfFuse,
+)
+from rag_core.search.pipeline_runner import SearchPipelineRunner
+
+generator = AnthropicQueryVariantGenerator()
+pipeline = RetrievalPipeline(
+    retrieve=HybridRetrieve(),
+    fuse=RrfFuse(),
+    rerank=PassThroughRerank(),
+    query_transforms=(MultiQueryTransform(generator, variant_count=3),),
+)
+runner = SearchPipelineRunner(
+    embedding_provider=embedding_provider,
+    sparse_embedder=sparse_embedder,
+    vector_store=vector_store,
+    pipeline=pipeline,
+)
+```
+
+`HydeTransform` and `NeighborExpandPostprocess` plug into the same pipeline.
+Neighbor expansion requires a store that supports `chunk_index_lookup`. Stores
+without it do nothing and emit a diagnostic event. There are no profiles, config
+fields, or CLI flags for query expansion.
+
+<Callout type="warn">
+Custom adapters must report their `StoreCapabilities` accurately and reject
+query-plan stages they do not support. These surfaces are listed as experimental
+in [Public API and stability](/docs/stability).
+</Callout>
+
+See [Configure providers](/docs/providers) for the protocol and registry table
+and [Public API and stability](/docs/stability) for which surfaces may change.

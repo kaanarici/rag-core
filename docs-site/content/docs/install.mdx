@@ -1,0 +1,65 @@
+---
+title: Install
+description: Install rag-core from PyPI, choose optional extras, and confirm the install with a no-key check.
+---
+
+rag-core is a Python package. Install it from PyPI with pip or uv.
+
+```bash
+pip install rag-core
+# or
+uv add rag-core
+```
+
+The base install runs the local, no-key path: indexing a folder with the
+on-device FastEmbed model and an in-process Qdrant store. The model downloads
+once on first use, then runs locally.
+
+## Optional extras
+
+Install an extra only when you need its provider or surface. From a published
+package, use bracket extras; from a checkout, use `uv sync --extra <name>`.
+
+| Extra | Adds |
+| --- | --- |
+| `runtime` | The `rag-core serve` HTTP runtime |
+| `mcp` | The `rag-core mcp` stdio server |
+| `langchain` | LangChain retriever and tool builders |
+| `openai-agents` | OpenAI Agents SDK tool builder |
+| `rerank` | Cohere embedding and reranker adapters |
+| `voyage`, `zeroentropy` | Additional embedding and rerank providers |
+| `pgvector`, `turbopuffer` | Additional vector stores |
+| `anthropic` | Anthropic chunk contextualizer |
+| `opentelemetry` | OpenTelemetry event sink |
+| `semantic`, `html` | Local parsing helpers |
+
+```bash
+pip install "rag-core[runtime]"
+pip install "rag-core[langchain,rerank]"
+```
+
+## Confirm the install
+
+Run a no-key check that confirms the install without downloading a model:
+
+```bash
+rag-core demo --json
+```
+
+To confirm real local retrieval on a folder, index one and ask a question:
+
+```bash
+rag-core search "billing policy" ./docs --json
+```
+
+The first real run downloads the local embedding model. Add `--demo` to use
+deterministic embeddings with no download. This confirms the install only and is
+not real retrieval.
+
+## Requirements
+
+rag-core targets Python 3.12 and newer. Provider API calls (OpenAI, Cohere,
+Voyage, and others) need the matching credential in the environment. See the
+[Configuration reference](/docs/config).
+
+Next: [Quickstart](/docs/quickstart) or the full [tutorial](/docs/tutorial).
