@@ -1,0 +1,34 @@
+*.egg-info/
+*.pyc
+.DS_Store
+.claude/
+.env
+.env.local
+/.rag-core/
+/dev/project_identity.local.toml
+
+# Agent & planning docs (local only)
+/AGENTS.md
+/CLAUDE.md
+/CONTEXT.md
+/MISSION.md
+/docs/AGENTS.md
+/docs/CONTEXT.md
+/docs/plans/
+/docs/research/
+/roadmap.md
+
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+.wheel-smoke/
+__pycache__/
+build/
+dist/
+
+# Docs site (Fumadocs / Next.js): build artifacts only; source is tracked
+/docs-site/node_modules/
+/docs-site/.next/
+/docs-site/.source/
+/docs-site/out/

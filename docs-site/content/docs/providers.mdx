@@ -1,0 +1,244 @@
+---
+title: Configure providers
+description: Configure vector stores, embeddings, rerankers, extension points, diagnostics, and egress boundaries.
+---
+
+Providers select where vectors live, which models produce retrieval signals, and
+which optional adapters your application enables. You choose them through
+configuration, not by editing the core.
+
+## Vector stores
+
+rag-core keeps vector stores behind one contract. The default wheel ships
+Qdrant as the built-in store.
+
+### Maturity
+
+| Level | Meaning |
+| --- | --- |
+| stable | Default path with diagnostics support. |
+| beta | Optional or utility adapter. Check its documented limits before production rollout. |
+
+| Provider | Maturity | Entrypoint |
+| --- | --- | --- |
+| Qdrant | stable | `QdrantConfig`, `--qdrant-*`, `rag_core.search.providers.QdrantVectorStore` |
+| pgvector | beta | `--store pgvector`, `uv sync --extra pgvector`, `rag_core.search.providers.pgvector_store.PgVectorVectorStore` |
+| TurboPuffer | beta | `--store turbopuffer`, `uv sync --extra turbopuffer`, `rag_core.search.providers.turbopuffer_store.TurboPufferVectorStore` |
+| In-memory | beta | `Engine(vector_store=...)` with `rag_core.search.providers.memory_store.InMemoryVectorStore` |
+
+Each store declares the query plans and metadata filters it supports, and
+`rag-core doctor --json` reports those capabilities for the configured store.
+Unsupported query-plan stages fail closed rather than silently degrading, so a
+plan a store cannot run is rejected instead of returning misleading results.
+
+### Qdrant
+
+Qdrant is the default configured store.
+
+```bash
+uv run rag-core doctor --check-store --qdrant-location :memory: \
+  --embedding-provider demo --embedding-dimensions 64 --json
+uv run rag-core add ./docs --collection help \
+  --qdrant-url http://127.0.0.1:6333 \
+  --embedding-provider openai --embedding-model text-embedding-3-small
+```
+
+### TurboPuffer
+
+TurboPuffer is not in the default wheel and requires `TURBOPUFFER_API_KEY`. The
+beta adapter supports dense ANN, BM25 full-text search over a rank-only
+`bm25_text` field, and client-side hybrid RRF over one dense prefetch plus one
+primary BM25 prefetch.
+
+It does not serialize sparse-vector payloads or declare a sparse-vector schema.
+BM25 full-text search is the lexical channel, and the returned `text` stays clean
+for display and citations. Unsupported query-plan stages such as DBSF, weighted
+RRF, MMR, and boost fail closed.
+
+<Callout type="warn">
+  Do not use TurboPuffer for the no-key path or the default `docker compose`, which use demo embeddings.
+</Callout>
+
+Known local and OpenAI embedding models infer dimensions automatically. Use
+`--embedding-dimensions` only for custom or unknown provider and model pairs.
+
+### pgvector
+
+pgvector is not in the default wheel. It requires a Postgres database with the
+`vector` extension available.
+
+The adapter creates the configured schema and table, then creates a cosine HNSW
+index when permissions allow it. If the extension is missing or cannot be
+created, startup fails with a clear error explaining how to fix it.
+
+It supports dense ANN plus SQL-backed metadata filters, document-record lookup,
+per-point delete, and chunk-index lookup. Sparse, hybrid, MMR, boost, and
+nested-prefetch query plans fail closed.
+
+```bash
+uv run rag-core add ./docs --collection help \
+  --store pgvector \
+  --pgvector-dsn "$RAG_CORE_PGVECTOR_DSN" \
+  --embedding-provider openai --embedding-model text-embedding-3-small
+```
+
+### Migration
+
+Add the same source again with the same embedding model and dimensions. Then run
+`doctor --json` and
+[examples/retrieval_eval.py](https://github.com/kaanarici/rag-core/blob/main/examples/retrieval_eval.py)
+before promoting a new vector store provider.
+
+## Custom providers
+
+You can supply a custom provider in two ways: register it under a name and
+select it through configuration, or inject an application-owned instance directly
+into `Engine`. The table lists each category, its protocol, the registry or
+built-in classes it offers, and how you select it at runtime. Registering a
+provider does not by itself make a category selectable from `Config`.
+
+| Category | Protocol | Registry or built-ins | Runtime selection |
+| --- | --- | --- | --- |
+| Dense embeddings | `rag_core.search.provider_protocols.EmbeddingProvider` | `EMBEDDING_PROVIDERS` | `Config.embedding`, CLI, or `Engine(embedding_provider=...)` |
+| Sparse embeddings | `rag_core.search.provider_protocols.SparseEmbedder` | `SPARSE_EMBEDDERS` | `Engine(sparse_embedder=...)`; default FastEmbed models load only when sparse indexing/search is used |
+| Rerankers | `rag_core.search.provider_protocols.RerankerProvider` | `RERANKER_PROVIDERS` | `Config.reranker`, CLI, or `Engine(reranker=...)` |
+| Vector stores | `rag_core.search.provider_protocols.VectorStore` | `VECTOR_STORES` | Qdrant/pgvector/TurboPuffer via `Config.vector_store` or CLI; any store via `Engine(vector_store=...)` |
+| OCR | `rag_core.documents.OcrProvider` | `OCR_PROVIDERS` | `Engine(ocr_provider=...)`; no `Config` field |
+| Search sidecars | `rag_core.search.provider_protocols.SearchSidecar` | `SEARCH_SIDECARS` | `Config.ingest.lexical_search_provider` or `Engine(search_sidecar=...)` |
+| Embedding cache | `rag_core.search.providers.EmbeddingCache` | `EMBEDDING_CACHES` | `Config.ingest.embedding_cache_provider` or `Engine(embedding_cache=...)` |
+| Chunk context cache | `rag_core.search.providers.ChunkContextCache` | `CHUNK_CONTEXT_CACHES` | `Engine(chunk_context_cache=...)` only |
+| Chunk contextualizers | `rag_core.documents.ChunkContextualizer` | `CONTEXTUALIZER_PROVIDERS` | `Config.contextualizer` or `Engine(chunk_contextualizer=...)` |
+| Event sinks | `rag_core.events.EventSink` | Built-ins: `NoOpSink`, `LoggingSink`, `JsonlSink`, `EventBuffer`, `MultiSink`, `OpenTelemetrySink` | `Engine(event_sink=...)` only |
+| Chunking | `rag_core.documents.chunking.ChunkingStrategy` | `CHUNKING_STRATEGIES` | `Config.chunking` for public prepare paths; custom strategies through registry |
+| Converters | `rag_core.documents.converters.BaseConverter` | Dedicated loader: `get_converter()`, `rag_core.documents.converters.convert_file()` | `ConversionResult` via converter registry |
+
+SQLite embedding and chunk-context caches accept `max_age_seconds` and
+`max_entries` bounds at construction. The defaults selected through `Config` are
+unbounded. Eviction runs when the cache is opened and removes the oldest writes
+first.
+
+Contextual retrieval is disabled by default. Set
+`Config.contextualizer.enabled=True` with provider `anthropic` to build
+the built-in `AnthropicChunkContextualizer`. Direct
+`Engine(chunk_contextualizer=...)` injection still takes precedence for
+application-owned contextualizers.
+
+A custom vector store must declare its
+`rag_core.search.provider_protocols.StoreCapabilities` accurately, and any
+query-plan stage it does not support must fail closed rather than degrade.
+
+To experiment with custom postprocesses such as `NeighborExpandPostprocess`,
+pass a custom `RetrievalPipeline` to `SearchPipelineRunner`. Neighbor expansion requires a
+vector store that supports `chunk_index_lookup`. Stores without it do nothing and
+emit a diagnostic event instead of widening citations or inventing spans.
+
+Install extras before optional providers. `rerank` installs Cohere
+embedding and reranker adapters. `voyage`, `zeroentropy`, `turbopuffer`,
+`pgvector`, `runtime`, `anthropic`, `opentelemetry`, `langchain`,
+`openai-agents`, and `mcp` install the other optional adapters. `semantic` and
+`html` add local parsing helpers.
+
+The `html` extra adds a fallback HTML converter for difficult pages. The default
+HTML path works without it.
+
+OpenAI, Voyage, ZeroEntropy, and Cohere calls retry up to three times on
+transient failures (429, 5xx, timeouts, and connection errors) with bounded
+backoff.
+
+`rag-core doctor --check-store` also runs one-attempt health probes for
+built-in dense embedding and reranker providers that expose `check_health`.
+Demo and no-op providers report healthy without external calls. Local embeddings
+load the FastEmbed model. OpenAI, Voyage, ZeroEntropy, and Cohere make one
+minimal request and report a sanitized error type and a short hint for fixing it,
+never the raw error.
+
+### Support levels and diagnostics
+
+`rag-core doctor --json` reports non-secret readiness.
+
+Provider diagnostics use these JSON support-level values:
+
+| JSON value | Meaning |
+| --- | --- |
+| `default` | Default active provider for the category |
+| `default_noop` | Built-in no-op provider used when a category is disabled |
+| `optional` | Built-in adapter behind an optional package, credential, or explicit configuration |
+| `utility` | Built-in local utility such as local/demo embeddings, the in-memory vector store, caches, event sinks, or lexical sidecars |
+| `injected` | Application-owned provider passed directly to `Engine` |
+
+| Category | Diagnostic surface |
+| --- | --- |
+| Dense embeddings | provider, registered names, package availability, API-key presence, dimensions, runtime health when requested |
+| Sparse embeddings | registered names, package availability |
+| Rerankers | requested/effective provider, fallback reason, runtime health when requested |
+| OCR | registered names, API-key presence |
+| Contextualizers | configured provider, registered names, package availability, API-key presence |
+| Caches | configured provider and registered names |
+| Search sidecars | configured provider and registered names |
+| Event sinks | package availability, injection surface |
+| Vector stores | capabilities, query-plan support, collection/namespace identity |
+
+## Provider output shapes
+
+The built-in adapters parse each provider's response into the shapes below. This
+describes what each provider returns, not a quality benchmark.
+
+| Provider | Notes |
+| --- | --- |
+| Demo embeddings | Deterministic no-key provider for offline checks; not semantic retrieval |
+| Local embeddings | `local` dense provider via FastEmbed `BAAI/bge-small-en-v1.5`; real semantic retrieval, 384 dimensions, first use downloads the ONNX model once |
+| OpenAI embeddings | `data[]` with `index` and `embedding`; known model dimensions are inferred |
+| Cohere embeddings | `embeddings.float[]`; `embed-v4.0` dimensions are inferred and may be set to 256, 512, 1024, or 1536 |
+| Voyage embeddings | Flexible dimensions per model metadata |
+| ZeroEntropy embeddings | `results[]` with `embedding`; `float` path supported |
+| Cohere rerank | `results[]` with `index`, `relevance_score` |
+| Voyage rerank | `index`, `relevance_score` |
+| ZeroEntropy rerank | `index`, `relevance_score`; `top_n` |
+| FastEmbed sparse | Lazy `SparseTextEmbedding` load to `SparseVector`; diagnostics expose load status |
+| Qdrant Query API | dense, sparse, RRF, DBSF, weighted RRF, MMR, boost |
+| pgvector query | dense cosine ANN + SQL metadata filters; sparse/hybrid/MMR/boost fail closed |
+| TurboPuffer query | dense ANN, BM25 text search, hybrid RRF + filters; DBSF/MMR/boost fail closed |
+| Mistral OCR | `pages[]` with `markdown` |
+| Gemini command OCR | `generateContent` multimodal path; page selection unsupported |
+
+## Network egress
+
+Every outbound HTTP fetch goes through `FetchSecurityPolicy`, which enforces an
+allowlist on every URL and every redirect hop. Your application decides which
+hosts are allowed; rag-core enforces the decision.
+
+`FetchSecurityPolicy.allowed_hosts` controls what can be fetched:
+
+- `None` (default): block private IP addresses, allow any public host.
+- `()` (empty tuple): deny all outbound HTTP. No fetch can leave the process.
+- Non-empty tuple: allow only these hosts. Each entry is an exact host
+  (`docs.example.com`) or a leading-wildcard suffix (`*.example.com`).
+
+URL-list ingest can also bind allowed hosts per collection through
+`RemoteUrlIngestRequest.licensed_source_registry`, which maps a `collection` to
+its `allowed_hosts`. A URL whose host is not allowed for the request's
+`collection` is rejected with `LicensedSourceMismatch` before any bytes are
+fetched. Your application provides the registry; rag-core ships no defaults.
+
+### Lock down egress
+
+To run with no outbound network access, set `allowed_hosts=()` and leave the
+optional providers unconfigured:
+
+| Setting | Locked-down value |
+| --- | --- |
+| `FetchSecurityPolicy.allowed_hosts` | `()`, denies every fetch |
+| OCR providers | not configured, so no Mistral or Gemini fetch path |
+| URL-list ingest | not used |
+| Embedding cache / chunk-context cache | `NoCache` / `NoChunkContextCache` |
+| Lexical sidecar | disabled |
+| Reranker | disabled |
+| Embeddings | a local or on-premise provider |
+
+When OCR is configured, the OCR subprocesses pin to their vendor host
+(`api.mistral.ai` for Mistral, `generativelanguage.googleapis.com` for Gemini),
+refuse redirects to any other host, enforce a per-request timeout, and cap the
+response body. With `allowed_hosts=()`, those pinned hosts are denied too.
+
+`RAG_CORE_OCR_FETCH_TIMEOUT_SECONDS` and `RAG_CORE_OCR_FETCH_MAX_BYTES` override
+the OCR subprocess timeout and body cap.

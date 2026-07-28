@@ -1,0 +1,83 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Cache HuggingFace models (fastembed)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-models-${{ runner.os }}-fastembed-v2
+
+      - name: Developer journey smoke (Journey A)
+        if: matrix.python-version == '3.12'
+        run: ./scripts/dx_smoke.sh
+
+      - name: Vercel AI SDK example smoke (Journey B)
+        if: matrix.python-version == '3.12'
+        run: ./scripts/verify_vercel_ai_sdk_example.sh
+
+      - name: Self-host HTTP smoke (Journey C)
+        if: matrix.python-version == '3.12'
+        run: ./scripts/ci_self_host_smoke.sh
+
+      - name: Optional integration smoke
+        if: matrix.python-version == '3.12'
+        run: ./scripts/verify_optional_integrations.sh
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Type check
+        run: uv run mypy src tests examples
+
+      - name: Architecture pressure
+        run: uv run python scripts/architecture_pressure.py --json
+
+      - name: Test (fast tier)
+        run: uv run pytest -q -m "not live and not eval and not eval_harness and not provider_contract and not integration"
+
+      - name: Test (provider replay)
+        run: uv run pytest -q -m provider_contract
+
+      - name: Test (integration retrieval)
+        run: uv run pytest -q -m integration
+
+      - name: Test (PR retrieval eval)
+        run: uv run pytest -q tests/evals/test_retrieval_eval_pr.py
+
+      - name: Test (local semantic eval)
+        run: uv run pytest -q tests/evals/test_semantic_quality_local.py
+
+      - name: Build
+        run: uv build
+
+      - name: Check built artifacts
+        run: uv run python scripts/check_dist_artifacts.py
+
+      - name: Wheel smoke test
+        run: uv run python scripts/wheel_smoke.py

@@ -1,0 +1,64 @@
+---
+title: Introduction
+description: rag-core adds scoped production retrieval to an existing Python application and agent.
+---
+
+rag-core is an embeddable Python retrieval engine for applications that already
+own their infrastructure. Bind a tenant and index, ingest documents, and expose
+the same scoped retrieval path to an agent.
+
+It owns the retrieval path: ingest, chunking, indexing, search, context assembly,
+traces, and eval hooks. Your application keeps authentication, tenancy,
+connectors, chat, and generation. rag-core stays a retrieval core, not a hosted
+service.
+
+## Install
+
+```bash
+pip install rag-core   # or: uv add rag-core
+```
+
+## Add retrieval to an agent
+
+```python
+from agents import Agent
+from rag_core import RAGCore
+
+rag = RAGCore.from_env(index="company-docs")
+agent = Agent(name="support", tools=[rag.tool()])
+```
+
+`RAG_CORE_TENANT_ID` and the index are bound before the model can call the tool.
+The default retrieval path is dense-only. Sparse and hybrid plans remain
+advanced, explicit options.
+
+<Callout type="info">
+  `Config.local()` and the local folder CLI are available for development and
+  tests. Production applications normally configure an existing vector store and
+  embedding provider.
+</Callout>
+
+## Where to start
+
+<Cards>
+  <Card title="Quickstart" href="/docs/quickstart" description="Ingest, search, and bind a retrieval tool with RAGCore." />
+  <Card title="Tutorial" href="/docs/tutorial" description="Build scoped retrieval with application-owned providers." />
+  <Card title="Core concepts" href="/docs/concepts" description="Collection, namespace, document, chunk, index, search, context, citation." />
+  <Card title="Python API" href="/docs/api-python" description="The RAGCore facade, evidence contract, and advanced owner modules." />
+</Cards>
+
+## How the docs are organized
+
+- **Getting started** installs rag-core and walks the first-run path and the
+  full [tutorial](/docs/tutorial).
+- **Concepts** explain the vocabulary, [how retrieval works](/docs/how-retrieval-works),
+  and the three [RAG modes](/docs/rag-modes).
+- **Guides** are task-oriented: [add documents](/docs/ingest),
+  [keep them in sync](/docs/sync), [search](/docs/search),
+  [build context](/docs/context), [scope to tenants](/docs/multi-tenancy),
+  [configure providers](/docs/providers), [integrate with agents](/docs/agent-integration),
+  [evaluate quality](/docs/eval-quality), [self-host](/docs/self-host), and
+  [trace retrieval](/docs/traces).
+- **Reference** is the exhaustive surface: [Python API](/docs/api-python),
+  [CLI](/docs/cli), [HTTP API](/docs/http), [configuration](/docs/config),
+  [file formats](/docs/formats), and [stability](/docs/stability).

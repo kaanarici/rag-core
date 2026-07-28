@@ -1,0 +1,86 @@
+---
+title: Quickstart
+description: Add scoped retrieval to an application, or search a local folder from the command line.
+---
+
+`RAGCore` is the application-facing API for ingestion, search, deletion, and an
+agent tool. Tenant and index scope are bound once and cannot be changed by a
+search or tool request.
+
+## Install
+
+```bash
+pip install rag-core   # or: uv add rag-core
+```
+
+## Ingest and search
+
+```python
+import asyncio
+
+from rag_core import Config, Document, RAGCore
+
+
+async def main() -> None:
+    async with RAGCore(
+        Config.local(),
+        tenant_id="local",
+        index="company-docs",
+    ) as rag:
+        await rag.ingest(
+            Document(
+                id="billing",
+                key="billing.md",
+                content=b"Invoices can be paid by card or ACH.",
+                content_type="text/markdown",
+            )
+        )
+        result = await rag.search("How can invoices be paid?")
+        for evidence in result.evidence:
+            print(evidence.text, evidence.source_id, evidence.locator)
+
+
+asyncio.run(main())
+```
+
+Reingesting the same document id, bytes, key, content type, and metadata returns
+`status="unchanged"` without re-embedding or adding duplicate points. Changing
+payload metadata such as `title` reindexes the document while keeping the byte
+content hash stable. Search returns stable `Evidence` objects. Exact duplicate
+chunk text is returned once with the other source identities under
+`equivalent_sources`.
+
+`Config.local()` uses a local embedding model and embedded Qdrant. It is useful
+for development and tests. Production applications normally use
+`RAGCore.from_env(index="company-docs")` with an application-owned store.
+
+## Agent tool
+
+Install the OpenAI Agents integration:
+
+```bash
+pip install "rag-core[openai-agents]"
+```
+
+```python
+from agents import Agent
+from rag_core import RAGCore
+
+rag = RAGCore.from_env(index="company-docs")
+agent = Agent(name="support", tools=[rag.tool()])
+```
+
+The tool is bound to the facade's tenant, index, and optional document scope.
+It returns prompt-safe context with citation labels and does not expose scope or
+retrieval-strategy controls to the model.
+
+## Search a folder locally
+
+From a checkout, index a folder and search it in one command:
+
+```bash
+uv run rag-core local-search examples/demo_corpus "How can invoices be paid?" --json
+```
+
+The first run downloads the local embedding model. For a deterministic
+no-download smoke, use `--demo`; that path is not semantic retrieval.

@@ -1,0 +1,15 @@
+# Local display identity for docs and compose labels.
+# Does NOT change the Python package (rag_core), PyPI name, or CLI binary.
+# Copy to dev/project_identity.local.toml (gitignored) to experiment with a rebrand.
+
+[display]
+name = "rag-core"
+tagline = "Own your retrieval layer"
+github_repo = "kaanarici/rag-core"
+github_url = "https://github.com/kaanarici/rag-core"
+
+[product]
+# Frozen public identifiers: do not change via local rebrand script.
+python_package = "rag_core"
+cli_command = "rag-core"
+pypi_distribution = "rag-core"

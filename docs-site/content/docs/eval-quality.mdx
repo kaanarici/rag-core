@@ -1,0 +1,85 @@
+---
+title: Evaluate retrieval quality
+description: Run retrieval and context evals against real embeddings and app-owned cases.
+---
+
+Retrieval evals give you evidence from your own collection, providers, and
+expected results, rather than from the bundled demo corpus.
+
+## Run a configured folder eval
+
+From a checkout:
+
+```bash
+uv run python -m examples.configured_eval examples/demo_corpus examples/eval_cases.jsonl
+```
+
+The default uses `Config.local()`: embedded Qdrant plus the local
+FastEmbed `BAAI/bge-small-en-v1.5` model. It needs no API key, downloads the
+model once on first use, and then runs locally.
+
+To compare the same eval shape with OpenAI embeddings:
+
+```bash
+export OPENAI_API_KEY=sk-...
+uv run python -m examples.configured_eval ./docs ./eval_cases.jsonl --provider openai
+```
+
+The example ingests the folder into `namespace="acme"` and
+`collection="help-center"`, matching the bundled cases. Keep your JSONL cases in
+the same scope or copy the example and change those constants.
+
+<Callout type="warn">
+  Demo embeddings and `rag-core eval` confirm the path runs. They do not measure ranking quality.
+</Callout>
+
+## Cases JSONL
+
+Each non-empty line is one JSON object.
+
+```json
+{"case_id":"billing","query":"How can invoices be paid?","namespace":"acme","collections":["help-center"],"expected_ids":["billing.md"],"expected_context_contains":["ACH"],"expected_citation_count_min":1}
+```
+
+Fields:
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `query` | yes | User-style retrieval query. |
+| `namespace` | yes | Scope passed to `core.search`; keep it app-owned. |
+| `collections` | yes | One or more collection names to search. |
+| `expected_ids` | yes | Relevant chunk, `document_id`, or `document_key` ids. |
+| `expected_grades` | no | Integer relevance grades for nDCG; ids must be present in `expected_ids`. |
+| `case_id` | no | Stable label for reporting and duplicate detection. |
+| `expected_context_contains` | no | Strings that must appear in packed prompt-safe context. |
+| `forbidden_context_contains` | no | Strings that must not appear in packed context. |
+| `forbidden_private_identifiers` | no | Private ids or keys that must not leak into packed context. |
+| `expected_citation_count_min` | no | Minimum citation count when context checks run. |
+| `expected_source_count_min` | no | Minimum source preview count when context checks run. |
+| `max_context_chars` | no | Maximum packed context character count. |
+| `max_context_tokens` | no | Maximum packed context token estimate. |
+
+## Interpret metrics honestly
+
+`recall_at_5` answers whether expected ids appeared in the top five hits. `mrr`
+rewards putting the first relevant hit earlier. `ndcg_at_10` uses
+`expected_grades` when present. Otherwise, it falls back to binary relevance
+from `expected_ids`.
+
+Small collections can make metrics look perfect for the wrong reason. Use the
+demo folder only to prove the path runs. For product thresholds, build cases from
+real misses, near-duplicate documents, old and new policy pages, short and long
+queries, and privacy or context expectations.
+
+## Wire into CI
+
+Run your eval as a step in your own pipeline and gate on the result. Because the
+first run with the local model downloads the FastEmbed weights, keep the real
+embedding eval in an explicit job that allows the download, and keep a fast
+no-download check (for example a `--help` or demo run) in the common path.
+
+The JSON report is what your CI consumes. rag-core reports retrieval and context
+metrics; your CI compares `report["metrics"]` against the thresholds that fit
+your collection and fails the build when they regress. The eval harness in
+[examples/configured_eval.py](https://github.com/kaanarici/rag-core/blob/main/examples/configured_eval.py)
+already exits non-zero when a case fails, so it drops into a CI step directly.
