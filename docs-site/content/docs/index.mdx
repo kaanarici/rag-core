@@ -1,0 +1,81 @@
+---
+title: Introduction
+description: rag-core is an embeddable Python retrieval engine for scoped ingest, search, deletion, and evaluation.
+---
+
+rag-core is an embeddable Python retrieval engine. Ingest an app-owned document,
+search an explicit tenant scope, and receive ranked, non-redundant evidence with
+stable source identity.
+
+It owns conversion, chunking, indexing, search, deduplication, deletion, traces,
+and eval hooks. The application keeps authentication, connectors, product
+workflows, and generation.
+
+## Run locally
+
+```bash
+git clone https://github.com/kaanarici/rag-core.git
+cd rag-core
+uv sync
+uv run python -m examples.ask_folder examples/demo_corpus \
+  "How can invoices be paid?"
+```
+
+rag-core is not published to PyPI. See [Install](/docs/install) for a direct
+Git dependency.
+
+## Ingest and search
+
+```python
+from rag_core import Config, Document, Engine, Scope
+
+scope = Scope(tenant_id="acme", collection="help")
+
+async with Engine(Config.local()) as engine:
+    receipt = await engine.ingest(
+        Document(
+            key="billing.md",
+            content=b"Invoices can be paid by card, ACH, or wire transfer.",
+            content_type="text/markdown",
+        ),
+        scope=scope,
+    )
+    result = await engine.search("How can invoices be paid?", scope=scope)
+
+print(receipt.status)
+for item in result.evidence:
+    print(item.text, item.document_key, item.locator)
+```
+
+Dense retrieval is the default. Sparse indexing, hybrid retrieval, reranking,
+and prompt formatting activate only when explicitly selected.
+
+<Callout type="info">
+  `Config.local()` downloads its local dense embedding model on first use.
+  Provider objects can be passed directly to `Engine` in deployed applications.
+</Callout>
+
+## Where to start
+
+<Cards>
+  <Card title="Quickstart" href="/docs/quickstart" description="Ingest one document and search an explicit scope." />
+  <Card title="Tutorial" href="/docs/tutorial" description="Build scoped ingest, retrieval, deletion, and evaluation." />
+  <Card title="Core concepts" href="/docs/concepts" description="Scope, document, chunk, evidence, and retrieval result." />
+  <Card title="Python API" href="/docs/api-python" description="The common Engine API and focused advanced modules." />
+</Cards>
+
+## How the docs are organized
+
+- **Getting started** runs rag-core from a checkout and walks the common path and the
+  full [tutorial](/docs/tutorial).
+- **Concepts** explain the vocabulary, [how retrieval works](/docs/how-retrieval-works),
+  and the three [RAG modes](/docs/rag-modes).
+- **Guides** are task-oriented: [add documents](/docs/ingest),
+  [keep them in sync](/docs/sync), [search](/docs/search),
+  [format evidence](/docs/context), [scope to tenants](/docs/multi-tenancy),
+  [configure providers](/docs/providers), [integrate with agents](/docs/agent-integration),
+  [evaluate quality](/docs/eval-quality), [self-host](/docs/self-host), and
+  [trace retrieval](/docs/traces).
+- **Reference** is the exhaustive surface: [Python API](/docs/api-python),
+  [CLI](/docs/cli), [HTTP API](/docs/http), [configuration](/docs/config),
+  [file formats](/docs/formats), and [stability](/docs/stability).

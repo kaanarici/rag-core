@@ -1,0 +1,54 @@
+---
+title: Core concepts
+description: The vocabulary rag-core uses for ingest, retrieval, and scope.
+---
+
+rag-core keeps its concepts small and concrete. This page defines each term you
+meet when you ingest documents and run a search.
+
+## Data model
+
+**Scope.** The required tenant and collection boundary for ingest, search, and
+delete. A scope may also restrict search to specific document ids.
+
+**Source.** Where a document comes from: a local file, a member of a ZIP archive,
+or a URL.
+
+**Document.** One ingested item from a source, identified by a stable document
+key so re-ingesting the same file updates it instead of duplicating it.
+
+**Chunk.** A passage of a document. Retrieval ranks and returns chunks, not whole
+documents.
+
+## Retrieval
+
+**Index.** The searchable representation of your chunks inside a vector store.
+Ingesting a document writes its chunks to the index.
+
+**Search.** Ranking chunks for a query and returning a `RetrievalResult`.
+
+**Evidence.** One ranked chunk with stable document and chunk identity, a source
+locator, retrieval signals, and equivalent-source provenance.
+
+**Retrieval result.** Ranked evidence plus answerability and diagnostics.
+Answerability remains `unknown` unless a calibrated policy can justify
+`sufficient` or `insufficient`.
+
+**Prompt formatting.** An optional rendering of evidence. `format_evidence(...)`
+does not replace the structured retrieval result.
+
+## Operations
+
+**Trace.** A record of what a search did: the mode, optional stages, result
+policy, and counts. Traces exist to debug retrieval quality.
+
+**Eval.** A set of cases with expected results that you run to measure retrieval
+quality on your own data.
+
+## Configuration
+
+**Provider.** An embedding, reranking, or storage implementation passed directly
+to `Engine` or selected through `Config`.
+
+**Vector store.** Where embeddings and chunks live and are searched. rag-core
+supports Qdrant, an in-memory store, pgvector, and TurboPuffer.

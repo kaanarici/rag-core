@@ -1,0 +1,209 @@
+---
+title: "Tutorial: build a retrieval feature"
+description: Build a working retrieval feature end to end, from indexing a folder to a scoped tool endpoint with evaluation.
+---
+
+This tutorial covers the common application path: configure the engine, ingest
+an app-owned document, search an explicit scope, delete the document, and
+measure retrieval quality.
+
+## Prerequisites
+
+```bash
+git clone https://github.com/kaanarici/rag-core.git
+cd rag-core
+uv sync
+```
+
+The example uses `Config.local()` for an in-process store and local dense
+embeddings. The same `Engine` methods accept configured providers.
+
+## Step 1: define the scope and document
+
+Tenant and collection scope are explicit values supplied by the application.
+`Document.key` is the stable source key; `Document.id` can supply a separate
+application identity.
+
+```python
+from rag_core import Config, Document, Engine, Scope
+
+scope = Scope(tenant_id="acme", collection="help")
+document = Document(
+    id="billing-policy",
+    key="policies/billing.md",
+    content=b"Invoices can be paid by card, ACH, or wire transfer.",
+    content_type="text/markdown",
+)
+```
+
+## Step 2: ingest idempotently
+
+```python
+async with Engine(Config.local()) as engine:
+    first = await engine.ingest(document, scope=scope)
+    unchanged = await engine.ingest(document, scope=scope)
+
+print(first.status, first.chunk_count)
+print(unchanged.status)  # unchanged
+```
+
+Changing the content under the same identity returns `replaced` and removes
+stale derived chunks. Conversion supports the documented text, Markdown, HTML,
+PDF, DOCX, and PPTX formats.
+
+## Step 3: search for evidence
+
+Dense retrieval is the default. Results contain evidence, answerability, and
+diagnostics; prompt formatting is separate.
+
+```python
+from rag_core import SearchOptions, format_evidence
+
+async with Engine(Config.local()) as engine:
+    await engine.ingest(document, scope=scope)
+    result = await engine.search(
+        "How can invoices be paid?",
+        scope=scope,
+        limit=5,
+        options=SearchOptions(mode="dense"),
+    )
+
+for item in result.evidence:
+    print(item.text, item.document_id, item.locator)
+
+prompt = format_evidence(result.evidence, max_tokens=1000)
+```
+
+Exact duplicate text is collapsed before the final limit. The retained evidence
+records equivalent sources, and the default per-document cap is three. Because
+uncalibrated vector scores do not prove sufficiency,
+`result.answerability.status` is `unknown` by default.
+
+## Step 4: keep the index current
+
+Delete uses the same explicit scope and removes the document and derived chunks.
+
+```python
+async with Engine(Config.local()) as engine:
+    await engine.ingest(document, scope=scope)
+    deleted = await engine.delete("billing-policy", scope=scope)
+```
+
+The application owns the sync schedule and decides when a source disappeared.
+rag-core owns content hashes, skip-unchanged behavior, replacement, and deletion.
+See [Keep an index in sync](/docs/sync).
+
+## Step 5: expose retrieval as a scoped tool endpoint
+
+The application binds scope from authentication rather than accepting tenant
+scope from model input.
+
+```python
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
+
+from rag_core import Config, Engine, Scope
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with Engine(Config.local()) as engine:
+        app.state.engine = engine
+        yield
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+@app.post("/search")
+async def search(request: Request) -> dict[str, object]:
+    payload = await request.json()
+    # In a real endpoint, derive this tenant id from the authenticated principal.
+    scope = Scope(tenant_id="acme", collection="help")
+    result = await request.app.state.engine.search(
+        str(payload["query"]),
+        scope=scope,
+        limit=min(int(payload.get("limit", 5)), 20),
+    )
+    return {
+        "answerability": result.answerability.status,
+        "evidence": [
+            {
+                "text": item.text,
+                "score": item.score,
+                "document_id": item.document_id,
+                "document_key": item.document_key,
+                "locator": item.locator,
+            }
+            for item in result.evidence
+        ],
+    }
+```
+
+Run it and call the tool:
+
+```bash
+uvicorn app:app --reload
+curl -s -X POST http://127.0.0.1:8000/search \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"How can invoices be paid?","limit":3}' | python -m json.tool
+```
+
+The request body never carries tenant scope. The endpoint binds it. LangChain,
+OpenAI Agents, and MCP versions are in
+[Integrate with agents](/docs/agent-integration).
+
+## Step 6: measure retrieval quality
+
+Before trusting retrieval on real data, write eval cases and run them against the
+same providers your application uses. A case states a query, the scope, and the
+document ids you expect back.
+
+```bash
+uv run rag-core eval examples/demo_corpus examples/eval_cases.jsonl --json
+```
+
+In your own repository, keep labeled cases and run `rag_core.evals` against your
+configured embeddings. The report gives recall, MRR, and nDCG, plus context
+checks such as citation count and prompt-safety. See
+[Evaluate retrieval quality](/docs/eval-quality).
+
+<Callout type="warn">
+  The `--demo` path uses deterministic embeddings and does not reflect retrieval
+  quality. Use `Config.local()` or a configured provider for any quality claim.
+</Callout>
+
+## Step 7: switch to configured providers
+
+For a deployed application, keep the common calls and construct the engine from
+provider objects.
+
+```python
+import os
+
+from rag_core import Config, Engine
+
+config = Config.qdrant(
+    url="http://127.0.0.1:6333",
+    embedding_provider="openai",
+    model="text-embedding-3-small",
+    embedding_api_key=os.environ["OPENAI_API_KEY"],
+)
+
+async with Engine(config) as engine:
+    await engine.ingest(document, scope=scope)
+    result = await engine.search("How can invoices be paid?", scope=scope)
+```
+
+See [Configure providers](/docs/providers) for other providers and
+[Self-host the HTTP API](/docs/self-host) to run the same core behind an HTTP
+boundary.
+
+## Where to go next
+
+- [How retrieval works](/docs/how-retrieval-works) explains the pipeline behind
+  these calls.
+- [Python API](/docs/api-python) is the full method-level reference.
+- [Multi-tenancy and scope](/docs/multi-tenancy) covers the scoping rules in
+  depth.

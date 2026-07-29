@@ -1,0 +1,189 @@
+---
+title: Format evidence for a prompt
+description: Keep structured retrieval evidence primary and format prompt text only when needed.
+---
+
+`Engine.search(...)` returns structured `Evidence`. Prompt formatting is an
+optional helper because retrieval results may instead feed a UI, audit trail,
+evaluation, or document comparison.
+
+## Format evidence
+
+`format_evidence(...)` renders ranked evidence within a token budget.
+
+```python
+from rag_core import Config, Document, Engine, Scope, format_evidence
+
+scope = Scope(tenant_id="acme", collection="help")
+async with Engine(Config.local()) as engine:
+    await engine.ingest(
+        Document(
+            key="billing.md",
+            content=b"Invoices can be paid by card, ACH, or wire transfer.",
+            content_type="text/markdown",
+        ),
+        scope=scope,
+    )
+    result = await engine.search("How can invoices be paid?", scope=scope)
+
+prompt_text = format_evidence(result.evidence, max_tokens=1000)
+```
+
+The common helper signature is:
+
+```python
+def format_evidence(
+    evidence: Sequence[Evidence],
+    *,
+    max_tokens: int = 4000,
+) -> str: ...
+```
+
+Stable document identity and locators remain on each `Evidence` item. The helper
+does not replace the structured result.
+
+## Compatibility context API
+
+The focused `rag_core.search` module retains the older `Context`,
+`ContextSnippet`, citation, and projection types for the CLI, HTTP compatibility
+surface, and integrations that need them. They are not part of the package-root
+common API.
+
+### Prompt-safe vs app-facing projections
+
+`Context` carries one set of snippets. It renders them two ways.
+
+| Use | Method or property | Citation ids | Carries private identity |
+| --- | --- | --- | --- |
+| Model prompt | `as_prompt_text()` | `S1`, `S2`, ... | No |
+| Model tool response | `to_prompt_payload()` | `S1`, `S2`, ... | No |
+| Prompt citation list | `prompt_citation_summary` | `S1`, `S2`, ... | No |
+| Prompt source chips | `prompt_source_previews` | `S1`, `S2`, ... | No |
+| Trace / UI / debug text | `as_text()` | stable source ids | Yes |
+| Structured app payload | `to_payload()` | stable source ids | Yes |
+| App citation list | `citation_summary` | stable source ids | Yes |
+| App source chips | `source_previews` | stable source ids | Yes |
+
+The prompt-safe projection assigns rank-local ids (`S1` is the top-ranked snippet) and omits document ids, document keys, result ids, collection names, namespace values, and source hashes. The app-facing projection keeps that identity so your application can resolve a citation back to its document, render a source chip, or write a trace.
+
+<Callout type="warn">
+  Never put `as_text()`, `to_payload()`, `citation_summary`, or `source_previews` into a model prompt. They carry app-private identifiers (document ids and keys, collection, source hashes). Pass only `as_prompt_text()`, `to_prompt_payload()`, `prompt_citation_summary`, or `prompt_source_previews` to a model.
+</Callout>
+
+## Prompt-safe text
+
+`as_prompt_text()` renders each snippet with a `[S{rank}]` header followed by its text. A realistic rendering:
+
+```text
+[S1] Billing portal, payment methods
+Billing invoices are due monthly. Customers can pay by card, ACH, or wire
+transfer from the billing portal.
+
+[S2] Billing portal, due dates
+Invoices are issued on the first of the month and are due within 30 days.
+```
+
+The header is `[S{rank}] title location`, where `location` is built from the snippet's locator (section path, page, slide, sheet, rows, lines, chunk) when present.
+
+`prompt_citation_summary` lists the same snippets as compact previews, with the location in parentheses:
+
+```text
+[S1] Billing portal (payment methods)
+[S2] Billing portal (due dates)
+```
+
+For synchronous retrieval over a local folder:
+
+```python
+from rag_core import index
+
+with index("./docs") as docs:
+    prompt_text = docs.context("How can invoices be paid?", limit=5)
+```
+
+Use `Engine.search(...)` plus `format_evidence(...)` when the application needs
+explicit scope, providers, or retrieval options.
+
+## Prompt-safe payload
+
+`to_prompt_payload()` is the structured form for a model tool response. Each snippet uses its `S{rank}` id, and the locator omits `source_hash`. The payload below is abbreviated; the real object also carries top-level `max_chars`, `max_tokens`, `token_estimate`, `char_count`, and `citation_summary`:
+
+```json
+{
+  "query": "How can invoices be paid?",
+  "snippets": [
+    {
+      "citation_id": "S1",
+      "rank": 1,
+      "text": "Billing invoices are due monthly. Customers can pay by card, ACH, or wire transfer from the billing portal.",
+      "score": 0.82,
+      "source": {
+        "citation_id": "S1",
+        "title": "Billing portal",
+        "section_title": "Payment methods",
+        "section_path": "Billing portal, payment methods",
+        "source_type": "text"
+      },
+      "locator": {
+        "section_path": "Billing portal, payment methods",
+        "chunk_index": 0
+      },
+      "token_estimate": 28,
+      "char_count": 142,
+      "truncated": false
+    }
+  ],
+  "citations": [{ "citation_id": "S1", "title": "Billing portal" }],
+  "dropped_count": 0,
+  "max_snippets": 8,
+  "truncated": false
+}
+```
+
+The matching `to_payload()` keeps document ids, keys, collection, and `content_sha256` on each citation and locator. Use it for application storage and traces, not for prompts.
+
+## Budgets and ordering
+
+`max_chars` and `max_tokens` bound the assembled context. When the pack trims content, `truncated` is `True` and `dropped_count` reports how many ranked snippets were left out.
+
+```python
+pack = await core.context(
+    query="How can invoices be paid?",
+    collection="help",
+    max_chars=1_200,
+)
+```
+
+For long context, render with `context_order="extrema"` to move high-ranked snippets to the prompt boundaries. This changes only `as_prompt_text()` output. It does not change `snippets`, `citations`, `source_previews`, or `to_payload()`.
+
+```python
+prompt_text = pack.as_prompt_text(context_order="extrema")
+```
+
+`context_order` accepts `"rank"` (default) or `"extrema"`.
+
+## The Context object
+
+`Context` is a frozen dataclass.
+
+| Field | Meaning |
+| --- | --- |
+| `query` | The query that produced the pack |
+| `snippets` | `tuple[ContextSnippet, ...]`, rank order |
+| `dropped_count` | Ranked snippets trimmed by a budget |
+| `max_snippets` | Snippet ceiling applied during assembly |
+| `max_chars`, `max_tokens` | Budgets passed to `context` |
+| `token_estimate`, `char_count` | Size of the assembled context |
+| `truncated` | Whether any content was trimmed |
+
+Each `ContextSnippet` carries `citation_id`, `rank`, `text`, `score`, a `Citation` `source`, a `SourceLocator` `locator`, `token_estimate`, `char_count`, optional `retrieval_metadata`, and `truncated`. Its `prompt_citation_id` is `S{rank}`, `header` uses the stable id, and `prompt_header` uses the prompt-safe id.
+
+`Citation` holds stable source identity: `source_id`, `result_id`, `document_id`, `collection`, `document_key`, `title`, `section_id`, `section_title`, `section_path`, `chunk_index`, `content_sha256`, `source_type`, `result_type`. Its `to_prompt_payload()` drops `document_id`, `document_key`, `collection`, and `content_sha256`.
+
+`SourceLocator` holds optional location hints: `chunk_index`, `section_path`, `source_hash`, `page_number`, `page_index`, `slide_number`, `sheet_name`, `row_range`, `line_start`, `line_end`, `start_offset`, `end_offset`, `bbox`, `figure_id`, `figure_caption`, `figure_thumbnail_url`. Its `to_prompt_payload()` removes `source_hash`. These fields are populated only when the parser or indexed payload provides them.
+
+<Callout type="info">
+  CLI `rag-core context` and HTTP `/v1/search/context` use `as_prompt_text()` for their `context_text` field and accept `context_order: extrema`, while keeping the structured `Context` app-facing. See the [CLI reference](/docs/cli).
+</Callout>
+
+To connect a context pack into a model call, tool response, or endpoint, see [Integrate with agents](/docs/agent-integration) and the [Python API](/docs/api-python).

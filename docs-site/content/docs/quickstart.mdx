@@ -1,0 +1,61 @@
+---
+title: Quickstart
+description: Search a local folder or run the common Python ingest and search path.
+---
+
+## Get the source
+
+```bash
+git clone https://github.com/kaanarici/rag-core.git
+cd rag-core
+uv sync
+```
+
+## Search a folder
+
+```bash
+uv run python -m examples.ask_folder examples/demo_corpus \
+  "How can invoices be paid?"
+```
+
+Path search uses a local embedding model and dense retrieval. It may download
+the model on first use. For a deterministic no-download wiring smoke, run
+`uv run rag-core demo --json`; demo embeddings are not semantic-quality proof.
+
+## Use Python
+
+```python
+import asyncio
+
+from rag_core import Config, Document, Engine, Scope
+
+
+async def main() -> None:
+    scope = Scope(tenant_id="acme", collection="help")
+    async with Engine(Config.local()) as engine:
+        ingest = await engine.ingest(
+            Document(
+                key="billing.txt",
+                content=b"Invoices can be paid by card or bank transfer.",
+                content_type="text/plain",
+            ),
+            scope=scope,
+        )
+        result = await engine.search(
+            "How can invoices be paid?",
+            scope=scope,
+        )
+
+    print(ingest.status)
+    for item in result.evidence:
+        print(item.score, item.document_key, item.text)
+
+
+asyncio.run(main())
+```
+
+Dense retrieval is the default. Duplicate content is collapsed before the
+visible limit, with alternate provenance in `equivalent_sources`.
+
+See [Python API](/docs/api-python), [Search and rank](/docs/search), and
+[Providers](/docs/providers).

@@ -1,0 +1,32 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "---Getting started---",
+    "index",
+    "install",
+    "quickstart",
+    "tutorial",
+    "---Concepts---",
+    "concepts",
+    "how-retrieval-works",
+    "rag-modes",
+    "---Guides---",
+    "ingest",
+    "sync",
+    "search",
+    "context",
+    "multi-tenancy",
+    "providers",
+    "agent-integration",
+    "eval-quality",
+    "self-host",
+    "traces",
+    "---Reference---",
+    "api-python",
+    "cli",
+    "http",
+    "config",
+    "formats",
+    "stability"
+  ]
+}

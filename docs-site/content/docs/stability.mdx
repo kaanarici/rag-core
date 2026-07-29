@@ -1,0 +1,83 @@
+---
+title: Public API and stability
+description: Defines the beta common surface and focused advanced modules.
+---
+
+`rag-core` is a beta library. Breaking changes are allowed with a reason,
+contract tests, and documentation updates.
+
+## Package-root surface
+
+`rag_core.__all__` is intentionally small:
+
+```python
+[
+    "Answerability",
+    "Config",
+    "Document",
+    "Engine",
+    "Evidence",
+    "Index",
+    "IngestResult",
+    "RetrievalResult",
+    "Scope",
+    "SearchOptions",
+    "format_evidence",
+    "index",
+]
+```
+
+These names cover ingest, search, result inspection, and optional prompt
+formatting. `index()` and `Index` provide the synchronous local
+folder path; `Engine` remains the owning facade for configured applications.
+
+## Focused modules
+
+Advanced contracts remain importable from their owning modules:
+
+- `rag_core.search`: filters, context packs, and compatibility result names;
+- `rag_core.search.query_plan`: store-side plans and stages;
+- `rag_core.search.providers`: provider protocols and implementations;
+- `rag_core.events`: traces and sinks;
+- `rag_core.evals`: evaluation cases, runners, and reports.
+
+An explicit focused-module import can be supported without being part of the
+package-root common path.
+
+## Defaults
+
+- Dense retrieval is the default on every dense-capable store.
+- Sparse indexing and lexical/hybrid retrieval are opt-in.
+- Reranking is off.
+- Exact duplicate content is collapsed before the visible result limit.
+- Answerability is `unknown` until a calibrated threshold and provenance are
+  supplied.
+- Retrieval returns structured evidence. Prompt text is an optional projection.
+
+## Compatibility capabilities
+
+The common path ingests `Document` values into an explicit `Scope`. Advanced
+methods on `Engine` remain available to add bytes, files, folders, ZIP archives,
+URLs, or URL lists when an application needs those source adapters.
+
+Context packs also remain available from `rag_core.search`. Their
+`to_payload()` / `as_text()` are app-facing projections;
+`to_prompt_payload()` / `as_prompt_text()` are prompt-safe projections with
+rank-local citations for model and tool responses. Routine retrieval should
+prefer structured `Evidence` and call `format_evidence()` only at the prompt
+boundary.
+
+Provider implementations, including the default Qdrant vector-store adapter,
+remain in their focused provider modules and registry.
+
+## Validation boundary
+
+Public-surface checks protect the documented common path. Search pipeline internals,
+optional providers, packaging, and live provider behavior have separate focused
+validation because no single test layer proves all of them.
+
+## Compatibility
+
+The former root names `Context` and `SearchResult` moved to `rag_core.search`.
+Routine configured callers should use `Engine`, `Document`, `Scope`, `Evidence`,
+and `RetrievalResult`.

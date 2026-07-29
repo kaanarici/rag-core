@@ -1,0 +1,147 @@
+---
+title: Multi-tenancy and scope
+description: Bind namespace and collection from your auth layer, and keep model or tool input from widening retrieval scope.
+---
+
+Every ingest and retrieval call runs inside a scope made of two values: a
+`namespace` and one or more `collection` names. Your application binds that scope
+from its authenticated session or worker job. Model and tool input may supply a
+query and narrowing filters inside that scope. It must never supply the scope
+itself.
+
+## The two scoping axes
+
+- **`namespace`** is the tenant or workspace partition. It comes from your auth
+  layer. `namespace=None` resolves to the empty string `""`, which is the
+  default single-tenant namespace.
+- **`collection`** is a logical knowledge base inside a namespace, such as
+  `help`, `policies`, or `product-docs`. Pass `collection` for one scope or
+  `collections` for several. Pass one or the other, never both.
+
+Both ingest and retrieval take the same axes:
+
+```python
+await core.add("./docs", namespace="acme", collection="help")
+
+pack = await core.context(
+    query="How can invoices be paid?",
+    namespace="acme",
+    collection="help",
+)
+```
+
+<Callout type="warn">
+  Derive `namespace` and `collection` from the authenticated principal or worker
+  job, never from chat text or a model tool call. Treating tenant scope as model
+  input lets one tenant read another tenant's documents.
+</Callout>
+
+## What the model may and may not set
+
+A model or tool call may set the `query` and narrowing filters that stay inside
+the bound scope: `limit`, `document_ids`, `content_types`, `rerank`, and
+`use_lexical_search`. It may not set `namespace`, `collection`, `collections`,
+`query_plan`, or anything else that selects or widens the scope. A
+tool-supplied `document_ids` value is only a filter applied inside the
+application's own allowlist, not a way to reach new documents.
+
+| Field | Who sets it |
+| --- | --- |
+| `namespace`, `collection`, `collections` | Application, from auth |
+| `query` | Model or caller |
+| `document_ids` | Model, but intersected with the app allowlist |
+| `content_types` | Application binds the allowlist; model may narrow within it |
+| `limit`, `rerank`, `use_lexical_search` | Model, within configured bounds |
+| `query_plan` | Application only |
+
+## Binding scope at a tool endpoint
+
+`rag_core.contracts` parses a model tool payload and enforces the bound scope. It
+does the validation so your handler does not have to. The flow is always: parse
+the public request, bind your scope, intersect any requested document ids with
+your allowlist, call `Engine.context`, then return the canonical tool result.
+
+```python
+from rag_core.contracts import (
+    parse_search_user_documents_request,
+    validate_bound_namespace,
+    normalize_static_retrieval_scope,
+    normalize_static_content_types,
+    scope_document_ids,
+    search_user_documents_tool_result,
+)
+
+# `payload` is the raw tool-call arguments (an untrusted dict from the model).
+# `scope` comes from your authenticated session, not from `payload`.
+parsed = parse_search_user_documents_request(payload)
+namespace = validate_bound_namespace(scope.namespace)
+collections, allowed_document_ids = normalize_static_retrieval_scope(
+    collections=scope.collections,
+    document_ids=scope.document_ids,
+    limit=parsed.limit,
+)
+content_types = normalize_static_content_types(scope.content_types)
+document_ids = scope_document_ids(
+    requested=parsed.document_ids,
+    configured=allowed_document_ids,
+)
+
+pack = await core.context(
+    query=parsed.query,
+    namespace=namespace,
+    collections=list(collections),
+    limit=parsed.limit,
+    content_types=list(content_types) if content_types is not None else None,
+    document_ids=document_ids,
+    rerank=parsed.rerank,
+    use_lexical_search=parsed.use_lexical_search,
+    max_chars=parsed.max_chars,
+    max_tokens=parsed.max_tokens,
+)
+return search_user_documents_tool_result(pack)
+```
+
+The helpers each enforce one rule:
+
+| Helper | What it enforces |
+| --- | --- |
+| `parse_search_user_documents_request(payload)` | Validates the public tool request. Rejects unknown fields, wrong types, and out-of-bounds `limit`, `max_chars`, or `max_tokens`. |
+| `validate_bound_namespace(namespace)` | Strips and requires a non-empty bound namespace. |
+| `normalize_static_retrieval_scope(...)` | Normalizes the app-bound collections and document allowlist to tuples. Requires at least one collection. |
+| `normalize_static_content_types(...)` | Normalizes the app-bound content-type allowlist, or `None` when unset. |
+| `scope_document_ids(requested, configured)` | Intersects model-requested ids with the configured allowlist. Raises `ValueError` if the model asks for an id outside the allowlist. |
+| `search_user_documents_tool_result(pack)` | Wraps a `Context` into the canonical tool output. It uses the prompt-safe projection and adds `"ok": true` and `context_text`. |
+
+For the full FastAPI, LangChain, OpenAI Agents, and MCP versions of this pattern,
+see [Integrate with agents](/docs/agent-integration). The bound-scope
+constants and limits (`SEARCH_USER_DOCUMENTS_LIMIT_MAX`,
+`SEARCH_USER_DOCUMENTS_MAX_CHARS_MAX`, and the rest) live in
+`rag_core.contracts`.
+
+## Prompt-safe output
+
+The tool result and `Context.to_prompt_payload()` use rank-local citation ids
+(`S1`, `S2`, ...) and omit app-private identifiers such as document ids, document
+keys, collection names, namespace values, and source hashes. This keeps tenant
+identifiers out of model context. Use the app-facing projection
+(`to_payload()` / `as_text()`) only for your own traces and UI. See
+[Build context for a prompt](/docs/context).
+
+## Tenant offboarding
+
+To remove one tenant completely, delete its namespace:
+
+```python
+await core.delete_namespace(namespace="acme")
+```
+
+This is irreversible and removes every collection under the namespace. For
+per-document and per-collection deletes, see
+[Keep an index in sync](/docs/sync).
+
+## Physical store layout
+
+`namespace` and `collection` are logical scope on every chunk. They are distinct
+from the physical vector-store collection name (`rag_core_chunks` by default for
+Qdrant, or the configured TurboPuffer namespace). One physical store holds many
+logical namespaces and collections. See [Configure providers](/docs/providers).

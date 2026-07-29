@@ -1,0 +1,82 @@
+---
+title: Install
+description: Run rag-core from a Git checkout or install it directly from Git.
+---
+
+rag-core is not published to PyPI. Python 3.11 or newer and
+[uv](https://docs.astral.sh/uv/) are required.
+
+## Run from a checkout
+
+```bash
+git clone https://github.com/kaanarici/rag-core.git
+cd rag-core
+uv sync
+uv run python -m examples.ask_folder examples/demo_corpus \
+  "How can invoices be paid?"
+```
+
+The first semantic search downloads the local embedding model. No API key or
+external service is required.
+
+## Install directly from Git
+
+Use an explicit Git ref for a reproducible application dependency:
+
+```bash
+uv venv
+uv pip install \
+  "rag-core @ git+https://github.com/kaanarici/rag-core.git@main"
+```
+
+Replace `main` with a commit SHA when the dependency must not move.
+
+## Optional extras
+
+Install an extra only when its provider or surface is needed. From a checkout,
+use `uv sync --extra <name>`.
+
+| Extra | Adds |
+| --- | --- |
+| `runtime` | The `rag-core serve` HTTP runtime |
+| `mcp` | The `rag-core mcp` stdio server |
+| `langchain` | LangChain retriever and tool builders |
+| `openai-agents` | OpenAI Agents SDK tool builder |
+| `rerank` | Cohere embedding and reranker adapters |
+| `voyage`, `zeroentropy` | Additional embedding and rerank providers |
+| `pgvector`, `turbopuffer` | Additional vector stores |
+| `anthropic` | Anthropic chunk contextualizer |
+| `opentelemetry` | OpenTelemetry event sink |
+| `semantic`, `html` | Local parsing helpers |
+
+```bash
+uv sync --extra runtime
+uv sync --extra langchain --extra rerank
+```
+
+## Confirm the install
+
+Run a no-key check that confirms the install without downloading a model:
+
+```bash
+uv run rag-core demo --json
+```
+
+To confirm real local retrieval on the included corpus:
+
+```bash
+uv run python -m examples.ask_folder examples/demo_corpus \
+  "How can invoices be paid?"
+```
+
+The first real run downloads the local embedding model. The separate
+`rag-core demo` command uses deterministic embeddings; it confirms wiring, not
+semantic retrieval quality.
+
+## Requirements
+
+rag-core supports Python 3.11 and newer. Provider API calls (OpenAI, Cohere,
+Voyage, and others) need the matching credential in the environment. See the
+[Configuration reference](/docs/config).
+
+Next: [Quickstart](/docs/quickstart) or the full [tutorial](/docs/tutorial).

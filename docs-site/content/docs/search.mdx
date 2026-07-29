@@ -1,0 +1,98 @@
+---
+title: Search and rank
+description: Search a Scope and interpret Evidence, duplicates, answerability, and advanced modes.
+---
+
+`Engine.search` returns a `RetrievalResult` with ranked evidence, answerability,
+and diagnostics.
+
+```python
+from rag_core import Scope, SearchOptions
+
+result = await engine.search(
+    "billing policy",
+    scope=Scope(tenant_id="acme", collection="help"),
+    limit=8,
+    options=SearchOptions(),
+)
+```
+
+## Default behavior
+
+The default mode is dense:
+
+- one dense embedding provider;
+- no sparse model initialization;
+- no sparse collection schema or stored sparse vectors;
+- no sparse query execution;
+- no reranker unless requested;
+- exact duplicate collapse before the visible limit;
+- at most three visible chunks per document.
+
+The engine overfetches a bounded candidate pool before applying duplicate and
+per-document limits. `diagnostics["duplicate_count"]` and
+`diagnostics["per_document_cap_count"]` report what was removed.
+
+## Evidence
+
+Each `Evidence` value exposes:
+
+- `chunk_id`, `document_id`, and `document_key`;
+- `text`, `score`, `section`, and `locator`;
+- `retrieval_signals` and metadata;
+- `equivalent_sources` for collapsed copies.
+
+An equivalent source includes its document and chunk identity plus its locator.
+Applications can show one evidence item while retaining every copied source.
+
+## Options
+
+```python
+SearchOptions(
+    mode="dense",                    # dense | lexical | hybrid
+    rerank=False,
+    duplicate_policy="collapse",     # collapse | preserve
+    max_results_per_document=3,       # None disables the cap
+    metadata_filter=None,
+)
+```
+
+Lexical and hybrid modes are explicit opt-ins. The index must have been built
+with sparse indexing enabled; otherwise the engine raises
+`UnsupportedQueryStage`.
+
+## Answerability
+
+Retrieval scores are not universal confidence values. Without a calibrated
+threshold, the result is:
+
+```python
+result.answerability.status == "unknown"
+result.answerability.reason == "not_calibrated"
+```
+
+Supply a threshold and provenance together only after calibration:
+
+```python
+SearchOptions(
+    answerability_threshold=0.72,
+    answerability_calibration="provider/model/corpus/mode/version",
+)
+```
+
+No evidence or a score below the threshold yields `insufficient`; a score at or
+above it yields `sufficient`.
+
+## Filters
+
+`Scope.document_ids` is a document allowlist. `SearchOptions.metadata_filter`
+accepts filter values from `rag_core.search`, including `Term`, `Range`, `In`,
+`And`, `Or`, and `Not`.
+
+All stores must apply scope and filters before their visible result limit.
+
+## Advanced retrieval
+
+Named profiles and `QueryPlan` remain available from
+`rag_core.search.planning` and `rag_core.search.query_plan`. They are intended
+for store-specific fusion, boosting, MMR, and experiments, not routine search.

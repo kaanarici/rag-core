@@ -1,0 +1,166 @@
+---
+title: Python API
+description: Common Engine, Document, Scope, search, ingest, and provider contracts.
+---
+
+The common Python surface is small and async.
+
+```python
+from rag_core import (
+    Answerability,
+    Config,
+    Document,
+    Engine,
+    Evidence,
+    IngestResult,
+    RetrievalResult,
+    Scope,
+    SearchOptions,
+    format_evidence,
+)
+```
+
+## Construct an engine
+
+Use the local preset or a configured Qdrant instance.
+
+```python
+engine = Engine(Config.local())
+```
+
+```python
+import os
+
+config = Config.qdrant(
+    url="http://127.0.0.1:6333",
+    embedding_provider="openai",
+    model="text-embedding-3-small",
+    embedding_api_key=os.environ["OPENAI_API_KEY"],
+)
+engine = Engine(config)
+```
+
+Application-owned providers can also be injected through `embedding=` and
+`store=`. Provider implementations live in `rag_core.search.providers`.
+
+## Document and Scope
+
+```python
+document = Document(
+    key="billing/policy.md",
+    content=b"Invoices are paid by bank transfer.",
+    content_type="text/markdown",
+    id="billing-policy",              # optional app-owned identity
+    metadata={"department": "finance"},
+)
+scope = Scope(
+    tenant_id="acme",
+    collection="help",
+    document_ids=None,                # optional search allowlist
+)
+```
+
+The scope is required on common ingest, search, and delete calls. Stores must
+apply tenant, collection, document, and metadata filters before their visible
+result limit.
+
+## Ingest
+
+```python
+result: IngestResult = await engine.ingest(document, scope=scope)
+```
+
+`IngestResult` exposes:
+
+- `document_id`
+- `status`: `created`, `unchanged`, or `replaced`
+- `chunk_count`
+- `content_hash`
+
+Re-ingesting the same source identity, content hash, and processing version
+returns `unchanged`. Changed content replaces the document's indexed chunks;
+recovery journals cover interrupted replacement and deletion.
+
+```python
+await engine.delete("billing-policy", scope=scope)
+```
+
+## Search
+
+```python
+result: RetrievalResult = await engine.search(
+    "How are invoices paid?",
+    scope=scope,
+    limit=8,
+    options=SearchOptions(),
+)
+```
+
+`SearchOptions` defaults to dense retrieval:
+
+```python
+SearchOptions(
+    mode="dense",
+    rerank=False,
+    duplicate_policy="collapse",
+    max_results_per_document=3,
+    metadata_filter=None,
+)
+```
+
+Dense mode does not initialize a sparse model, create a sparse index, store
+sparse vectors, or execute sparse retrieval. `mode="lexical"` and
+`mode="hybrid"` require an explicitly sparse-enabled index.
+
+`RetrievalResult` contains:
+
+- `evidence`: ranked `Evidence` values
+- `answerability`: `sufficient`, `insufficient`, or `unknown`
+- `diagnostics`: mode, candidate count, duplicate count, and source-cap count
+
+`Evidence` exposes stable `chunk_id`, `document_id`, `document_key`, text,
+score, section, `locator`, retrieval signals, metadata, and
+`equivalent_sources`.
+
+## Answerability
+
+Answerability defaults to `unknown` with reason `not_calibrated`. A score
+threshold is meaningful only for the exact provider, model, index, query mode,
+and corpus on which it was calibrated. Set the threshold and provenance
+together:
+
+```python
+options = SearchOptions(
+    answerability_threshold=0.72,
+    answerability_calibration="text-embedding-3-small/help-v3/dense",
+)
+```
+
+The calibration string is returned on `result.answerability.calibration`.
+
+## Prompt formatting
+
+Retrieval returns evidence, not a prompt string.
+
+```python
+prompt_context = format_evidence(result.evidence, max_tokens=4_000)
+```
+
+Applications may format evidence themselves. The helper is optional.
+
+## Advanced modules
+
+Query plans, context packs, pipeline stages, raw store records, and provider
+protocols remain available from focused modules such as `rag_core.search` and
+`rag_core.search.providers`. They are not required for routine ingest and
+search.
+
+## Migration
+
+| Earlier surface | Common surface |
+| --- | --- |
+| `Engine.add_bytes(...)` | `Engine.ingest(Document(...), scope=...)` |
+| collection and namespace keyword arguments | `Scope(...)` |
+| `SearchResult` | `Evidence` |
+| `Engine.context(...)` | `format_evidence(result.evidence)` when needed |
+| routine `QueryPlan` construction | `SearchOptions` |

@@ -1,0 +1,271 @@
+---
+title: Keep an index in sync
+description: Update, re-ingest, and delete indexed content over time, and use reconciliation primitives in an application-owned sync job.
+---
+
+This page is the lifecycle companion to [Ingest](/docs/ingest). It covers
+re-ingesting content, deleting documents, collections, and namespaces, and the
+reconciliation primitives that help an application-owned sync job decide what to
+re-index.
+
+rag-core does not poll, schedule, or resume work on its own. Your application
+owns connector cursors, polling schedules, webhooks, retry queues, and the
+decisions for deleted, moved, renamed, or access-revoked sources. rag-core
+provides idempotent ingest, typed delete results, and status-only
+reconciliation around the active operation.
+
+## Re-ingest is idempotent by content hash
+
+Ingest is keyed by `content_sha256`. When you re-ingest the same bytes under the
+same identity, core can skip parsing, chunking, embedding, and upserting.
+
+The default is `IngestConfig(skip_unchanged="fast")`. When the vector store
+returns a matching stored document record, core returns the stored metadata
+directly. It does not parse, chunk, embed, or upsert.
+
+```python
+import asyncio
+from rag_core import Engine, Config
+
+async def main() -> None:
+    async with Engine(Config.local()) as core:
+        first = await core.add_bytes(
+            file_bytes=b"Invoices can be paid by card or ACH.",
+            filename="billing.txt",
+            mime_type="text/plain",
+            collection="help",
+        )
+        # Same bytes, same identity: skipped by hash, no re-embedding.
+        again = await core.add_bytes(
+            file_bytes=b"Invoices can be paid by card or ACH.",
+            filename="billing.txt",
+            mime_type="text/plain",
+            collection="help",
+        )
+        assert again.content_sha256 == first.content_sha256
+
+asyncio.run(main())
+```
+
+`skip_unchanged` is a field on `IngestConfig`, set through `Config`:
+
+```python
+from rag_core import Config
+from rag_core.config import IngestConfig
+
+config = Config(ingest=IngestConfig(skip_unchanged="materialize"))
+```
+
+`"materialize"` re-parses unchanged content before returning, instead of
+returning stored metadata directly. Indexing is still skipped. Use it only when
+a caller needs freshly prepared document metadata for unchanged content.
+
+### Force a re-index
+
+To re-embed and re-upsert unchanged content, pass `force_reindex=True`. This
+bypasses the skip-by-hash path even when the content is identical.
+
+```python
+await core.add_bytes(
+    file_bytes=b"Invoices can be paid by card or ACH.",
+    filename="billing.txt",
+    mime_type="text/plain",
+    collection="help",
+    force_reindex=True,
+)
+```
+
+`force_reindex=True` is also available on `Engine.add(...)` and the URL ingest
+path. Changing `processing_version` triggers a re-index as well, because it
+changes the stored document fingerprint. Set it through
+`IngestConfig(processing_version=...)` in Python, or `RAG_CORE_PROCESSING_VERSION`
+for the [CLI](/docs/cli).
+
+## Delete a document
+
+`Engine.delete_document(...)` removes a single document by id and returns a
+`DeleteDocumentResult`.
+
+```python
+async def delete_document(
+    self,
+    *,
+    document_id: str,
+    collection: str | None = None,
+    namespace: str | None = None,
+) -> DeleteDocumentResult: ...
+```
+
+`DeleteDocumentResult` reports the outcome on each storage surface. The cache and
+sidecar fields are tri-state booleans:
+
+- `True`: that surface purged the document.
+- `False`: the purge failed and is queued for retry.
+- `None`: that surface is not wired on this Engine (for example, no cache).
+
+| Field | Meaning |
+| --- | --- |
+| `document_id`, `namespace`, `collection` | Identity of the deleted document. |
+| `index_deleted` | Vector-store index delete result. |
+| `vector_store_acked` | The vector store acknowledged the delete. |
+| `sidecar_deleted` | Portable exact-match sidecar purge result. |
+| `lexical_sidecar_purged` | Lexical (BM25) sidecar purge result. |
+| `embedding_cache_purged` | Embedding cache purge result. |
+| `chunk_context_cache_purged` | Chunk-context cache purge result. |
+| `manifest_entry_deleted` | Manifest entry removal result. |
+| `manifest_removed` | Whether the manifest record was removed. |
+
+`index_deleted` reflects the vector-store ack, not an optimistic "we asked the
+store" assumption. Inspect the fields when you need to confirm a complete purge,
+for example in a right-to-forget workflow.
+
+```python
+result = await core.delete_document(
+    document_id=entry.document_id,
+    namespace=entry.namespace,
+    collection=entry.collection,
+)
+if not result.index_deleted or result.vector_store_acked is False:
+    # Re-enqueue the delete or inspect the recovery journal.
+    ...
+```
+
+## Application-owned lifecycle
+
+An application owns the mapping from its external document ids to rag-core
+`document_id` / `document_key`. A common pattern is to keep a small manifest of
+`CollectionManifestEntry` values built from each ingest, then drive search and
+delete from that manifest. The runnable version is
+[examples/corpus_lifecycle.py](https://github.com/kaanarici/rag-core/blob/main/examples/corpus_lifecycle.py).
+
+```python
+from rag_core import Engine, Config
+from rag_core.core_models import CollectionManifestEntry
+
+async def lifecycle() -> None:
+    manifest: dict[str, CollectionManifestEntry] = {}
+    async with Engine(Config.local()) as core:
+        ingested = await core.add_bytes(
+            file_bytes=b"Billing is due monthly. Card and ACH are accepted.",
+            filename="billing.txt",
+            mime_type="text/plain",
+            namespace="acme",
+            collection="help-center",
+            metadata={"source": "quickstart"},
+        )
+        document_key = ingested.document_key or ingested.filename
+        entry = core.build_manifest_entry(document=ingested)
+        manifest[document_key] = entry
+
+        hits = await core.search(
+            query="How can I pay invoices?",
+            namespace=entry.namespace,
+            collections=[entry.collection],
+            limit=3,
+        )
+
+        # Later: the application decides the source is gone and deletes it.
+        entry = manifest.pop(document_key)
+        result = await core.delete_document(
+            document_id=entry.document_id,
+            namespace=entry.namespace,
+            collection=entry.collection,
+        )
+        assert result.index_deleted
+```
+
+`build_manifest_entry(document=...)` returns a `CollectionManifestEntry` with
+`document_id`, `document_key`, `content_sha256`, `collection`, `namespace`,
+`chunk_count`, and parser metadata. Persist these to drive later reconciliation
+and deletion.
+
+## Delete a collection or namespace
+
+Collection-wide and namespace-wide deletes are separate surfaces from
+`delete_document`, so a caller cannot reach a wide delete by accident, for
+example by passing an empty `document_id`.
+
+```python
+await core.delete_collection(collection="help-center", namespace="acme")
+await core.delete_namespace(namespace="acme")
+```
+
+`delete_collection(...)` removes every document in the collection.
+`delete_namespace(...)` removes every document in the namespace and is intended
+for tenant offboarding and right-to-forget workflows. Both return `None`. See
+[Multi-tenancy](/docs/multi-tenancy) for binding `namespace` and `collection`
+from your auth layer.
+
+<Callout type="warn">
+  `delete_collection` and `delete_namespace` are deliberate wide deletes and are
+  irreversible. Bind `namespace` and `collection` to the authenticated session
+  in your handler before calling them. Never accept either value directly from a
+  model tool call.
+</Callout>
+
+## Reconciliation primitives
+
+`rag_core.manifest.reconciliation` compares a set of stored manifest entries to
+the current state of your sources and classifies each one. These are
+status-only primitives for an application-owned sync job. rag-core is not a
+connector sync product, so it does not fetch sources or apply the classified
+changes for you.
+
+```python
+from rag_core.manifest.reconciliation import (
+    ManifestSource,
+    ManifestReconciliation,
+    reconcile_entries,
+)
+
+# entries: the CollectionManifestEntry values you persisted at ingest time.
+# sources: the current source identity and content hashes your connector sees.
+sources = [
+    ManifestSource(document_key="billing.txt", content_sha256=current_hash),
+]
+reconciliation: ManifestReconciliation = reconcile_entries(entries, sources)
+
+for item in reconciliation.changed:
+    ...  # re-ingest this source
+for item in reconciliation.orphaned:
+    ...  # delete this document; the source is gone
+```
+
+`reconcile_entries(entries, sources)` returns a `ManifestReconciliation` whose
+items each carry a `status`. The five statuses are:
+
+| Status | Meaning |
+| --- | --- |
+| `unchanged` | The source content hash matches the manifest entry. |
+| `changed` | The source content hash differs from the manifest entry. |
+| `missing` | The source has no matching manifest entry yet. |
+| `orphaned` | A manifest entry has no matching current source. |
+| `duplicate` | More than one manifest entry shares a `document_key`. |
+
+`ManifestReconciliation` exposes one property per status (`unchanged`,
+`changed`, `missing`, `orphaned`, `duplicate`) plus `needs_reindex`, which
+collects the `missing` and `changed` items. Each `ManifestSource` must have a
+non-empty, unique `document_key`. The application decides what to do with each
+group: re-ingest `changed` and `missing`, delete `orphaned`, and resolve
+`duplicate`.
+
+## Batch resume
+
+Batch resume is a rerun of the same source list against the same collection and
+manifest directory. Completed items have per-item manifest records, so unchanged
+content is skipped by hash on the next
+ingest.
+
+If a local or URL batch aborts after some items complete, rerun the same source
+list with the same `manifest_dir` (CLI `--manifest-dir`). Completed items are
+skipped, and only the remaining items are processed. rag-core never resumes
+mid-flight work on its own.
+
+<Callout type="info">
+  The manifest JSONL is a local ingest record for skip-by-hash and
+  reconciliation, not a hosted document registry. Your application owns external
+  document ids and maps them to `document_id` / `document_key`.
+</Callout>
+
+See [Ingest](/docs/ingest) for the ingest paths these operations update, and
+[Python API](/docs/api-python) for the full method signatures.

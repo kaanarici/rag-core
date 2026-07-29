@@ -1,0 +1,47 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --color-fd-primary: hsl(243 75% 58%);
+  --color-fd-primary-foreground: hsl(0 0% 98%);
+}
+
+.dark {
+  --color-fd-primary: hsl(243 90% 74%);
+  --color-fd-primary-foreground: hsl(243 70% 12%);
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+html > body[data-scroll-locked] {
+  margin-right: 0px !important;
+  --removed-body-scroll-bar-size: 0px !important;
+}
+
+/* Hero code block: let the card background show, switch syntax colors in dark. */
+.hero-code .shiki {
+  background: transparent !important;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  margin: 0;
+}
+.dark .hero-code .shiki,
+.dark .hero-code .shiki span {
+  color: var(--shiki-dark) !important;
+}
+
+/* Callouts already signal their type with a colored icon, so drop the redundant
+   left accent bar and restore even padding. */
+[style*='--callout-color'] > div:first-child {
+  display: none;
+}
+[style*='--callout-color'] {
+  padding-inline-start: 0.75rem;
+}

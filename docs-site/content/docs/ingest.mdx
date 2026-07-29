@@ -1,0 +1,242 @@
+---
+title: Add documents
+description: Get folders, raw bytes, single files, ZIP archives, and URLs into a collection, with metadata, stable identity, and skip-by-hash reingest.
+---
+
+`Engine` ingest methods read a source, parse it, chunk it, embed it, and write
+it into one collection under an optional namespace. All ingest is keyed on
+content hash, so re-adding unchanged content is a no-op unless you force a
+reindex.
+
+## Add a folder
+
+`Engine.add(path, ...)` recursively indexes a directory of supported files and
+returns a `LocalIngestResult`. This example uses local embedded Qdrant and a
+local embedding model, so it needs no API key.
+
+```python
+import asyncio
+from rag_core import Engine, Config
+
+async def main() -> None:
+    async with Engine(Config.local()) as core:
+        result = await core.add("./docs", collection="help")
+        print(f"written:   {result.written_count}")
+        print(f"skipped:   {result.skipped_count}")
+        print(f"failed:    {result.failed_count}")
+        print(f"succeeded: {result.succeeded_count} of {result.planned_count}")
+
+asyncio.run(main())
+```
+
+`LocalIngestResult` exposes `written`, `skipped`, `failed`, and `succeeded`
+record tuples, plus the matching `*_count` properties. `written` is the subset
+of `succeeded` whose content was newly indexed. `skipped` is the subset that was
+unchanged and therefore not re-embedded. A failed file is recorded as a
+`LocalIngestFailure` with its `error`. One unreadable file does not abort the
+batch.
+
+Default folder add reads the non-image formats listed in
+[Supported file formats](/docs/formats). Images require an injected OCR
+provider. ZIP archives are not traversed by folder add. Use `add_archive` for
+those.
+
+## Add raw bytes
+
+`Engine.add_bytes(...)` is the single-document path when your application
+already holds the source bytes. It returns one `IngestedDocument`.
+
+```python
+doc = await core.add_bytes(
+    file_bytes=b"Invoices can be paid by card or ACH.",
+    filename="billing.txt",
+    mime_type="text/plain",
+    collection="help",
+    metadata={"source": "support-portal", "team": "billing"},
+)
+print(doc.document_id, doc.chunk_count, doc.ingest_state)
+```
+
+`IngestedDocument` carries `document_id`, `collection`, `namespace`,
+`chunk_count`, `filename`, `mime_type`, `document_key`, `content_sha256`,
+`ingest_state` (`"created"` for a fresh write), `replaced_existing`,
+`embedding_model`, `processing_version`, and `metadata`. `mime_type` selects the
+converter, so pass the real type. Extraction quality fields are attached under
+`metadata["quality"]` when the converter reports them, as described in
+[Supported file formats](/docs/formats).
+
+## Add a single file
+
+`Engine.add_file(path, ...)` reads one path from disk and returns one
+`IngestedDocument`. It accepts the same identity and metadata arguments as
+`add_bytes`.
+
+```python
+doc = await core.add_file(
+    "./docs/local-guide.md",
+    collection="help",
+    document_key="local-guide.md",
+)
+```
+
+## Add a ZIP archive
+
+`Engine.add_archive(archive_path, ...)` reads supported members directly from a
+`.zip` without extracting to disk and returns a `LocalIngestResult`. It rejects
+unsafe member paths and enforces entry-count, per-entry byte, and total-byte
+limits through `archive_limits`.
+
+```python
+result = await core.add_archive("./docs.zip", collection="help")
+print(result.written_count, result.failed_count)
+```
+
+## Add a URL
+
+`Engine.add_url(url, ...)` fetches one HTTP(S) source, then ingests the fetched
+bytes and returns one `IngestedDocument`. Pass a `fetch_client` to control how
+bytes are retrieved. The example below injects a static client so it runs
+offline.
+
+```python
+import hashlib
+from rag_core import Engine, Config
+from rag_core.fetch_security import validate_fetch_url
+from rag_core.fetching import FetchResponse
+
+_BODY = b"Remote pages can be fetched, parsed, indexed, and cited."
+
+class StaticFetchClient:
+    def fetch(self, url: str) -> FetchResponse:
+        validated = validate_fetch_url(url)
+        return FetchResponse(
+            url=validated,
+            status_code=200,
+            content_type="text/plain",
+            content_length=len(_BODY),
+            content_sha256=hashlib.sha256(_BODY).hexdigest(),
+            body=_BODY,
+            redirect_chain=(validated,),
+        )
+
+async def main() -> None:
+    async with Engine(Config.local()) as core:
+        doc = await core.add_url(
+            "https://example.com/docs/remote-guide",
+            collection="help",
+            fetch_client=StaticFetchClient(),
+        )
+        print(doc.metadata["source_url"], doc.chunk_count)
+```
+
+Remote fetch defaults allow registered converter MIME types that do not require
+OCR. Constrain fetches with `fetch_policy` and `fetch_limits`. See
+[Supported file formats](/docs/formats) for the remote allowlist details.
+
+`Engine.add_urls(url_file=None, *, urls=None, ...)` ingests many URLs from a text
+file (one URL per line) or an explicit `urls` sequence and returns a
+`RemoteUrlIngestResult` with the same `written`, `skipped`, `failed`, and
+`succeeded` accounting as the local result.
+
+## Attach metadata
+
+Every method accepts `metadata` as a flat string map applied to the document and
+flowed into its indexed chunks. For folder, archive, and URL-list ingest the
+same `metadata` is applied to every document in the batch. Use it for fields you
+later narrow on at search time, such as a source label or owning team.
+
+```python
+await core.add(
+    "./docs",
+    collection="help",
+    metadata={"source": "internal-wiki"},
+)
+```
+
+`Engine.search` and `Engine.context` accept a `metadata_filter` to narrow
+results by these fields within a bound collection. See
+[Search and rank](/docs/search).
+
+## Document identity
+
+Each document has a `document_key` (the stable source identity) and a
+`document_id` (a deterministic hash used as the storage id). Your application may
+pass `document_id` and `document_key` to `add_bytes`, `add_file`, and `add_url`
+to use external identifiers. Otherwise core derives a deterministic
+`document_key` from the filename, local path, or URL, then hashes it into a
+`document_id`. A stable key is what makes re-ingest and delete target the same
+document across runs.
+
+```python
+doc = await core.add_bytes(
+    file_bytes=source_bytes,
+    filename="policy.md",
+    mime_type="text/markdown",
+    collection="help",
+    document_key="wiki/policy",   # stable external identity
+)
+```
+
+## Idempotent re-ingest
+
+Ingest is keyed on `content_sha256`. When you re-add a source whose content has
+not changed, the default `IngestConfig(skip_unchanged="fast")` returns the stored
+document metadata without parsing, chunking, or embedding again. In a
+`LocalIngestResult` these documents appear under `skipped`, not `written`.
+
+```python
+first = await core.add("./docs", collection="help")
+again = await core.add("./docs", collection="help")
+assert again.written_count == 0          # nothing changed
+assert again.skipped_count == first.written_count
+```
+
+Set `skip_unchanged="materialize"` on `IngestConfig` to re-parse unchanged files
+and return freshly prepared metadata while still skipping the index write. To
+re-embed unchanged content (for example after changing the embedding model),
+pass `force_reindex=True`.
+
+```python
+await core.add("./docs", collection="help", force_reindex=True)
+```
+
+<Callout type="info">
+  Because skip-by-hash is the default, an interrupted batch is safe to rerun.
+  Re-running the same source list against the same collection skips the
+  documents that already completed and finishes the rest.
+</Callout>
+
+## CLI
+
+`rag-core add` ingests one unambiguous source. A file, directory, or shell glob
+uses local ingest. A path ending in `.zip` uses archive ingest. An `http(s)://`
+argument uses single-URL ingest. Use `--url-list file.txt` for a text file of
+URLs.
+
+```bash
+rag-core add ./docs --collection help --metadata source=internal-wiki
+rag-core add ./docs.zip --collection help
+rag-core add https://example.com/guide --collection help
+rag-core add --url-list urls.txt --collection help
+```
+
+Other flags: `--namespace`, repeatable `--metadata KEY=VALUE`,
+`--force-reindex`, `--manifest-dir DIR`, and `--dry-run --json` to print the
+planned source items and manifest reconciliation without assembling an `Engine`.
+
+## Where the application boundary is
+
+rag-core ingests the sources you hand it. It does not own connector cursors,
+polling schedules, webhooks, or deleted-source policy. Your application or worker
+discovers which sources changed and calls these methods with stable
+`document_key` values. `namespace` and `collection` are bound from your auth or
+worker context, never from model input. See
+[Multi-tenancy](/docs/multi-tenancy).
+
+When you configure a manifest directory, local and URL ingest can report
+unchanged, changed, missing, orphaned, and duplicate source states so your
+worker can decide what to re-add or delete. That full keep-in-sync and delete
+story is covered in [Keep in sync](/docs/sync).
+
+For the complete method reference see [Python API](/docs/api-python) and
+[CLI reference](/docs/cli).
