@@ -34,7 +34,7 @@ class RAGCore:
         config_or_engine: Config | Engine,
         *,
         tenant_id: str,
-        index: str,
+        collection: str,
         document_ids: Sequence[str] | None = None,
     ) -> None
 
@@ -42,7 +42,7 @@ class RAGCore:
     def from_env(
         cls,
         *,
-        index: str,
+        collection: str,
         tenant_id: str | None = None,
         document_ids: Sequence[str] | None = None,
     ) -> RAGCore
@@ -59,7 +59,7 @@ class RAGCore:
     def tool(self) -> Any
 ```
 
-`tenant_id`, `index`, and optional `document_ids` are immutable retrieval
+`tenant_id`, `collection`, and optional `document_ids` are immutable retrieval
 scope. A call may narrow the document allowlist but cannot widen it.
 `from_env()` requires `RAG_CORE_TENANT_ID` unless `tenant_id` is passed and
 strictly validates the configured embedding provider and vector store.
@@ -325,7 +325,6 @@ def describe_event_sink_status(self) -> dict[str, object]
 ```python
 @dataclass(frozen=True, kw_only=True)
 class Config:
-    qdrant: QdrantConfig
     vector_store: VectorStoreConfig
     embedding: EmbeddingConfig
     reranker: RerankerConfig
@@ -399,6 +398,15 @@ class IngestConfig:
     lexical_search_provider: str | None = None
     embedding_cache_provider: str | None = None
     skip_unchanged: Literal["fast", "materialize"] = "fast"
+
+@dataclass(frozen=True)
+class VectorStoreConfig:
+    provider: str = "qdrant"
+    qdrant: QdrantConfig = field(default_factory=QdrantConfig)
+    pgvector: PgVectorStoreConfig = field(default_factory=PgVectorStoreConfig)
+    turbopuffer: TurboPufferVectorStoreConfig = field(
+        default_factory=TurboPufferVectorStoreConfig
+    )
 ```
 
 ## Result types
@@ -524,19 +532,17 @@ class DeleteDocumentResult:
     document_id: str
     namespace: str
     collection: str
-    index_deleted: bool
-    vector_store_acked: bool = False
-    sidecar_deleted: bool | None = None
+    vector_store_acked: bool
     lexical_sidecar_purged: bool | None = None
     embedding_cache_purged: bool | None = None
     chunk_context_cache_purged: bool | None = None
-    manifest_entry_deleted: bool | None = None
     manifest_removed: bool | None = None
 ```
 
 On `DeleteDocumentResult`, a boolean field is `True` when the purge succeeded,
-`False` when it failed and a recovery journal was written, and `None` when that
-surface is not wired on this `Engine`.
+`False` when that surface reported failure, and `None` when that surface is not
+wired on this `Engine`. Vector-store failure raises before later steps run.
+Retry `delete_document`; each step is idempotent.
 
 ## contracts
 

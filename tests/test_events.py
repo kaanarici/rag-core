@@ -712,6 +712,7 @@ def test_search_completed_distinguishes_requested_attempted_and_applied_rerank()
                 collections=["corp"],
                 limit=5,
                 rerank=True,
+                rerank_budget=RerankBudget(fallback_on_error=True),
             )
         )
         [completed] = [event for event in buffer.events if isinstance(event, SearchCompleted)]
@@ -837,15 +838,15 @@ def test_query_plan_and_stage_trace_strips_query_text_and_records_budget() -> No
     assert planned.rerank_candidate_count == 12
     assert planned.rerank_timeout_ms == 1500.0
     assert planned.rerank_max_output == 5
-    assert planned.rerank_fallback_on_error is True
+    assert planned.rerank_fallback_on_error is False
     assert planned.retrieve_stage == "HybridRetrieve"
-    assert planned.fuse_stage == "IdentityFuse"
+    assert planned.fuse_stage == "none"
     assert "sensitive billing question" not in str(planned)
 
     stages = [e for e in buffer.events if isinstance(e, SearchStageCompleted)]
     stage_names = [(event.stage, event.stage_name) for event in stages]
     assert ("retrieve", "HybridRetrieve") in stage_names
-    assert ("fuse", "IdentityFuse") in stage_names
+    assert all(event.stage != "fuse" for event in stages)
     assert all(event.duration_ms >= 0.0 for event in stages)
     assert "sensitive billing question" not in str(stages)
 

@@ -19,18 +19,14 @@ from rag_core.search.embedding_cache_diagnostics import (
 )
 from rag_core.search.pipeline.types import PipelineContext, PipelineQuery
 from rag_core.search.planning import (
-    QUERY_PLAN_PRESET_DENSE_ONLY,
     QueryPlanPreparer,
     QueryPlanSparseVectorPolicy,
     default_query_plan_for_store,
-    query_plan_preset,
     rerank_candidate_pool_limit,
-    resolve_prefetch_limit,
     validate_query_plan_for_store,
 )
 from rag_core.search.query_plan import (
     DenseChannel,
-    Prefetch,
     QueryPlan,
     SparseChannel,
     UnsupportedQueryStage,
@@ -39,7 +35,6 @@ from rag_core.search.query_plan import (
 from rag_core.search.sparse_channels import PRIMARY_SPARSE_CHANNEL, primary_sparse_channel
 from rag_core.search.provider_protocols import (
     EmbeddingProvider,
-    QueryPlanCapabilities,
     SparseEmbedder,
     provider_name,
 )
@@ -153,27 +148,18 @@ class HybridRetrieve:
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
             raise
-        resolved_plan = _reconcile_implicit_default_plan(
-            plan=plan,
-            query=query,
-            capabilities=capabilities,
-            sparse_vectors=sparse_vectors,
-            sparse_vectors_required=needs_sparse,
-            result_limit=retrieve_limit,
-        )
-        if resolved_plan != plan:
-            plan = resolved_plan
+        if needs_sparse:
             if plan is not None:
-                validate_query_plan_for_store(
-                    plan,
-                    capabilities=capabilities,
-                    provider_name=provider_name(ctx.vector_store),
-                    store=ctx.vector_store,
+                missing_channels = _missing_sparse_query_vectors(plan, sparse_vectors)
+                if missing_channels:
+                    raise UnsupportedQueryStage(
+                        "Sparse query vectors were not produced for required channels: "
+                        f"{', '.join(sorted(missing_channels))}"
+                    )
+            elif not sparse_vectors:
+                raise UnsupportedQueryStage(
+                    "Sparse query vectors were not produced for the requested search"
                 )
-                if isinstance(ctx.vector_store, QueryPlanPreparer):
-                    await ctx.vector_store.prepare_query_plan(plan)
-        needs_dense = _plan_uses_dense(plan)
-        needs_sparse = _plan_uses_sparse(plan, store=ctx.vector_store)
         if needs_dense and not dense_vec:
             if query.query_vector is not None:
                 dense_vec = query.query_vector
@@ -322,100 +308,6 @@ def _retrieve_pool_limit(query: PipelineQuery, *, reranker: object | None) -> in
         else None
     )
     return rerank_candidate_pool_limit(final_limit=query.limit, requested=requested)
-
-
-def _reconcile_implicit_default_plan(
-    *,
-    plan: QueryPlan | None,
-    query: PipelineQuery,
-    capabilities: QueryPlanCapabilities,
-    sparse_vectors: dict[str, SparseVector],
-    sparse_vectors_required: bool,
-    result_limit: int,
-) -> QueryPlan | None:
-    if plan is None or query.query_plan is not None:
-        return plan
-    if not sparse_vectors_required:
-        return plan
-    missing_channels = _missing_sparse_query_vectors(plan, sparse_vectors)
-    if not missing_channels:
-        return plan
-    available_plan = _plan_with_available_sparse_channels(
-        plan,
-        sparse_vectors=sparse_vectors,
-    )
-    if available_plan is not None:
-        return available_plan
-    if capabilities.dense:
-        return query_plan_preset(QUERY_PLAN_PRESET_DENSE_ONLY, limit=result_limit)
-    sparse_channel = next(iter(sparse_vectors), "")
-    if not sparse_channel:
-        return plan
-    sparse_limit = resolve_prefetch_limit(result_limit=result_limit)
-    return QueryPlan(
-        prefetches=(
-            Prefetch(
-                channel=SparseChannel(
-                    vector_field=sparse_channel,
-                    using_query_vector=sparse_channel,
-                ),
-                limit=sparse_limit,
-            ),
-        ),
-        final_limit=result_limit,
-    )
-
-
-def _plan_with_available_sparse_channels(
-    plan: QueryPlan,
-    *,
-    sparse_vectors: dict[str, SparseVector],
-) -> QueryPlan | None:
-    available = set(sparse_vectors)
-    if sparse_vectors:
-        available.add(PRIMARY_SPARSE_CHANNEL)
-    prefetches = tuple(
-        filtered
-        for prefetch in plan.prefetches
-        if (filtered := _prefetch_with_available_sparse_channels(prefetch, available))
-        is not None
-    )
-    if not prefetches:
-        return None
-    return QueryPlan(
-        prefetches=prefetches,
-        fuse=plan.fuse if len(prefetches) > 1 else None,
-        rerank=plan.rerank,
-        boost=plan.boost,
-        final_limit=plan.final_limit,
-        search_profile=plan.search_profile if prefetches == plan.prefetches else None,
-    )
-
-
-def _prefetch_with_available_sparse_channels(
-    prefetch: Prefetch,
-    available_sparse_vectors: set[str],
-) -> Prefetch | None:
-    channel = prefetch.channel
-    if (
-        isinstance(channel, SparseChannel)
-        and channel.using_query_vector not in available_sparse_vectors
-    ):
-        return None
-    nested = tuple(
-        filtered
-        for child in prefetch.nested
-        if (
-            filtered := _prefetch_with_available_sparse_channels(
-                child,
-                available_sparse_vectors,
-            )
-        )
-        is not None
-    )
-    if nested == prefetch.nested:
-        return prefetch
-    return Prefetch(channel=channel, limit=prefetch.limit, nested=nested)
 
 
 def _missing_sparse_query_vectors(

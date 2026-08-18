@@ -22,7 +22,8 @@ document-dependent.
 | XLSX | beta | Sheet content is emitted as text. Formulas are not evaluated. |
 | Images | beta | Recognized by the converter registry, but not default-ingestable without OCR. |
 
-Default local add accepts the non-image formats above. Images require an
+Default local add accepts the non-image formats above. PDF conversion uses the
+`pdf` extra. DOCX, PPTX, and XLSX use the `office` extra. Images require an
 injected OCR provider, so default folder add skips or rejects image files rather
 than pretending OCR happened.
 

@@ -5,7 +5,7 @@ import { Blocks, Check, Cpu, Database, Quote } from 'lucide-react';
 const LOCAL_CODE = `from agents import Agent
 from rag_core import RAGCore
 
-rag = RAGCore.from_env(index="company-docs")
+rag = RAGCore.from_env(collection="company-docs")
 agent = Agent(name="support", tools=[rag.tool()])`;
 
 const CONFIGURED_CODE = `from rag_core import Config, Document, RAGCore
@@ -13,7 +13,7 @@ const CONFIGURED_CODE = `from rag_core import Config, Document, RAGCore
 async with RAGCore(
     Config.local(),
     tenant_id="local",
-    index="company-docs",
+    collection="company-docs",
 ) as rag:
     await rag.ingest(Document(
         key="billing.md",

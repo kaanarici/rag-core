@@ -33,8 +33,6 @@ def run_serve_command(args: argparse.Namespace) -> int:
         config=config,
         core_factory=Engine,
         ingest_roots=tuple(Path(path) for path in args.ingest_root),
-        job_db_path=Path(args.job_db_path),
-        job_retention_seconds=getattr(args, "job_retention_seconds", None),
         max_body_bytes=getattr(args, "max_body_bytes", None) or 4 * 1024 * 1024,
         ingest_concurrency=getattr(args, "ingest_concurrency", None) or 8,
     )

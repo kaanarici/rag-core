@@ -26,9 +26,9 @@ def create_configured_vector_store(
     if config.vector_store.provider == QDRANT_VECTOR_STORE_PROVIDER:
         return vector_stores.create(
             QDRANT_VECTOR_STORE_PROVIDER,
-            url=config.qdrant.url,
-            location=config.qdrant.location,
-            api_key=config.qdrant.api_key,
+            url=config.vector_store.qdrant.url,
+            location=config.vector_store.qdrant.location,
+            api_key=config.vector_store.qdrant.api_key,
             collection_name=collection_name,
             dense_dimensions=dense_dimensions,
             sparse_enabled=sparse_enabled,

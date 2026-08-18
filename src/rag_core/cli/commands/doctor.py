@@ -136,8 +136,8 @@ def _planned_core_payload(config: Config) -> dict[str, object]:
             "model": config.reranker.model,
         },
         "qdrant": {
-            "url": cli_redacted_url(config.qdrant.url),
-            "location": cli_store_location_label(config.qdrant.location),
+            "url": cli_redacted_url(config.vector_store.qdrant.url),
+            "location": cli_store_location_label(config.vector_store.qdrant.location),
         },
         "vector_store": describe_vector_store_diagnostics(
             config=config,

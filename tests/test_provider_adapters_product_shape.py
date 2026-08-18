@@ -174,7 +174,7 @@ def test_vector_store_provider_order_uses_capability_specs() -> None:
     # ---- each vector-store adapter carries identity via its provider spec ----
     for module, spec in (
         ("rag_core.search.providers.memory_store", "MEMORY_VECTOR_STORE_PROVIDER_SPEC"),
-        ("rag_core.search.providers.qdrant_collection", "QDRANT_VECTOR_STORE_PROVIDER_SPEC"),
+        ("rag_core.search.providers.qdrant_store", "QDRANT_VECTOR_STORE_PROVIDER_SPEC"),
         (
             "rag_core.search.providers.turbopuffer_client",
             "TURBOPUFFER_VECTOR_STORE_PROVIDER_SPEC",

@@ -13,10 +13,6 @@ from rag_core.events.types import RerankApplied
 from rag_core.retrieval_defaults import DEFAULT_SEARCH_LIMIT
 from rag_core.search.pipeline import (
     HybridRetrieve,
-    IdentityFuse,
-    IdentityPostprocess,
-    IdentityQueryTransform,
-    PassThroughRerank,
     PipelineContext,
     PipelineQuery,
     Postprocess,
@@ -26,7 +22,7 @@ from rag_core.search.pipeline import (
 )
 from rag_core.search.provider_protocols import RerankerProvider
 from rag_core.search.planning import default_query_plan
-from rag_core.search.query_plan import DenseChannel, UnsupportedQueryStage
+from rag_core.search.query_plan import UnsupportedQueryStage
 from rag_core.search.request_models import (
     RerankBudget,
     RerankResult,
@@ -90,8 +86,7 @@ def _identity_pipeline(
 ) -> RetrievalPipeline:
     return RetrievalPipeline(
         retrieve=_StaticRetrieve(results),
-        fuse=IdentityFuse(),
-        rerank=rerank or PassThroughRerank(),  # type: ignore[arg-type]
+        rerank=rerank,  # type: ignore[arg-type]
         query_transforms=query_transforms,
         postprocesses=postprocesses,
     )
@@ -110,32 +105,13 @@ def test_rerank_budget_rejects_non_positive_limits(kwargs: dict[str, object]) ->
         RerankBudget(**kwargs)  # type: ignore[arg-type]
 
 
-def test_identity_pipeline_passes_results_through_and_handles_empty() -> None:
+def test_omitted_fuse_and_rerank_pass_results_through() -> None:
     async def _run() -> None:
         hits = [make_search_result(id="a"), make_search_result(id="b")]
         through = await _identity_pipeline(hits).run(_build_query(), _build_context())
         assert [r.id for r in through] == ["a", "b"]
         empty = await _identity_pipeline([]).run(_build_query(), _build_context())
         assert empty == []
-
-    asyncio.run(_run())
-
-def test_identity_stages_are_no_ops() -> None:
-    """IdentityPostprocess / IdentityQueryTransform / PassThroughRerank leave inputs alone."""
-
-    async def _run() -> None:
-        hits = [make_search_result(id="a")]
-        query = _build_query()
-        ctx = _build_context()
-
-        pp_out = await IdentityPostprocess().postprocess(hits, query, ctx)
-        assert pp_out == hits
-
-        rerank_out = await PassThroughRerank().rerank(hits, query, ctx)
-        assert rerank_out == hits
-
-        transform_out = await IdentityQueryTransform().transform(query, ctx)
-        assert transform_out is query
 
     asyncio.run(_run())
 
@@ -164,13 +140,29 @@ def test_query_transforms_observed_in_retrieve_and_run_in_order() -> None:
 
         pipeline = RetrievalPipeline(
             retrieve=CaptureRetrieve(),
-            fuse=IdentityFuse(),
-            rerank=PassThroughRerank(),
             query_transforms=(make_tag("first", "::a"), make_tag("second", "::b")),
         )
         await pipeline.run(_build_query(query="raw"), _build_context())
         assert order == ["first", "second"]
         assert seen == ["raw::a::b"]
+
+    asyncio.run(_run())
+
+
+def test_multi_retrieve_without_fuse_raises() -> None:
+    async def _run() -> None:
+        class FanoutRetrieve:
+            async def retrieve(
+                self, query: PipelineQuery, ctx: PipelineContext
+            ) -> list[SearchResult]:
+                return [make_search_result(id=query.query)]
+
+        pipeline = RetrievalPipeline(retrieve=FanoutRetrieve())
+        with pytest.raises(ValueError, match="require a FuseStage"):
+            await pipeline.run(
+                _build_query(query_variants=("variant-a",)),
+                _build_context(),
+            )
 
     asyncio.run(_run())
 
@@ -238,17 +230,6 @@ def test_pipeline_truncates_to_query_limit() -> None:
     asyncio.run(_run())
 
 
-def test_identity_fuse_handles_empty_and_returns_first_list() -> None:
-    async def _run() -> None:
-        fuse = IdentityFuse()
-        assert await fuse.fuse([], _build_query(), _build_context()) == []
-        first = [make_search_result(id="a")]
-        second = [make_search_result(id="b")]
-        assert await fuse.fuse([first, second], _build_query(), _build_context()) == first
-
-    asyncio.run(_run())
-
-
 def test_hybrid_retrieve_uses_precomputed_vectors_when_present() -> None:
     async def _run() -> None:
         embedding = FakeEmbeddingProvider()
@@ -257,8 +238,6 @@ def test_hybrid_retrieve_uses_precomputed_vectors_when_present() -> None:
         sparse_vectors = {"bm25": SparseVector(indices=[1], values=[1.0])}
         pipeline = RetrievalPipeline(
             retrieve=HybridRetrieve(),
-            fuse=IdentityFuse(),
-            rerank=PassThroughRerank(),
         )
         ctx = PipelineContext(
             embedding_provider=embedding,
@@ -287,8 +266,6 @@ def test_hybrid_retrieve_embeds_when_vectors_missing() -> None:
         sparse = FakeSparseEmbedder()
         pipeline = RetrievalPipeline(
             retrieve=HybridRetrieve(),
-            fuse=IdentityFuse(),
-            rerank=PassThroughRerank(),
         )
         ctx = PipelineContext(
             embedding_provider=embedding,
@@ -333,14 +310,10 @@ def test_hybrid_retrieve_rejects_missing_sparse_embedder_before_dense_work() -> 
     assert store.search_calls == []
 
 
-def test_hybrid_retrieve_implicit_plan_falls_back_to_dense_when_sparse_is_missing() -> None:
+def test_hybrid_retrieve_implicit_dense_plan_ignores_empty_sparse_query() -> None:
     async def _run() -> RecordingVectorStore:
         store = RecordingVectorStore()
-        pipeline = RetrievalPipeline(
-            retrieve=HybridRetrieve(),
-            fuse=IdentityFuse(),
-            rerank=PassThroughRerank(),
-        )
+        pipeline = RetrievalPipeline(retrieve=HybridRetrieve())
         ctx = PipelineContext(
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(empty_query_multi=True),
@@ -353,7 +326,7 @@ def test_hybrid_retrieve_implicit_plan_falls_back_to_dense_when_sparse_is_missin
     [call] = store.search_calls
     assert call.query_plan is not None
     assert len(call.query_plan.prefetches) == 1
-    assert isinstance(call.query_plan.prefetches[0].channel, DenseChannel)
+    assert call.sparse_vector.indices == []
 
 
 def test_hybrid_retrieve_widens_candidate_pool_for_provider_rerank() -> None:
@@ -524,30 +497,30 @@ def test_rerank_stage_skipped_when_disabled_or_no_provider() -> None:
     asyncio.run(_run())
 
 
-def test_rerank_failure_falls_back_unless_explicitly_disabled() -> None:
+def test_rerank_failure_fails_closed_unless_fallback_enabled() -> None:
     async def _run() -> None:
         hits = [make_search_result(id="a"), make_search_result(id="b")]
         reranker = FakeReranker(error=RuntimeError("boom"))
         pipeline = _identity_pipeline(hits, rerank=ProviderRerankStage())
 
-        fallback = await pipeline.run(
-            _build_query(rerank=True), _build_context(reranker=reranker)
-        )
-        assert [hit.id for hit in fallback] == ["a", "b"]
-
         with pytest.raises(RuntimeError, match="boom"):
             await pipeline.run(
-                _build_query(
-                    rerank=True,
-                    rerank_budget=RerankBudget(fallback_on_error=False),
-                ),
-                _build_context(reranker=reranker),
+                _build_query(rerank=True), _build_context(reranker=reranker)
             )
+
+        fallback = await pipeline.run(
+            _build_query(
+                rerank=True,
+                rerank_budget=RerankBudget(fallback_on_error=True),
+            ),
+            _build_context(reranker=reranker),
+        )
+        assert [hit.id for hit in fallback] == ["a", "b"]
 
     asyncio.run(_run())
 
 
-def test_rerank_cancelled_error_falls_back_unless_explicitly_disabled() -> None:
+def test_rerank_cancelled_error_fails_closed_unless_fallback_enabled() -> None:
     class _CancelledReranker:
         async def rerank(
             self,
@@ -562,20 +535,20 @@ def test_rerank_cancelled_error_falls_back_unless_explicitly_disabled() -> None:
         reranker = _CancelledReranker()
         pipeline = _identity_pipeline(hits, rerank=ProviderRerankStage())
 
+        with pytest.raises(asyncio.CancelledError):
+            await pipeline.run(
+                _build_query(rerank=True),
+                _build_context(reranker=cast(FakeReranker, reranker)),
+            )
+
         fallback = await pipeline.run(
-            _build_query(rerank=True),
+            _build_query(
+                rerank=True,
+                rerank_budget=RerankBudget(fallback_on_error=True),
+            ),
             _build_context(reranker=cast(FakeReranker, reranker)),
         )
         assert [hit.id for hit in fallback] == ["a", "b"]
-
-        with pytest.raises(asyncio.CancelledError):
-            await pipeline.run(
-                _build_query(
-                    rerank=True,
-                    rerank_budget=RerankBudget(fallback_on_error=False),
-                ),
-                _build_context(reranker=cast(FakeReranker, reranker)),
-            )
 
     asyncio.run(_run())
 
@@ -591,7 +564,9 @@ def test_rerank_timeout_falls_back_without_leaking_query_text() -> None:
             _build_query(
                 query="private query text",
                 rerank=True,
-                rerank_budget=RerankBudget(timeout_seconds=0.001),
+                rerank_budget=RerankBudget(
+                    timeout_seconds=0.001, fallback_on_error=True
+                ),
             ),
             _build_context(reranker=reranker, event_sink=events),
         )

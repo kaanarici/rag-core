@@ -1,13 +1,11 @@
-"""Real-store proof for ingest torn-write rollback, write-ahead replay, and
-delete-journal replay.
+"""Real-store proof for ingest torn-write rollback and retry.
 
-The recovery machinery (``core_ingest.py`` index-failure rollback, the
-write-ahead journal, and the delete-recovery journal) is otherwise proven only
-against recording-store and recording-indexer fakes. Per the repo trust model
-fakes are not product proof, so these tests run the same scenarios against a
-real embedded Qdrant (``location=":memory:"``) wrapped by a failure-injecting
-proxy. They assert real store contents (search hits / point counts), not just
-returned result objects.
+The recovery machinery (``core_ingest.py`` index-failure rollback) is otherwise
+proven only against recording-store and recording-indexer fakes. Per the repo
+trust model fakes are not product proof, so these tests run the same scenarios
+against a real embedded Qdrant (``location=":memory:"``) wrapped by a
+failure-injecting proxy. They assert real store contents (search hits / point
+counts), not just returned result objects.
 """
 
 from __future__ import annotations
@@ -25,6 +23,7 @@ from rag_core.config import (
     DEFAULT_RERANKER_PROVIDER,
     EmbeddingConfig,
     QdrantConfig,
+    VectorStoreConfig,
     RerankerConfig,
 )
 from rag_core.core import Engine, Config
@@ -135,11 +134,11 @@ def _build_core_with_proxy(
     no post-hoc attribute swapping.
     """
     config = Config(
-        qdrant=QdrantConfig(
+        vector_store=VectorStoreConfig(qdrant=QdrantConfig(
             location=":memory:",
             store_collection=f"{_DEMO_COLLECTION_PREFIX}_recovery_{uuid.uuid4().hex}",
             dimension_aware_collection=False,
-        ),
+        )),
         embedding=EmbeddingConfig(
             provider="demo",
             model="demo-dense-v1",
@@ -165,11 +164,11 @@ def _build_core_with_sidecar(
     sidecar: _FailingOnceSidecar,
 ) -> Engine:
     config = Config(
-        qdrant=QdrantConfig(
+        vector_store=VectorStoreConfig(qdrant=QdrantConfig(
             location=":memory:",
             store_collection=f"{_DEMO_COLLECTION_PREFIX}_sidecar_{uuid.uuid4().hex}",
             dimension_aware_collection=False,
-        ),
+        )),
         embedding=EmbeddingConfig(
             provider="demo",
             model="demo-dense-v1",
@@ -270,8 +269,8 @@ def test_failed_upsert_rolls_back_real_store_state(tmp_path: Path) -> None:
             residue = await _search_hits(core, "alpha original version one", document_id="doc-roll")
             assert residue == [], "rollback purges the torn document; no mixed set survives"
 
-            # The write-ahead journal entry left by the torn ingest enables the
-            # retry's resume path; the clean retry then serves only v2.
+            # Retry after a torn upsert: deterministic point IDs replace in
+            # place, so the clean retry serves only v2.
             await core.add_bytes(
                 file_bytes=b"beta refund cancellation gamma rewritten version two",
                 filename="doc.md",
@@ -332,19 +331,17 @@ def test_existing_reindex_sidecar_failure_without_journal_is_retry_healable() ->
     asyncio.run(go())
 
 
-def test_pending_write_ahead_replays_on_next_ingest(
+def test_crash_before_final_manifest_retry_does_not_duplicate_points(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A crash AFTER the store upsert but BEFORE the final manifest write leaves
-    a pending write-ahead entry plus orphan points on disk. The next healthy
-    ingest of the same triple must replay the purge and land exactly one
-    consistent copy. No duplicate points.
+    orphan points with no committed journal. The next healthy ingest of the
+    same content must skip-or-replace without duplicating points.
 
     Injection seam: ``core_ingest.write_final_manifest`` is monkeypatched to
     raise ``KeyboardInterrupt`` (a ``BaseException``, not caught by the
     ``except Exception`` rollback in ``_ingest_inside_fence``), so the upsert
-    survives and ``record_committed`` is never reached. Exactly the torn state
-    a real crash produces.
+    survives. Exactly the torn state a real crash produces.
     """
 
     async def go() -> None:
@@ -367,8 +364,7 @@ def test_pending_write_ahead_replays_on_next_ingest(
                 )
             monkeypatch.undo()
 
-            # Replay path: the next healthy ingest purges the orphan via
-            # resume_pending_write_ahead before landing fresh content.
+            # Next ingest of the same content must not duplicate points.
             await core.add_bytes(
                 file_bytes=b"delta shipping logistics warehouse fulfillment pending",
                 filename="doc.md",
@@ -379,9 +375,8 @@ def test_pending_write_ahead_replays_on_next_ingest(
             )
 
             hits = await _search_hits(core, "delta shipping logistics warehouse", document_id="doc-wal")
-            assert hits, "document must be searchable after write-ahead replay"
-            # No duplicate points: the resume purge removed the orphan copy, so
-            # the real store holds exactly one record for the document.
+            assert hits, "document must be searchable after retry"
+            # No duplicate points: skip or replace leaves exactly one record.
             record = await core._store.get_document_record(
                 namespace="recovery",
                 collection="docs",
@@ -392,7 +387,7 @@ def test_pending_write_ahead_replays_on_next_ingest(
             assert chunk_count >= 1
             unique_chunk_indexes = {hit.chunk_index for hit in hits}
             assert len(unique_chunk_indexes) == chunk_count, (
-                "replay must not leave duplicate points: "
+                "retry must not leave duplicate points: "
                 f"{len(unique_chunk_indexes)} distinct chunk indexes for "
                 f"{chunk_count} stored chunks"
             )
@@ -400,11 +395,10 @@ def test_pending_write_ahead_replays_on_next_ingest(
     asyncio.run(go())
 
 
-def test_failed_delete_journal_replays_on_reingest(tmp_path: Path) -> None:
-    """A failed store delete must report the failure honestly via the
-    ``DeleteDocumentResult`` tri-state contract and leave a delete-journal
-    entry. Re-ingesting the same triple replays the purge so only the new
-    content is searchable and the old content is fully gone.
+def test_failed_delete_leaves_content_until_retry_or_replace(tmp_path: Path) -> None:
+    """A failed store delete must report the failure. Old content remains until
+    the caller retries delete or ingests replacement content (deterministic
+    point IDs replace in place).
     """
 
     async def go() -> None:
@@ -428,20 +422,8 @@ def test_failed_delete_journal_replays_on_reingest(tmp_path: Path) -> None:
                     collection="docs",
                 )
 
-            # A journal entry now tracks the partial delete so the next ingest
-            # of the triple replays the purge. The store delete failed, so the
-            # old content is still present until that replay runs.
-            from rag_core._engine.core_ingest_delete_journal import DeleteRecoveryJournal
-
-            journal = DeleteRecoveryJournal(directory=tmp_path / "manifest")
-            latest = journal.latest_entry(
-                namespace="recovery",
-                collection="docs",
-                document_id="doc-del",
-            )
-            assert latest is not None
-            assert latest.completed is False
-
+            # Store delete failed, so the old content is still present until
+            # retry or replacement ingest.
             proxy.fail_next_delete(False)
             await core.add_bytes(
                 file_bytes=b"zeta security compliance audit logging replacement content",
@@ -459,6 +441,6 @@ def test_failed_delete_journal_replays_on_reingest(tmp_path: Path) -> None:
                 assert "epsilon" not in hit.text.lower()
             old_hits = await _search_hits(core, "epsilon onboarding tutorial guide", document_id="doc-del")
             for hit in old_hits:
-                assert "epsilon" not in hit.text.lower(), "old content must be fully gone after journal replay"
+                assert "epsilon" not in hit.text.lower(), "old content must be fully gone after replacement ingest"
 
     asyncio.run(go())

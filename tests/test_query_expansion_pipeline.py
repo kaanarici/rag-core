@@ -14,9 +14,7 @@ from rag_core.search.pipeline import (
     AnthropicQueryVariantGenerator,
     HybridRetrieve,
     HydeTransform,
-    IdentityFuse,
     MultiQueryTransform,
-    PassThroughRerank,
     PipelineContext,
     PipelineQuery,
     RetrievalPipeline,
@@ -192,7 +190,6 @@ def test_multi_query_fanout_preserves_order_and_clears_variant_vectors() -> None
         pipeline = RetrievalPipeline(
             retrieve=retrieve,
             fuse=RrfFuse(),
-            rerank=PassThroughRerank(),
         )
         results = await pipeline.run(
             _build_query(
@@ -228,7 +225,6 @@ def test_multi_query_retrieve_fanout_is_bounded_to_four_in_flight() -> None:
         pipeline = RetrievalPipeline(
             retrieve=retrieve,
             fuse=RrfFuse(),
-            rerank=PassThroughRerank(),
         )
         await pipeline.run(
             _build_query(
@@ -250,8 +246,6 @@ def test_multi_query_generator_failure_falls_back_to_original_with_event() -> No
         generator = _StaticGenerator(error=RuntimeError("provider unavailable"))
         pipeline = RetrievalPipeline(
             retrieve=retrieve,
-            fuse=IdentityFuse(),
-            rerank=PassThroughRerank(),
             query_transforms=(MultiQueryTransform(generator),),
         )
         results = await pipeline.run(
@@ -278,8 +272,7 @@ def test_multi_query_generator_failure_preserves_upstream_variants() -> None:
         retrieve = _RecordingRetrieve()
         pipeline = RetrievalPipeline(
             retrieve=retrieve,
-            fuse=IdentityFuse(),
-            rerank=PassThroughRerank(),
+            fuse=RrfFuse(),
             query_transforms=(
                 MultiQueryTransform(_StaticGenerator(variants=("prior variant",))),
                 MultiQueryTransform(
@@ -364,8 +357,6 @@ def test_hyde_transform_overrides_precomputed_dense_vector_and_keeps_sparse_orig
         store = RecordingVectorStore(search_results=[make_search_result()])
         pipeline = RetrievalPipeline(
             retrieve=HybridRetrieve(),
-            fuse=IdentityFuse(),
-            rerank=PassThroughRerank(),
             query_transforms=(
                 HydeTransform(
                     _StaticGenerator(passage="hypothetical answer passage")
@@ -445,7 +436,6 @@ def test_query_expansion_rrf_runs_against_demo_qdrant() -> None:
             pipeline = RetrievalPipeline(
                 retrieve=HybridRetrieve(),
                 fuse=RrfFuse(),
-                rerank=PassThroughRerank(),
                 query_transforms=(
                     MultiQueryTransform(
                         _StaticGenerator(

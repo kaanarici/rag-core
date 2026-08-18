@@ -36,7 +36,7 @@ def _optional_extras() -> tuple[str, ...]:
 
 
 def _provider_doc_extras() -> tuple[str, ...]:
-    converter_only = {"pdf"}
+    converter_only = {"pdf", "office"}
     return tuple(extra for extra in _optional_extras() if extra not in converter_only)
 
 

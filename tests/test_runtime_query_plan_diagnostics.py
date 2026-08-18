@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 from rag_core.core import Engine
 from rag_core.cli.commands.doctor import _planned_core_payload
-from rag_core.config import EmbeddingConfig, QdrantConfig
+from rag_core.config import EmbeddingConfig, QdrantConfig, VectorStoreConfig
 from rag_core.core_models import Config
 from rag_core.documents.contextualizer_provider_names import NOOP_CONTEXTUALIZER_ID
 from rag_core.documents.contextualizer import NoOpContextualizer
@@ -276,7 +276,7 @@ def test_doctor_qdrant_query_plan_diagnostics_match_adapter_capabilities() -> No
 
     payload = _planned_core_payload(
         Config(
-            qdrant=QdrantConfig(location=":memory:"),
+            vector_store=VectorStoreConfig(qdrant=QdrantConfig(location=":memory:")),
             embedding=EmbeddingConfig(model="text-embedding-3-small", dimensions=4),
         )
     )

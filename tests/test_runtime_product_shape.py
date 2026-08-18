@@ -12,27 +12,15 @@ from rag_core.config import (
     TURBOPUFFER_REGION_ENV,
     VECTOR_STORE_ENV,
 )
-from rag_core.runtime.jobs import (
-    INGEST_JOB_STATUSES,
-    INGEST_JOB_STATUS_COMPLETED,
-    INGEST_JOB_STATUS_FAILED,
-    INGEST_JOB_STATUS_PENDING,
-    INGEST_JOB_STATUS_RUNNING,
-    parse_job_status,
-)
 from rag_core.runtime_defaults import (
     DEFAULT_RUNTIME_HOST,
-    DEFAULT_RUNTIME_JOB_DB_PATH,
-    DEFAULT_RUNTIME_JOB_DB_PATH_ENV,
     DEFAULT_RUNTIME_PORT,
 )
 
 from tests.support.source_graph import (
-    defining_modules,
     iter_package_sources,
     modules_assigning_value,
     modules_importing,
-    symbol_module,
     under_module,
 )
 
@@ -66,16 +54,11 @@ def test_serve_ingest_root_docs_match_allowlist_behavior() -> None:
     assert 'os.environ["RAG_CORE_API_KEY"]' in self_host
     assert "HTTP probe for an already-running `rag-core serve`" in scripts_readme
     assert "HTTP against `docker compose`" not in scripts_readme
-    assert "RAG_CORE_RUNTIME_JOB_DB_PATH" in self_host
-    assert "--job-db-path" in self_host
-    assert "RAG_CORE_RUNTIME_JOB_RETENTION_SECONDS" in self_host
-    assert "--job-retention-seconds" in self_host
-    assert "--job-retention-seconds" in parser
-    assert "terminal statuses only" in self_host
-    assert "not resumed after process restart" in normalized_self_host
-    assert "Pending and running rows are never pruned by retention." in self_host
-    assert "RAG_CORE_RUNTIME_JOB_DB_PATH" in env_example
-    assert "--job-db-path \"$JOB_DB_PATH\"" in ci_self_host_smoke
+    assert "RAG_CORE_RUNTIME_JOB_DB_PATH" not in self_host
+    assert "--job-db-path" not in self_host
+    assert "--job-retention-seconds" not in parser
+    assert "RAG_CORE_RUNTIME_JOB_DB_PATH" not in env_example
+    assert "--job-db-path" not in ci_self_host_smoke
     assert "COPY examples/demo_corpus ./examples/demo_corpus" in dockerfile
     assert '"/app/examples/demo_corpus"' in dockerfile
     assert "- /app/examples/demo_corpus" in compose
@@ -98,11 +81,9 @@ def test_wheel_smoke_exercises_installed_runtime_extra() -> None:
 def test_runtime_serve_defaults_have_single_owner() -> None:
     assert DEFAULT_RUNTIME_HOST == "127.0.0.1"
     assert DEFAULT_RUNTIME_PORT == 8787
-    assert DEFAULT_RUNTIME_JOB_DB_PATH.as_posix() == ".rag-core/runtime/jobs.sqlite3"
-    assert DEFAULT_RUNTIME_JOB_DB_PATH_ENV == "RAG_CORE_RUNTIME_JOB_DB_PATH"
 
     # Each serve default is owned by exactly one module and no consumer re-types
-    # the literal (e.g. ``default="127.0.0.1"`` / ``default=8787`` / the db path).
+    # the literal (e.g. ``default="127.0.0.1"`` / ``default=8787``).
     # The literal's single owning module is the durable form of the old per-file
     # ``count()`` + ``literal not in source`` scrape over a hand-pinned list.
     assert modules_assigning_value("src/rag_core", value="127.0.0.1") == {
@@ -111,12 +92,6 @@ def test_runtime_serve_defaults_have_single_owner() -> None:
     assert modules_assigning_value("src/rag_core", value=8787) == {
         "rag_core.runtime_defaults": ["DEFAULT_RUNTIME_PORT"]
     }
-    assert modules_assigning_value(
-        "src/rag_core", value=".rag-core/runtime/jobs.sqlite3"
-    ) == {"rag_core.runtime_defaults": ["DEFAULT_RUNTIME_JOB_DB_PATH"]}
-    assert modules_assigning_value(
-        "src/rag_core", value="RAG_CORE_RUNTIME_JOB_DB_PATH"
-    ) == {"rag_core.runtime_defaults": ["DEFAULT_RUNTIME_JOB_DB_PATH_ENV"]}
 
     # The serve CLI parser stays importable by the base CLI: it may read defaults
     # from ``rag_core.runtime_defaults`` but must not pull in the heavy
@@ -127,45 +102,6 @@ def test_runtime_serve_defaults_have_single_owner() -> None:
         )
         == {}
     )
-
-    # The serve parser still wires the job-db-path flag and reads the env name
-    # from the owner constant rather than re-typing it.
-    parsers = "\n".join(src for _, _, src in iter_package_sources("src/rag_core/cli/parsers"))
-    assert "--job-db-path" in parsers
-    assert "DEFAULT_RUNTIME_JOB_DB_PATH_ENV" in parsers
-
-
-def test_runtime_ingest_job_statuses_have_single_owner() -> None:
-    assert INGEST_JOB_STATUS_PENDING == "pending"
-    assert INGEST_JOB_STATUS_RUNNING == "running"
-    assert INGEST_JOB_STATUS_COMPLETED == "completed"
-    assert INGEST_JOB_STATUS_FAILED == "failed"
-    assert INGEST_JOB_STATUSES == (
-        INGEST_JOB_STATUS_PENDING,
-        INGEST_JOB_STATUS_RUNNING,
-        INGEST_JOB_STATUS_COMPLETED,
-        INGEST_JOB_STATUS_FAILED,
-    )
-
-    # Each status string is bound once, in the jobs module; no consumer re-types
-    # ``status="running"`` / ``status = "completed"`` etc. instead of importing
-    # the constant. Pinning the literal's owning module replaces the old
-    # ``owner.count(...) == 1`` + ``status="..." not in consumer`` scrape.
-    for literal, name in (
-        ("pending", "INGEST_JOB_STATUS_PENDING"),
-        ("running", "INGEST_JOB_STATUS_RUNNING"),
-        ("completed", "INGEST_JOB_STATUS_COMPLETED"),
-        ("failed", "INGEST_JOB_STATUS_FAILED"),
-    ):
-        assert modules_assigning_value("src/rag_core/runtime", value=literal) == {
-            "rag_core.runtime.jobs": [name]
-        }
-
-    # The status parser is owned by the jobs module and defined nowhere else.
-    assert symbol_module(parse_job_status) == "rag_core.runtime.jobs"
-    assert defining_modules("src/rag_core", name="parse_job_status") == {
-        "rag_core.runtime.jobs"
-    }
 
 
 def test_self_host_docs_cover_selectable_vector_store_config() -> None:

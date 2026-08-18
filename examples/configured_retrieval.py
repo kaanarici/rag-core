@@ -25,7 +25,7 @@ from pathlib import Path
 
 from rag_core import Config
 from rag_core.core import Engine
-from rag_core.config import EmbeddingConfig, QdrantConfig
+from rag_core.config import EmbeddingConfig, QdrantConfig, VectorStoreConfig
 
 EXAMPLES_DIR = Path(__file__).parent
 CORPUS_DIR = EXAMPLES_DIR / "demo_corpus"
@@ -41,11 +41,11 @@ def _configured_config() -> Config:
             "For no-key smoke use: uv run python -m rag_core.quickstart"
         )
     return Config(
-        qdrant=QdrantConfig(
+        vector_store=VectorStoreConfig(qdrant=QdrantConfig(
             location=":memory:",
             store_collection=f"rag_core_configured_{uuid.uuid4().hex}",
             dimension_aware_collection=False,
-        ),
+        )),
         embedding=EmbeddingConfig(
             provider="openai",
             model="text-embedding-3-small",

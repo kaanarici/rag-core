@@ -15,6 +15,7 @@ from rag_core.config import (
     DEFAULT_RERANKER_PROVIDER,
     EmbeddingConfig,
     QdrantConfig,
+    VectorStoreConfig,
     RerankerConfig,
 )
 from rag_core.config.ingest_config import IngestConfig
@@ -377,11 +378,11 @@ def _build_core(
     dense = _CountingDemoEmbeddingProvider()
     sparse = _CountingDemoSparseEmbedder()
     config = Config(
-        qdrant=QdrantConfig(
+        vector_store=VectorStoreConfig(qdrant=QdrantConfig(
             location=":memory:",
             store_collection=f"rag_core_resume_{uuid.uuid4().hex}",
             dimension_aware_collection=False,
-        ),
+        )),
         embedding=EmbeddingConfig(
             provider="demo",
             model=dense.model_name,

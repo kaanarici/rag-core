@@ -245,11 +245,11 @@ def test_turbopuffer_config_region_pin_refuses_cross_region_host() -> None:
 
 def test_rag_core_config_composes_subsystem_configs() -> None:
     config = Config(
-        qdrant=QdrantConfig(url="http://localhost:6333", store_collection="product_docs"),
+        vector_store=VectorStoreConfig(qdrant=QdrantConfig(url="http://localhost:6333", store_collection="product_docs")),
         embedding=EmbeddingConfig(model="text-embedding-3-small", dimensions=1536),
     )
-    assert config.qdrant.url == "http://localhost:6333"
-    assert config.qdrant.store_collection == "product_docs"
+    assert config.vector_store.qdrant.url == "http://localhost:6333"
+    assert config.vector_store.qdrant.store_collection == "product_docs"
     assert config.embedding.model == "text-embedding-3-small"
     assert config.embedding.dimensions == 1536
     assert config.vector_store.provider == DEFAULT_VECTOR_STORE_PROVIDER
@@ -260,8 +260,8 @@ def test_rag_core_config_composes_subsystem_configs() -> None:
 
 def test_rag_core_config_uses_default_subsystems_when_omitted() -> None:
     config = Config()
-    assert config.qdrant.url is None
-    assert config.qdrant.location is None
+    assert config.vector_store.qdrant.url is None
+    assert config.vector_store.qdrant.location is None
 
 
 def test_store_factory_teaches_when_qdrant_target_missing() -> None:
@@ -278,8 +278,8 @@ def test_store_factory_teaches_when_qdrant_target_missing() -> None:
 
 def test_rag_core_config_local_factory_builds_no_key_memory_config() -> None:
     config = Config.local()
-    assert config.qdrant.location == ":memory:"
-    assert config.qdrant.url is None
+    assert config.vector_store.qdrant.location == ":memory:"
+    assert config.vector_store.qdrant.url is None
     assert config.embedding.provider == LOCAL_EMBEDDING_PROVIDER
     assert config.embedding.model == LOCAL_EMBEDDING_MODEL
     assert config.embedding.dimensions is None
@@ -291,7 +291,7 @@ def test_rag_core_config_local_factory_builds_no_key_memory_config() -> None:
 
 def test_rag_core_config_local_factory_accepts_persist_dir(tmp_path) -> None:
     config = Config.local(persist_dir=tmp_path / "qdrant")
-    assert config.qdrant.location == str(tmp_path / "qdrant")
+    assert config.vector_store.qdrant.location == str(tmp_path / "qdrant")
 
 
 def test_rag_core_config_qdrant_factory_uses_known_model_without_dimensions() -> None:
@@ -299,8 +299,8 @@ def test_rag_core_config_qdrant_factory_uses_known_model_without_dimensions() ->
         url="http://localhost:6333",
         embedding_provider=LOCAL_EMBEDDING_PROVIDER,
     )
-    assert config.qdrant.url == "http://localhost:6333"
-    assert config.qdrant.location is None
+    assert config.vector_store.qdrant.url == "http://localhost:6333"
+    assert config.vector_store.qdrant.location is None
     assert config.embedding.provider == LOCAL_EMBEDDING_PROVIDER
     assert config.embedding.model == LOCAL_EMBEDDING_MODEL
     assert config.embedding.dimensions is None
@@ -322,13 +322,13 @@ def test_rag_core_config_qdrant_factory_requires_model_for_other_providers() -> 
 def test_rag_core_config_propagates_qdrant_validation() -> None:
     with pytest.raises(ValueError, match="got both"):
         Config(
-            qdrant=QdrantConfig(url="http://localhost:6333", location=":memory:"),
+            vector_store=VectorStoreConfig(qdrant=QdrantConfig(url="http://localhost:6333", location=":memory:")),
         )
 
 
 def test_rag_core_config_propagates_embedding_validation() -> None:
     with pytest.raises(ValueError, match="positive"):
         Config(
-            qdrant=QdrantConfig(location=":memory:"),
+            vector_store=VectorStoreConfig(qdrant=QdrantConfig(location=":memory:")),
             embedding=EmbeddingConfig(dimensions=0),
         )

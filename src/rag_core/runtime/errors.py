@@ -10,13 +10,13 @@ from starlette.responses import JSONResponse
 
 @dataclass(frozen=True)
 class RedactedRuntimeError:
-    """Sanitized view of an exception for public HTTP/job surfaces.
+    """Sanitized view of an exception for public HTTP surfaces.
 
     ``error_type`` is the exception class name; ``error_code`` is a stable
     machine-readable label callers can branch on (``unhealthy`` for readiness
-    failures, ``ingest_failed`` for terminal ingest jobs). Full ``str(exc)``
-    text is intentionally absent. It can include SDK message strings or
-    licensed source identifiers and must stay in logs/event sinks only.
+    failures, ``ingest_failed`` for ingest). Full ``str(exc)`` text is
+    intentionally absent. It can include SDK message strings or licensed
+    source identifiers and must stay in logs/event sinks only.
     """
 
     error_type: str

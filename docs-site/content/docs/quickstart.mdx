@@ -4,7 +4,7 @@ description: Add scoped retrieval to an application, or search a local folder fr
 ---
 
 `RAGCore` is the application-facing API for ingestion, search, deletion, and an
-agent tool. Tenant and index scope are bound once and cannot be changed by a
+agent tool. Tenant and collection scope are bound once and cannot be changed by a
 search or tool request.
 
 ## Install
@@ -25,7 +25,7 @@ async def main() -> None:
     async with RAGCore(
         Config.local(),
         tenant_id="local",
-        index="company-docs",
+        collection="company-docs",
     ) as rag:
         await rag.ingest(
             Document(
@@ -52,7 +52,7 @@ chunk text is returned once with the other source identities under
 
 `Config.local()` uses a local embedding model and embedded Qdrant. It is useful
 for development and tests. Production applications normally use
-`RAGCore.from_env(index="company-docs")` with an application-owned store.
+`RAGCore.from_env(collection="company-docs")` with an application-owned store.
 
 ## Agent tool
 
@@ -66,7 +66,7 @@ pip install "rag-core[openai-agents]"
 from agents import Agent
 from rag_core import RAGCore
 
-rag = RAGCore.from_env(index="company-docs")
+rag = RAGCore.from_env(collection="company-docs")
 agent = Agent(name="support", tools=[rag.tool()])
 ```
 

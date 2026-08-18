@@ -3,7 +3,7 @@ info:
   title: rag-core serve
   description: |
     Thin HTTP runtime over the same ``Engine`` library you embed in your app.
-    v1 exposes health, runtime description, async ingest jobs, search, and
+    v1 exposes health, runtime description, ingest, search, and
     context retrieval only (no eval HTTP).
 
     Hit shapes follow [expectations.md](../expectations.md).
@@ -80,8 +80,8 @@ paths:
   /v1/ingest:
     post:
       tags: [ingest]
-      summary: Start ingest job
-      operationId: createIngestJob
+      summary: Ingest a server-local file
+      operationId: ingestDocument
       requestBody:
         required: true
         content:
@@ -89,78 +89,23 @@ paths:
             schema:
               $ref: "#/components/schemas/IngestRequest"
       responses:
-        "202":
-          description: Job accepted
+        "200":
+          description: Document ingested
           headers:
             X-Request-Id:
               $ref: "#/components/headers/XRequestId"
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/IngestJobCreated"
+                $ref: "#/components/schemas/IngestResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
+        "500":
+          $ref: "#/components/responses/IngestFailed"
         "503":
           $ref: "#/components/responses/Busy"
-  /v1/ingest/{job_id}:
-    get:
-      tags: [ingest]
-      summary: Ingest job status
-      operationId: getIngestJob
-      parameters:
-        - name: job_id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Job record
-          headers:
-            X-Request-Id:
-              $ref: "#/components/headers/XRequestId"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IngestJobStatus"
-        "404":
-          $ref: "#/components/responses/NotFound"
-  /v1/ingest/{job_id}/events:
-    get:
-      tags: [ingest]
-      summary: Stream ingest job status changes
-      description: |
-        Server-sent event stream for the current job status and later status
-        changes. Each ``event: status`` frame carries a JSON
-        ``IngestJobStatus`` payload in ``data``. Heartbeat comments may be
-        sent while a job remains non-terminal. The stream closes after the
-        terminal ``completed`` or ``failed`` status frame.
-      operationId: streamIngestJobEvents
-      parameters:
-        - name: job_id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Status-change SSE stream; closes after terminal status
-          headers:
-            X-Request-Id:
-              $ref: "#/components/headers/XRequestId"
-          content:
-            text/event-stream:
-              schema:
-                type: string
-                description: "Server-sent event frames; each ``data:`` line is an ``IngestJobStatus`` JSON object."
-              example: |
-                event: status
-                data: {"job_id":"abc123","status":"completed","path":"/data/doc.md","namespace":"acme","collection":"help"}
-
-        "404":
-          $ref: "#/components/responses/NotFound"
   /v1/search:
     post:
       tags: [retrieval]
@@ -338,43 +283,21 @@ components:
           type: string
           minLength: 1
           pattern: "\\S"
-    IngestJobCreated:
+    IngestResponse:
       type: object
-      required: [job_id, status]
+      required: [document_id, chunk_count, ingest_state, namespace, collection]
       properties:
-        job_id:
+        document_id:
           type: string
-        status:
-          type: string
-          enum: [pending, running, completed, failed]
-    IngestJobStatus:
-      type: object
-      required: [job_id, status, path, namespace, collection]
-      properties:
-        job_id:
-          type: string
-        status:
-          type: string
-          enum: [pending, running, completed, failed]
-        path:
+        chunk_count:
+          type: integer
+          minimum: 0
+        ingest_state:
           type: string
         namespace:
           type: string
         collection:
           type: string
-        result:
-          type: object
-          additionalProperties: true
-        error:
-          type: object
-          required: [error_type, error_code]
-          description: "Present when ``status`` is ``failed``; sanitized public error shape"
-          properties:
-            error_type:
-              type: string
-            error_code:
-              type: string
-          additionalProperties: false
     SearchEndpointRequest:
       type: object
       additionalProperties: false
@@ -613,7 +536,6 @@ components:
         - document_id
         - namespace
         - collection
-        - index_deleted
         - vector_store_acked
       properties:
         document_id:
@@ -622,25 +544,16 @@ components:
           type: string
         collection:
           type: string
-        index_deleted:
-          type: boolean
-          description: Vector-store ack (mirrors ``vector_store_acked``).
         vector_store_acked:
           type: boolean
-        sidecar_deleted:
-          type: boolean
-          nullable: true
         lexical_sidecar_purged:
           type: boolean
           nullable: true
         embedding_cache_purged:
           type: boolean
           nullable: true
-          description: "``True`` when the scoped purge ran; ``null`` when no cache is wired or the cache cannot scope-delete; ``False`` when a recovery-journal entry now tracks a failed purge."
+          description: "``True`` when the scoped purge ran; ``null`` when no cache is wired or the cache cannot scope-delete; ``False`` when the cache purge failed."
         chunk_context_cache_purged:
-          type: boolean
-          nullable: true
-        manifest_entry_deleted:
           type: boolean
           nullable: true
         manifest_removed:
@@ -682,6 +595,15 @@ components:
             $ref: "#/components/schemas/ApiError"
     Busy:
       description: "Ingest is at the per-process concurrency cap (``error.code`` is ``busy``); retry with backoff"
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    IngestFailed:
+      description: "Ingest failed (``error.code`` is ``ingest_failed``; ``error.details`` carries sanitized ``error_type`` and ``error_code`` only)"
       headers:
         X-Request-Id:
           $ref: "#/components/headers/XRequestId"

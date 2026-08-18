@@ -268,39 +268,35 @@ def test_sparse_only_plan_skips_dense_embedding() -> None:
     assert call.dense_vector == []
 
 
-def test_implicit_default_plan_downgrades_when_sparse_query_channel_is_missing() -> (
+def test_implicit_default_plan_rejects_missing_sparse_query_channel() -> (
     None
 ):
     embedding = FakeEmbeddingProvider()
     sparse = FakeSparseEmbedder(include_extra_channel=False)
     retrieve = HybridRetrieve()
 
-    async def scenario() -> _SparseChannelStrictStore:
+    async def scenario() -> None:
         store = _SparseChannelStrictStore()
-        await retrieve.retrieve(
-            PipelineQuery(
-                query="billing",
-                namespace="acme",
-                collections=["docs"],
-            ),
-            PipelineContext(
-                embedding_provider=embedding,
-                sparse_embedder=sparse,
-                vector_store=store,
-            ),
-        )
-        return store
+        with pytest.raises(UnsupportedQueryStage, match="Sparse query vectors"):
+            await retrieve.retrieve(
+                PipelineQuery(
+                    query="billing",
+                    namespace="acme",
+                    collections=["docs"],
+                ),
+                PipelineContext(
+                    embedding_provider=embedding,
+                    sparse_embedder=sparse,
+                    vector_store=store,
+                ),
+            )
 
-    store = asyncio.run(scenario())
-    [call] = store.search_calls
-    assert call.query_plan is not None
-    assert len(call.query_plan.prefetches) == 1
-    assert isinstance(call.query_plan.prefetches[0].channel, DenseChannel)
+    asyncio.run(scenario())
 
 
-def test_implicit_default_plan_preserves_available_sparse_channels() -> None:
+def test_implicit_default_plan_keeps_required_sparse_channels() -> None:
     embedding = FakeEmbeddingProvider()
-    sparse = FakeSparseEmbedder(include_extra_channel=False)
+    sparse = FakeSparseEmbedder(include_extra_channel=True)
     retrieve = HybridRetrieve()
 
     async def scenario() -> _MultiSparseChannelStrictStore:
@@ -322,11 +318,13 @@ def test_implicit_default_plan_preserves_available_sparse_channels() -> None:
     store = asyncio.run(scenario())
     [call] = store.search_calls
     assert call.query_plan is not None
-    assert len(call.query_plan.prefetches) == 2
-    dense, sparse_prefetch = call.query_plan.prefetches
+    assert len(call.query_plan.prefetches) == 3
+    dense, primary, secondary = call.query_plan.prefetches
     assert isinstance(dense.channel, DenseChannel)
-    assert isinstance(sparse_prefetch.channel, SparseChannel)
-    assert sparse_prefetch.channel.using_query_vector == PRIMARY_SPARSE_CHANNEL
+    assert isinstance(primary.channel, SparseChannel)
+    assert primary.channel.using_query_vector == PRIMARY_SPARSE_CHANNEL
+    assert isinstance(secondary.channel, SparseChannel)
+    assert secondary.channel.using_query_vector == SECONDARY_SPARSE_CHANNEL
 
 
 def test_search_planned_reflects_resolved_sparse_channels() -> None:
@@ -335,7 +333,7 @@ def test_search_planned_reflects_resolved_sparse_channels() -> None:
         store = _MultiSparseChannelStrictStore()
         pipeline_runner = SearchPipelineRunner(
             embedding_provider=FakeEmbeddingProvider(),
-            sparse_embedder=FakeSparseEmbedder(include_extra_channel=False),
+            sparse_embedder=FakeSparseEmbedder(include_extra_channel=True),
             vector_store=store,
             event_sink=events,
         )
@@ -353,6 +351,7 @@ def test_search_planned_reflects_resolved_sparse_channels() -> None:
     assert planned.channels == (
         _DENSE_PRIMARY_CHANNEL,
         f"sparse:{PRIMARY_SPARSE_CHANNEL}:{PRIMARY_SPARSE_CHANNEL}",
+        f"sparse:{SECONDARY_SPARSE_CHANNEL}:{SECONDARY_SPARSE_CHANNEL}",
     )
 
 

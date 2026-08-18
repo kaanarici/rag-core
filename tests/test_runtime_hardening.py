@@ -16,11 +16,12 @@ from starlette.testclient import TestClient
 
 from rag_core.cli.commands.serve import _enforce_loopback_bind, run_serve_command
 from rag_core.cli.parsers.serve import add_serve_command
-from rag_core.config import EmbeddingConfig, QdrantConfig
+from rag_core.config import EmbeddingConfig, QdrantConfig, VectorStoreConfig
 from rag_core.core import Engine
 from rag_core.core_models import IngestedDocument, Config
 from rag_core.demo import DemoEmbeddingProvider, DemoSparseEmbedder
 from rag_core.runtime.app import create_app
+from rag_core.runtime import app as runtime_app
 from rag_core.runtime.paths import read_validated_ingest_file, validate_ingest_path
 from rag_core.runtime.requests import (
     parse_delete_document_request,
@@ -32,7 +33,6 @@ from rag_core.runtime_defaults import (
     DEFAULT_RUNTIME_MAX_BODY_BYTES,
     LOOPBACK_HOSTS,
 )
-from rag_core.runtime.jobs import IngestJobRecord, IngestJobStore
 from rag_core.search.policy import CollectionPolicy
 from rag_core.search.providers.memory_store import InMemoryVectorStore
 
@@ -45,14 +45,14 @@ pytestmark = [pytest.mark.integration]
 
 
 def _make_runtime_client(
-    job_db_path: Path,
+    ingest_root: Path,
     *,
     config: Config | None = None,
     ingest_concurrency: int = DEFAULT_RUNTIME_INGEST_CONCURRENCY,
     max_body_bytes: int = DEFAULT_RUNTIME_MAX_BODY_BYTES,
 ) -> TestClient:
     config = config or Config(
-        qdrant=QdrantConfig(location=":memory:"),
+        vector_store=VectorStoreConfig(qdrant=QdrantConfig(location=":memory:")),
         embedding=EmbeddingConfig(
             provider="demo",
             model="demo-dense-v1",
@@ -73,8 +73,7 @@ def _make_runtime_client(
     app = create_app(
         config=config,
         core_factory=core_factory,
-        job_db_path=job_db_path,
-        ingest_roots=(job_db_path.parent,),
+        ingest_roots=(ingest_root,),
         ingest_concurrency=ingest_concurrency,
         max_body_bytes=max_body_bytes,
     )
@@ -82,7 +81,7 @@ def _make_runtime_client(
 
 
 def test_runtime_mints_request_id_when_header_missing(tmp_path: Path) -> None:
-    client = _make_runtime_client(tmp_path / "jobs.sqlite3")
+    client = _make_runtime_client(tmp_path)
     response = client.get("/health")
     assert response.status_code == 200
     request_id = response.headers.get("x-request-id")
@@ -93,7 +92,7 @@ def test_runtime_mints_request_id_when_header_missing(tmp_path: Path) -> None:
 
 
 def test_runtime_echoes_caller_supplied_request_id(tmp_path: Path) -> None:
-    client = _make_runtime_client(tmp_path / "jobs.sqlite3")
+    client = _make_runtime_client(tmp_path)
     response = client.get(
         "/health",
         headers={"X-Request-Id": "req-from-gateway-42"},
@@ -103,7 +102,7 @@ def test_runtime_echoes_caller_supplied_request_id(tmp_path: Path) -> None:
 
 
 def test_runtime_request_id_stamped_on_error_responses(tmp_path: Path) -> None:
-    client = _make_runtime_client(tmp_path / "jobs.sqlite3")
+    client = _make_runtime_client(tmp_path)
     response = client.get(
         "/v1/does-not-exist",
         headers={"X-Request-Id": "req-not-found"},
@@ -119,7 +118,7 @@ def test_runtime_request_id_stamped_on_error_responses(tmp_path: Path) -> None:
 
 def test_runtime_rejects_oversized_body_with_413(tmp_path: Path) -> None:
     client = _make_runtime_client(
-        tmp_path / "jobs.sqlite3",
+        tmp_path,
         max_body_bytes=64,
     )
     # 200-byte query field. Well over the 64-byte cap once JSON-wrapped.
@@ -142,7 +141,7 @@ def test_runtime_rejects_oversized_body_with_413(tmp_path: Path) -> None:
 
 def test_runtime_body_cap_skipped_for_get_requests(tmp_path: Path) -> None:
     client = _make_runtime_client(
-        tmp_path / "jobs.sqlite3",
+        tmp_path,
         max_body_bytes=8,
     )
     # GET /health succeeds even with a tiny cap because the middleware
@@ -152,7 +151,7 @@ def test_runtime_body_cap_skipped_for_get_requests(tmp_path: Path) -> None:
 
 
 def test_runtime_rejects_non_numeric_content_length(tmp_path: Path) -> None:
-    client = _make_runtime_client(tmp_path / "jobs.sqlite3")
+    client = _make_runtime_client(tmp_path)
     response = client.post(
         "/v1/search",
         content=b"{}",
@@ -168,7 +167,7 @@ def test_runtime_rejects_oversized_chunked_body_with_413(tmp_path: Path) -> None
     cap can only be enforced by tallying bytes as the receive() frames arrive.
     """
     client = _make_runtime_client(
-        tmp_path / "jobs.sqlite3",
+        tmp_path,
         max_body_bytes=64,
     )
 
@@ -266,15 +265,13 @@ def test_runtime_returns_503_busy_when_ingest_semaphore_saturated(tmp_path: Path
     app = create_app(
         config=config,
         core_factory=lambda _: cast(Any, blocking),
-        job_db_path=tmp_path / "jobs.sqlite3",
         ingest_roots=(tmp_path,),
         ingest_concurrency=1,
     )
     with TestClient(app) as client:
-        # TestClient's portal awaits BackgroundTask completion before the
-        # request returns, so the first ingest is fired from a worker thread
-        # that holds the semaphore via ``_gate.wait()`` while the main thread
-        # proves the saturated path.
+        # TestClient waits for the request to finish, so the first ingest is
+        # fired from a worker thread that holds the semaphore via
+        # ``_gate.wait()`` while the main thread proves the saturated path.
         first_holder: dict[str, object] = {}
 
         def fire_first() -> None:
@@ -304,9 +301,6 @@ def test_runtime_returns_503_busy_when_ingest_semaphore_saturated(tmp_path: Path
             body = second.json()
             assert body["error"]["code"] == "busy"
         finally:
-            # Release the held BackgroundTask so the worker thread can return
-            # and the TestClient lifespan can shut down cleanly. The gate is
-            # an ``asyncio.Event`` owned by the portal's loop. Schedule the
             # ``set()`` on that loop via the portal so we don't touch loop
             # internals from a foreign thread.
             assert client.portal is not None
@@ -315,47 +309,28 @@ def test_runtime_returns_503_busy_when_ingest_semaphore_saturated(tmp_path: Path
             assert not first_thread.is_alive(), "first ingest thread never released"
 
 
-def test_runtime_ingest_uses_file_bytes_captured_before_job_enqueue(
+def test_runtime_ingest_uses_file_bytes_captured_at_validation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if not hasattr(os, "symlink"):
-        pytest.skip("symlink creation not supported")
     ingest_root = tmp_path / "root"
     ingest_root.mkdir()
-    outside_root = tmp_path / "outside"
-    outside_root.mkdir()
     doc = ingest_root / "doc.md"
     doc.write_bytes(b"validated bytes")
-    secret = outside_root / "secret.md"
-    secret.write_bytes(b"swapped bytes")
     core = _ByteRecordingCore()
 
-    original_create = IngestJobStore.create
+    original_read = runtime_app.read_validated_ingest_file
 
-    def create_and_swap(
-        self: IngestJobStore,
-        *,
-        path: str,
-        namespace: str,
-        collection: str,
-    ) -> IngestJobRecord:
-        record = original_create(
-            self,
-            path=path,
-            namespace=namespace,
-            collection=collection,
-        )
-        doc.unlink()
-        doc.symlink_to(secret)
-        return record
+    def read_then_overwrite(path: str, *, roots: tuple[Path, ...]) -> tuple[Path, bytes]:
+        result = original_read(path, roots=roots)
+        Path(path).write_bytes(b"swapped bytes")
+        return result
 
-    monkeypatch.setattr(IngestJobStore, "create", create_and_swap)
+    monkeypatch.setattr(runtime_app, "read_validated_ingest_file", read_then_overwrite)
 
     app = create_app(
         config=Config.local(),
         core_factory=lambda _: cast(Any, core),
-        job_db_path=tmp_path / "jobs.sqlite3",
         ingest_roots=(ingest_root,),
     )
     with TestClient(app) as client:
@@ -364,7 +339,7 @@ def test_runtime_ingest_uses_file_bytes_captured_before_job_enqueue(
             json={"path": str(doc), "namespace": "acme", "collection": "help"},
         )
 
-    assert response.status_code == 202
+    assert response.status_code == 200
     assert core.file_bytes == b"validated bytes"
 
 
@@ -524,8 +499,6 @@ def test_cli_serve_parser_exposes_new_flags() -> None:
             "2",
             "--limit-concurrency",
             "16",
-            "--job-retention-seconds",
-            "300",
             "--qdrant-location",
             ":memory:",
             "--embedding-provider",
@@ -538,10 +511,9 @@ def test_cli_serve_parser_exposes_new_flags() -> None:
     assert args.max_body_bytes == 1024
     assert args.ingest_concurrency == 2
     assert args.limit_concurrency == 16
-    assert args.job_retention_seconds == 300.0
 
 
-def test_run_serve_command_refuses_non_loopback_without_flag(tmp_path: Path) -> None:
+def test_run_serve_command_refuses_non_loopback_without_flag() -> None:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command")
     add_serve_command(subparsers)
@@ -552,8 +524,6 @@ def test_run_serve_command_refuses_non_loopback_without_flag(tmp_path: Path) -> 
             "0.0.0.0",
             "--port",
             "8788",
-            "--job-db-path",
-            str(tmp_path / "jobs.sqlite3"),
             "--qdrant-location",
             ":memory:",
             "--embedding-provider",
@@ -604,7 +574,7 @@ def test_parse_delete_document_request_enforces_bound_namespace() -> None:
 
 def test_runtime_search_refuses_cross_namespace_when_bound(tmp_path: Path) -> None:
     config = Config(
-        qdrant=QdrantConfig(location=":memory:"),
+        vector_store=VectorStoreConfig(qdrant=QdrantConfig(location=":memory:")),
         embedding=EmbeddingConfig(
             provider="demo",
             model="demo-dense-v1",
@@ -613,7 +583,7 @@ def test_runtime_search_refuses_cross_namespace_when_bound(tmp_path: Path) -> No
         collection_policy=CollectionPolicy(bound_namespace="signal-ws-1"),
     )
     client = _make_runtime_client(
-        tmp_path / "jobs.sqlite3",
+        tmp_path,
         config=config,
     )
     response = client.post(

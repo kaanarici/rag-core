@@ -8,7 +8,7 @@ import pytest
 from rag_core.core import Engine
 from rag_core.cli.commands.doctor import _planned_core_payload
 from rag_core.cli.doctor_output import emit_doctor
-from rag_core.config import DEFAULT_RERANKER_PROVIDER, EmbeddingConfig, QdrantConfig
+from rag_core.config import DEFAULT_RERANKER_PROVIDER, EmbeddingConfig, QdrantConfig, VectorStoreConfig
 from rag_core.core_models import Config
 from rag_core.search import (
     DEFAULT_SEARCH_PROFILE,
@@ -94,7 +94,7 @@ def test_search_facade_exports_query_plan_description_helpers() -> None:
 def test_doctor_payload_exposes_search_profile_diagnostics() -> None:
     payload = _planned_core_payload(
         Config(
-            qdrant=QdrantConfig(location=":memory:"),
+            vector_store=VectorStoreConfig(qdrant=QdrantConfig(location=":memory:")),
             embedding=EmbeddingConfig(model="text-embedding-3-small", dimensions=4),
         )
     )

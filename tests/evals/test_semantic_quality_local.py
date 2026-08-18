@@ -406,9 +406,12 @@ def _semantic_config() -> Config:
     config = Config.local()
     return replace(
         config,
-        qdrant=replace(
-            config.qdrant,
-            store_collection=f"rag_core_semantic_eval_{uuid.uuid4().hex}",
+        vector_store=replace(
+            config.vector_store,
+            qdrant=replace(
+                config.vector_store.qdrant,
+                store_collection=f"rag_core_semantic_eval_{uuid.uuid4().hex}",
+            ),
         ),
     )
 

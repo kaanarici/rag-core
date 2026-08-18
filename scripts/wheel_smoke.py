@@ -153,8 +153,6 @@ def _installed_runtime_smoke(
         str(port),
         "--ingest-root",
         str(repo_root),
-        "--job-db-path",
-        str(app_dir / "runtime-jobs.sqlite3"),
         "--qdrant-location",
         ":memory:",
         "--embedding-provider",
@@ -312,7 +310,7 @@ def _consumer_app() -> str:
             rag = RAGCore(
                 build_demo_core(store_collection="wheel_smoke_facade"),
                 tenant_id="acme",
-                index="company-docs",
+                collection="company-docs",
             )
             async with rag:
                 ingested = await rag.ingest(
@@ -324,7 +322,7 @@ def _consumer_app() -> str:
                 )
                 result = await rag.search("How can invoices be paid?")
                 deleted = await rag.delete(ingested.document_id)
-            if not result.evidence or not deleted.index_deleted:
+            if not result.evidence or not deleted.vector_store_acked:
                 raise AssertionError("expected installed RAGCore lifecycle to pass")
             return {
                 "rag_core_evidence_count": len(result.evidence),

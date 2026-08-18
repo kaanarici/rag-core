@@ -132,11 +132,12 @@ pass a custom `RetrievalPipeline` to `SearchPipelineRunner`. Neighbor expansion 
 vector store that supports `chunk_index_lookup`. Stores without it do nothing and
 emit a diagnostic event instead of widening citations or inventing spans.
 
-Install extras before optional providers. `rerank` installs Cohere
+Install extras before optional providers. `openai` installs the OpenAI embedding
+adapter. `rerank` installs Cohere
 embedding and reranker adapters. `voyage`, `zeroentropy`, `turbopuffer`,
 `pgvector`, `runtime`, `anthropic`, `opentelemetry`, `langchain`,
 `openai-agents`, and `mcp` install the other optional adapters. `semantic` and
-`html` add local parsing helpers.
+`html` add local parsing helpers. `pdf` and `office` add document converters.
 
 The `html` extra adds a fallback HTML converter for difficult pages. The default
 HTML path works without it.

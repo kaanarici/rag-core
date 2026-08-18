@@ -107,16 +107,13 @@ sidecar fields are tri-state booleans:
 | Field | Meaning |
 | --- | --- |
 | `document_id`, `namespace`, `collection` | Identity of the deleted document. |
-| `index_deleted` | Vector-store index delete result. |
 | `vector_store_acked` | The vector store acknowledged the delete. |
-| `sidecar_deleted` | Portable exact-match sidecar purge result. |
 | `lexical_sidecar_purged` | Lexical (BM25) sidecar purge result. |
 | `embedding_cache_purged` | Embedding cache purge result. |
 | `chunk_context_cache_purged` | Chunk-context cache purge result. |
-| `manifest_entry_deleted` | Manifest entry removal result. |
 | `manifest_removed` | Whether the manifest record was removed. |
 
-`index_deleted` reflects the vector-store ack, not an optimistic "we asked the
+`vector_store_acked` reflects the vector-store ack, not an optimistic "we asked the
 store" assumption. Inspect the fields when you need to confirm a complete purge,
 for example in a right-to-forget workflow.
 
@@ -126,8 +123,8 @@ result = await core.delete_document(
     namespace=entry.namespace,
     collection=entry.collection,
 )
-if not result.index_deleted or result.vector_store_acked is False:
-    # Re-enqueue the delete or inspect the recovery journal.
+if not result.vector_store_acked:
+    # Retry the delete. Each step is idempotent.
     ...
 ```
 
@@ -173,7 +170,7 @@ async def lifecycle() -> None:
             namespace=entry.namespace,
             collection=entry.collection,
         )
-        assert result.index_deleted
+        assert result.vector_store_acked
 ```
 
 `build_manifest_entry(document=...)` returns a `CollectionManifestEntry` with

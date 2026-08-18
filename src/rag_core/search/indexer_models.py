@@ -51,7 +51,7 @@ class IndexResult:
 class DeleteAck:
     """Vector-store ack for a per-document delete.
 
-    the caller's right-to-forget contract needs ``DeleteDocumentResult.index_deleted``
+    the caller's right-to-forget contract needs ``DeleteDocumentResult.vector_store_acked``
     to reflect what the store actually did, not the engine's optimism. Adapters
     that cannot report point counts (no per-id read-back) should set
     ``deleted_point_count=-1`` and rely on ``succeeded=True`` only when the

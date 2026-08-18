@@ -10,7 +10,7 @@ Maintainer and CI entrypoints. Prefer these over one-off command sequences.
 | [`public_checkout_smoke.sh`](public_checkout_smoke.sh) | Clone the public repo into a temp directory and prove quick/package validation without local-only files. |
 | [`github_install_smoke.sh`](github_install_smoke.sh) | Install from a Git remote/ref in a fresh venv and run installed quickstart/demo. |
 | [`dx_smoke.sh`](dx_smoke.sh) | **Journey A** - demo, `search <query> <path> --demo`, trace, `doctor`, context, library eval, `eval`. No API keys. |
-| [`self_host_smoke.sh`](self_host_smoke.sh) | **Journey C**: HTTP probe for an already-running `rag-core serve` (`/health/ready`, ingest job, search, context retrieval). |
+| [`self_host_smoke.sh`](self_host_smoke.sh) | **Journey C**: HTTP probe for an already-running `rag-core serve` (`/health/ready`, ingest, search, context retrieval). |
 | [`verify_vercel_ai_sdk_example.sh`](verify_vercel_ai_sdk_example.sh) | **Journey B**: install current AI SDK v6 types in a temp project and type-check the copyable Vercel example. |
 | [`verify_optional_integrations.sh`](verify_optional_integrations.sh) | Install optional LangChain, OpenAI Agents, and MCP extras, run adapter tests against real packages, and smoke exported helper construction. |
 | [`worktree_slices.py`](worktree_slices.py) | Local reviewability report for grouping the dirty tree into landing slices. |

@@ -71,7 +71,7 @@ def test_lexical_search_default_has_single_retrieval_owner() -> None:
     assert "rag_core.contracts.tool_contract_schemas" in importers
     assert {
         "rag_core._engine.core_retrieval",
-        "rag_core.facade.retrieval",
+        "rag_core.core",
         "rag_core.runtime.requests",
         "rag_core.search.pipeline_runner",
     } <= set(importers)
@@ -86,7 +86,7 @@ def test_rerank_default_has_single_retrieval_owner() -> None:
     assert "rag_core.contracts.tool_contract_schemas" in importers
     assert {
         "rag_core._engine.core_retrieval",
-        "rag_core.facade.retrieval",
+        "rag_core.core",
         "rag_core.runtime.requests",
         "rag_core.search.pipeline_runner",
     } <= set(importers)

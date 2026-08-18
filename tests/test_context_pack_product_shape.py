@@ -84,7 +84,7 @@ def test_context_pack_schema_owns_payload_and_text_projection() -> None:
     # protocol layers. (AST-identifier scan: tolerant of comments/reformatting.)
     assert _module_uses_identifier("rag_core.runtime.app", "context_order")
     for layer in (
-        "rag_core.facade.retrieval",
+        "rag_core.core",
         "rag_core._engine.core_retrieval",
         "rag_core.integrations.protocols",
     ):

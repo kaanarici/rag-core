@@ -129,10 +129,9 @@ reranker provider is configured. If rerank is requested without a configured
 provider, the search completes without reranking and records that rerank was
 requested but not attempted.
 
-Provider reranking is fail-open by default. `RerankBudget(fallback_on_error=True)`
-returns the original ordering with a recorded fallback reason if the reranker
-errors or times out. Pass `fallback_on_error=False` when a rerank failure should
-fail the request instead. See [providers](/docs/providers) and
+Provider reranking is fail-closed by default. A reranker error or timeout fails
+the request. Pass `RerankBudget(fallback_on_error=True)` to keep the original
+ordering and record the fallback reason. See [providers](/docs/providers) and
 [rag-modes](/docs/rag-modes).
 
 ### Assemble context
@@ -179,7 +178,7 @@ clean chunk body. Use `SearchResult.text`, or `Context.as_prompt_text()`.
 | Embed (sparse) | sparse embedder provider + store support | optional |
 | Index / store | vector store provider | Qdrant default |
 | Profile / plan | per request: an explicit `query_plan` on `Engine.search`, or `--search-profile` / `--plan` on the CLI and HTTP runtime | dense-only `fast` |
-| Rerank | reranker provider + per-request `rerank` flag | off, fail-open |
+| Rerank | reranker provider + per-request `rerank` flag | off, fail-closed |
 
 Chunking, embeddings, reranker, and vector store are selected by configuration or
 provider injection, not by editing the core. Experimental pipeline stages

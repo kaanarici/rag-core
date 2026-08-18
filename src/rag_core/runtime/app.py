@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -19,7 +19,6 @@ from rag_core.events.sinks import describe_event_sink_status
 from rag_core.events.types import AuditContext
 from rag_core.runtime_defaults import (
     DEFAULT_RUNTIME_INGEST_CONCURRENCY,
-    DEFAULT_RUNTIME_JOB_DB_PATH,
     DEFAULT_RUNTIME_MAX_BODY_BYTES,
 )
 from rag_core.runtime.delete_route import handle_delete_document
@@ -34,17 +33,6 @@ from rag_core.runtime.health import (
     readiness_payload,
     readiness_status_code,
 )
-from rag_core.runtime.job_events import (
-    ingest_job_event_stream_headers,
-    stream_ingest_job_events,
-)
-from rag_core.runtime.jobs import (
-    INGEST_JOB_STATUS_COMPLETED,
-    INGEST_JOB_STATUS_FAILED,
-    INGEST_JOB_STATUS_RUNNING,
-    IngestJobStore,
-    ingest_job_status_payload,
-)
 from rag_core.runtime.paths import normalize_ingest_roots, read_validated_ingest_file
 from rag_core.runtime.requests import (
     DEFAULT_RUNTIME_CONTEXT_LIMIT,
@@ -53,7 +41,7 @@ from rag_core.runtime.requests import (
     parse_retrieval_request,
 )
 from rag_core.search.context_pack import context_pack_response_payload
-from starlette.responses import JSONResponse, StreamingResponse
+from starlette.responses import JSONResponse
 
 if TYPE_CHECKING:
     from rag_core.core import Engine
@@ -104,14 +92,11 @@ def create_app(
     *,
     config: Config,
     core_factory: Callable[..., Engine],
-    job_db_path: Path | None = None,
     ingest_roots: tuple[Path, ...] | None = None,
-    job_retention_seconds: float | None = None,
     max_body_bytes: int = DEFAULT_RUNTIME_MAX_BODY_BYTES,
     ingest_concurrency: int = DEFAULT_RUNTIME_INGEST_CONCURRENCY,
 ) -> Any:
     from starlette.applications import Starlette
-    from starlette.background import BackgroundTask
     from starlette.exceptions import HTTPException
     from starlette.middleware import Middleware
     from starlette.middleware.base import BaseHTTPMiddleware
@@ -120,21 +105,14 @@ def create_app(
 
     from rag_core.runtime.body_cap import BodyCapMiddleware
 
-    jobs = IngestJobStore(
-        job_db_path or DEFAULT_RUNTIME_JOB_DB_PATH,
-        max_age_seconds=job_retention_seconds,
-    )
     allowed_ingest_roots = normalize_ingest_roots(ingest_roots)
     shared_core: Engine | None = None
     core_init_lock = asyncio.Lock()
 
     bound_namespace = _bound_namespace_from_config(config)
 
-    # Per-route ingest semaphore. ``asyncio.Semaphore`` lives at module level
-    # of the app instance so the cap applies across all concurrent ingest
-    # requests in this process. The control-plane routes (search,
-    # context retrieval, delete, health) do not consume this fence. That's
-    # what uvicorn ``--limit-concurrency`` is for.
+    # Per-route ingest semaphore. Caps concurrent ingest requests in this
+    # process. Search, context, delete, and health do not consume this fence.
     ingest_semaphore = asyncio.Semaphore(ingest_concurrency)
 
     async def _get_or_create_core() -> Engine:
@@ -230,78 +208,72 @@ def create_app(
             return _invalid_request(exc)
         if ingest_semaphore.locked():
             # Best-effort admission check: ``locked()`` is True once every
-            # slot is in use. The semaphore itself is acquired later in the
-            # background worker, so a burst that passes this check still
-            # queues on the semaphore. The cap strictly bounds *running*
-            # ingests, while this 503 sheds load once the cap is visibly
-            # saturated at admission time. The caller retries with backoff.
+            # slot is in use. A burst that passes this check still queues
+            # on the semaphore. The cap strictly bounds *running* ingests;
+            # this 503 sheds load once the cap is visibly saturated.
             return api_error(
                 code="busy",
                 message="ingest is at the per-process concurrency cap",
                 status_code=503,
             )
         audit_context = _audit_context_from_headers(request)
-        record = jobs.create(
-            path=str(ingest_path),
-            namespace=ingest_request.namespace,
-            collection=ingest_request.collection,
-        )
-        # Audit log line at the route boundary. The full event-sink ingest
-        # events are emitted by ``Engine.add_file`` once the worker
-        # starts; this line lets a compliance reader correlate "we accepted
-        # an ingest job for this (request_id, actor) at the HTTP edge."
         _logger.info(
-            "audit event=%s request_id=%s actor=%s ingest_id=%s job_id=%s "
+            "audit event=%s request_id=%s actor=%s ingest_id=%s "
             "namespace=%s collection=%s",
             INGEST_STARTED_EVENT,
             audit_context.request_id if audit_context else None,
             audit_context.actor if audit_context else None,
             audit_context.ingest_id if audit_context else None,
-            record.job_id,
             ingest_request.namespace,
             ingest_request.collection,
         )
-        task = BackgroundTask(
-            _run_ingest_job,
-            jobs=jobs,
-            record=record,
-            file_bytes=ingest_bytes,
-            core=_get_or_create_core,
-            audit_context=audit_context,
-            semaphore=ingest_semaphore,
+        async with ingest_semaphore:
+            try:
+                rag = await _get_or_create_core()
+                document = await rag.add_file(
+                    ingest_path,
+                    namespace=ingest_request.namespace,
+                    collection=ingest_request.collection,
+                    audit_context=audit_context,
+                    ingest_id=audit_context.ingest_id if audit_context else None,
+                    pre_read_bytes=ingest_bytes,
+                )
+            except Exception as exc:
+                redacted = redact_runtime_error(exc, error_code="ingest_failed")
+                _logger.warning(
+                    "ingest failed: error_type=%s error_code=%s",
+                    redacted.error_type,
+                    redacted.error_code,
+                    exc_info=exc,
+                )
+                return api_error(
+                    code="ingest_failed",
+                    message="Ingest failed",
+                    status_code=500,
+                    details={
+                        "error_type": redacted.error_type,
+                        "error_code": redacted.error_code,
+                    },
+                )
+        _logger.info(
+            "audit event=%s request_id=%s actor=%s ingest_id=%s "
+            "namespace=%s collection=%s document_id=%s",
+            INGEST_COMPLETED_EVENT,
+            audit_context.request_id if audit_context else None,
+            audit_context.actor if audit_context else None,
+            audit_context.ingest_id if audit_context else None,
+            document.namespace,
+            document.collection,
+            document.document_id,
         )
         return JSONResponse(
-            {"job_id": record.job_id, "status": record.status},
-            status_code=202,
-            background=task,
-        )
-
-    async def ingest_status(request: Request) -> JSONResponse:
-        job_id = request.path_params["job_id"]
-        record = jobs.get(job_id)
-        if record is None:
-            return api_error(
-                code="not_found",
-                message="Ingest job not found",
-                status_code=404,
-                details={"job_id": job_id},
-            )
-        return JSONResponse(ingest_job_status_payload(record))
-
-    async def ingest_events(request: Request) -> JSONResponse | StreamingResponse:
-        job_id = request.path_params["job_id"]
-        record = jobs.get(job_id)
-        if record is None:
-            return api_error(
-                code="not_found",
-                message="Ingest job not found",
-                status_code=404,
-                details={"job_id": job_id},
-            )
-        return StreamingResponse(
-            stream_ingest_job_events(jobs, job_id, initial_record=record),
-            media_type="text/event-stream",
-            headers=ingest_job_event_stream_headers(),
+            {
+                "document_id": document.document_id,
+                "chunk_count": document.chunk_count,
+                "ingest_state": document.ingest_state,
+                "namespace": document.namespace,
+                "collection": document.collection,
+            }
         )
 
     async def search(request: Request) -> JSONResponse:
@@ -392,19 +364,6 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: Any) -> AsyncIterator[None]:
-        # Startup orphan sweep: rag-core does not resume in-flight ingest jobs
-        # across restarts. Any row that was ``pending`` or ``running`` when
-        # the prior process died is flipped to ``failed`` with a sanitized
-        # ``OrphanedByRestart`` payload so the gateway / poller sees a
-        # terminal status. Retry orchestration lives in the gateway, not
-        # here. See https://kaanarici.github.io/rag-core/docs/self-host.
-        orphaned = jobs.reconcile_orphaned_jobs()
-        if orphaned:
-            _logger.warning(
-                "runtime startup orphan sweep flipped %d ingest job(s) to failed: %s",
-                len(orphaned),
-                ",".join(orphaned),
-            )
         yield
         nonlocal shared_core
         if shared_core is not None:
@@ -464,8 +423,6 @@ def create_app(
         Route("/health/ready", health_ready, methods=["GET"]),
         Route("/v1/runtime", runtime_description, methods=["GET"]),
         Route("/v1/ingest", ingest, methods=["POST"]),
-        Route("/v1/ingest/{job_id}", ingest_status, methods=["GET"]),
-        Route("/v1/ingest/{job_id}/events", ingest_events, methods=["GET"]),
         Route("/v1/search", search, methods=["POST"]),
         Route("/v1/search/context", retrieve_context, methods=["POST"]),
         Route("/v1/documents/{document_id}", delete_document, methods=["DELETE"]),
@@ -513,72 +470,3 @@ def _invalid_request(exc: RuntimeRequestError) -> JSONResponse:
         status_code=400,
         details=exc.details,
     )
-
-
-async def _run_ingest_job(
-    *,
-    jobs: IngestJobStore,
-    record: Any,
-    file_bytes: bytes,
-    core: Callable[[], Awaitable[Engine]],
-    audit_context: AuditContext | None = None,
-    semaphore: asyncio.Semaphore | None = None,
-) -> None:
-    if semaphore is not None:
-        await semaphore.acquire()
-    try:
-        jobs.update(record.job_id, status=INGEST_JOB_STATUS_RUNNING)
-        try:
-            rag = await core()
-            document = await rag.add_file(
-                Path(record.path),
-                namespace=record.namespace,
-                collection=record.collection,
-                audit_context=audit_context,
-                ingest_id=audit_context.ingest_id if audit_context else None,
-                pre_read_bytes=file_bytes,
-            )
-            jobs.update(
-                record.job_id,
-                status=INGEST_JOB_STATUS_COMPLETED,
-                result={
-                    "document_id": document.document_id,
-                    "chunk_count": document.chunk_count,
-                    "ingest_state": document.ingest_state,
-                },
-            )
-            _logger.info(
-                "audit event=%s request_id=%s actor=%s ingest_id=%s "
-                "job_id=%s namespace=%s collection=%s document_id=%s",
-                INGEST_COMPLETED_EVENT,
-                audit_context.request_id if audit_context else None,
-                audit_context.actor if audit_context else None,
-                audit_context.ingest_id if audit_context else None,
-                record.job_id,
-                record.namespace,
-                record.collection,
-                document.document_id,
-            )
-        except Exception as exc:
-            # Sanitized public surface: the SQLite row only stores error_type
-            # and a stable error_code. Full ``str(exc)`` text, which can
-            # carry SDK message strings or licensed-source identifiers, is
-            # logged with ``exc_info`` so the structured event/log sink keeps
-            # the diagnostic tail without leaking it onto the HTTP job body.
-            redacted = redact_runtime_error(exc, error_code="ingest_failed")
-            _logger.warning(
-                "ingest job failed: job_id=%s error_type=%s error_code=%s",
-                record.job_id,
-                redacted.error_type,
-                redacted.error_code,
-                exc_info=exc,
-            )
-            jobs.update(
-                record.job_id,
-                status=INGEST_JOB_STATUS_FAILED,
-                error_type=redacted.error_type,
-                error_code=redacted.error_code,
-            )
-    finally:
-        if semaphore is not None:
-            semaphore.release()

@@ -12,7 +12,7 @@ from time import perf_counter
 import pytest
 
 from rag_core import Config, Document, RAGCore
-from rag_core.config import EmbeddingConfig, QdrantConfig
+from rag_core.config import EmbeddingConfig, QdrantConfig, VectorStoreConfig
 from rag_core.core import Engine
 from rag_core.evals import EvalResult, load_cases, mrr, ndcg_at_k, recall_at_k
 from tests.support import FixtureEmbeddingProvider
@@ -54,11 +54,11 @@ async def _run_pr_eval() -> list[EvalResult]:
         pending_document_ids=[doc["document_id"] for doc in corpus],
     )
     config = Config(
-        qdrant=QdrantConfig(
+        vector_store=VectorStoreConfig(qdrant=QdrantConfig(
             location=":memory:",
             store_collection=f"rag_core_pr_eval_{uuid.uuid4().hex}",
             dimension_aware_collection=False,
-        ),
+        )),
         embedding=EmbeddingConfig(
             provider="fixture",
             model=embedding.model_name,
@@ -66,7 +66,7 @@ async def _run_pr_eval() -> list[EvalResult]:
         ),
     )
     core = Engine(config, embedding_provider=embedding)
-    rag = RAGCore(core, tenant_id="pr_eval", index="docs")
+    rag = RAGCore(core, tenant_id="pr_eval", collection="docs")
     async with rag:
         assert core._sparse is None
         assert core._store.capabilities.query_plan.dense is True

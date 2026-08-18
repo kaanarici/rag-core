@@ -14,7 +14,7 @@ from typing import Any, cast
 from qdrant_client import models as rest
 
 from rag_core.search.policy import VectorStorePolicy
-from rag_core.search.providers.qdrant_collection import (
+from rag_core.search.providers.qdrant_store import (
     CollectionConfig,
     create_collection,
 )

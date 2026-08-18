@@ -64,7 +64,7 @@ class SearchPlanned:
     rerank_candidate_count: int = 0
     rerank_timeout_ms: float = 0.0
     rerank_max_output: int = 0
-    rerank_fallback_on_error: bool = True
+    rerank_fallback_on_error: bool = False
     use_lexical_search: bool = False
     query_transforms: tuple[str, ...] = ()
     retrieve_stage: str = ""

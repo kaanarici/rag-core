@@ -121,25 +121,25 @@ def build_config_from_env() -> Config:
         )
 
     return Config(
-        qdrant=QdrantConfig(
-            url=qdrant_url,
-            location=qdrant_location,
-            api_key=(
-                first_configured_api_key(QDRANT_API_KEY_ENVS) or None
-                if vector_store_provider == QDRANT_VECTOR_STORE_PROVIDER
-                else None
-            ),
-            store_collection=get_env_stripped(
-                QDRANT_COLLECTION_ENV,
-                DEFAULT_QDRANT_COLLECTION,
-            ),
-            dimension_aware_collection=get_env_bool_strict(
-                QDRANT_DIMENSION_AWARE_COLLECTION_ENV,
-                DEFAULT_QDRANT_DIMENSION_AWARE_COLLECTION,
-            ),
-        ),
         vector_store=VectorStoreConfig(
             provider=vector_store_provider,
+            qdrant=QdrantConfig(
+                url=qdrant_url,
+                location=qdrant_location,
+                api_key=(
+                    first_configured_api_key(QDRANT_API_KEY_ENVS) or None
+                    if vector_store_provider == QDRANT_VECTOR_STORE_PROVIDER
+                    else None
+                ),
+                store_collection=get_env_stripped(
+                    QDRANT_COLLECTION_ENV,
+                    DEFAULT_QDRANT_COLLECTION,
+                ),
+                dimension_aware_collection=get_env_bool_strict(
+                    QDRANT_DIMENSION_AWARE_COLLECTION_ENV,
+                    DEFAULT_QDRANT_DIMENSION_AWARE_COLLECTION,
+                ),
+            ),
             pgvector=PgVectorStoreConfig(
                 dsn=pgvector_dsn,
                 schema=get_env_stripped(PGVECTOR_SCHEMA_ENV, DEFAULT_PGVECTOR_SCHEMA),

@@ -28,9 +28,9 @@ def test_qdrant_api_key_flag_emits_warning(capsys) -> None:
 @pytest.mark.parametrize(
     "url",
     [
-        "https://user:pass@example.qdrant.io",
-        "https://example.qdrant.io?api_key=secret",
-        "https://example.qdrant.io?token=secret",
+        "https://user:pass@example.vector_store.qdrant.io",
+        "https://example.vector_store.qdrant.io?api_key=secret",
+        "https://example.vector_store.qdrant.io?token=secret",
     ],
 )
 def test_qdrant_url_flag_warns_when_url_contains_credentials(
@@ -99,7 +99,7 @@ def test_config_env_parsing_rejects_invalid_values(
             "RAG_CORE_QDRANT_DIMENSION_AWARE_COLLECTION",
             "maybe",
             ["--no-dimension-aware-collection"],
-            lambda config: config.qdrant.dimension_aware_collection is False,
+            lambda config: config.vector_store.qdrant.dimension_aware_collection is False,
         ),
     ],
 )

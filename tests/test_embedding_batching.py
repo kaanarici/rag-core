@@ -7,7 +7,7 @@ import pytest
 
 from rag_core.cli import _build_parser
 from rag_core.cli.commands.doctor import _planned_core_payload
-from rag_core.config import EmbeddingConfig, QdrantConfig
+from rag_core.config import EmbeddingConfig, QdrantConfig, VectorStoreConfig
 from rag_core.core_models import Config
 from rag_core.search.indexer import DocumentIndexer, IndexRequest
 from rag_core.search.indexer_prepare import prepare_index_data
@@ -162,6 +162,6 @@ def test_indexer_rejects_invalid_embedding_batch_size() -> None:
 def test_rag_core_config_still_propagates_qdrant_validation() -> None:
     with pytest.raises(ValueError, match="got both"):
         Config(
-            qdrant=QdrantConfig(url="http://localhost:6333", location=":memory:"),
+            vector_store=VectorStoreConfig(qdrant=QdrantConfig(url="http://localhost:6333", location=":memory:")),
             embedding=EmbeddingConfig(batch_size=2),
         )

@@ -24,12 +24,8 @@ def test_rag_core_facade_modules_live_under_facade_package() -> None:
     assert not list(root.glob("core_facade_*.py"))
     assert sorted(path.name for path in (root / "facade").glob("*.py")) == [
         "__init__.py",
-        "ingest.py",
         "ingest_batches.py",
         "ingest_sources.py",
-        "manifest.py",
-        "prepare.py",
-        "retrieval.py",
     ]
 
 

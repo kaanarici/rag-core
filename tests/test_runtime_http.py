@@ -15,9 +15,7 @@ import pytest
 pytest.importorskip("starlette")
 from starlette.testclient import TestClient
 
-from rag_core.cli.parser import _build_parser
-from rag_core.cli.parsers.serve import JOB_RETENTION_SECONDS_ENV
-from rag_core.config import EmbeddingConfig, QdrantConfig
+from rag_core.config import EmbeddingConfig, QdrantConfig, VectorStoreConfig
 from rag_core.core import Engine
 from rag_core.core_models import Config
 from rag_core.demo import DemoEmbeddingProvider, DemoSparseEmbedder
@@ -30,7 +28,6 @@ from rag_core.contracts import (
     SEARCH_USER_DOCUMENTS_MAX_TOKENS_MIN,
 )
 from rag_core.runtime.app import create_app
-from rag_core.runtime_defaults import DEFAULT_RUNTIME_JOB_DB_PATH_ENV
 from rag_core.runtime.requests import (
     DEFAULT_RUNTIME_CONTEXT_LIMIT,
     DEFAULT_RUNTIME_SEARCH_LIMIT,
@@ -63,9 +60,9 @@ def _openapi_methods_by_path() -> dict[str, set[str]]:
     return paths
 
 
-def _make_runtime_client(job_db_path: Path) -> TestClient:
+def _make_runtime_client(ingest_root: Path) -> TestClient:
     config = Config(
-        qdrant=QdrantConfig(location=":memory:"),
+        vector_store=VectorStoreConfig(qdrant=QdrantConfig(location=":memory:")),
         embedding=EmbeddingConfig(
             provider="demo",
             model="demo-dense-v1",
@@ -86,15 +83,14 @@ def _make_runtime_client(job_db_path: Path) -> TestClient:
     app = create_app(
         config=config,
         core_factory=core_factory,
-        job_db_path=job_db_path,
-        ingest_roots=(job_db_path.parent,),
+        ingest_roots=(ingest_root,),
     )
     return TestClient(app)
 
 
 @pytest.fixture
 def runtime_client(tmp_path: Path) -> TestClient:
-    return _make_runtime_client(tmp_path / "jobs.sqlite3")
+    return _make_runtime_client(tmp_path)
 
 
 class _FailingIngestCore:
@@ -193,41 +189,6 @@ def test_demo_embedding_provider_is_registered_for_serve() -> None:
     assert provider.dimensions == 8
 
 
-def test_serve_cli_job_db_path_flag_overrides_env(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    env_path = tmp_path / "env-jobs.sqlite3"
-    flag_path = tmp_path / "flag-jobs.sqlite3"
-
-    monkeypatch.setenv(DEFAULT_RUNTIME_JOB_DB_PATH_ENV, str(env_path))
-
-    env_args = _build_parser().parse_args(["serve"])
-    flag_args = _build_parser().parse_args(["serve", "--job-db-path", str(flag_path)])
-
-    assert env_args.job_db_path == env_path
-    assert flag_args.job_db_path == flag_path
-
-
-def test_serve_cli_job_retention_seconds_flag_overrides_env(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv(JOB_RETENTION_SECONDS_ENV, "60.5")
-
-    env_args = _build_parser().parse_args(["serve"])
-    flag_args = _build_parser().parse_args(
-        ["serve", "--job-retention-seconds", "5"]
-    )
-
-    assert env_args.job_retention_seconds == 60.5
-    assert flag_args.job_retention_seconds == 5.0
-
-
-def test_serve_cli_job_retention_seconds_rejects_non_positive() -> None:
-    with pytest.raises(SystemExit):
-        _build_parser().parse_args(["serve", "--job-retention-seconds", "0"])
-
-
 def test_openapi_paths_match_runtime_routes(runtime_client: TestClient) -> None:
     route_methods: dict[str, set[str]] = {}
     app = cast(Any, runtime_client.app)
@@ -265,24 +226,14 @@ def test_openapi_declares_runtime_request_and_response_shapes() -> None:
         ),
     )
     _assert_schema_mentions(
-        "IngestJobCreated",
+        "IngestResponse",
         (
-            "required: [job_id, status]",
-            "job_id:",
-            "status:",
-            "enum: [pending, running, completed, failed]",
-        ),
-    )
-    _assert_schema_mentions(
-        "IngestJobStatus",
-        (
-            "required: [job_id, status, path, namespace, collection]",
-            "enum: [pending, running, completed, failed]",
-            "result:",
-            "error:",
-            "required: [error_type, error_code]",
-            "error_type:",
-            "error_code:",
+            "required: [document_id, chunk_count, ingest_state, namespace, collection]",
+            "document_id:",
+            "chunk_count:",
+            "ingest_state:",
+            "namespace:",
+            "collection:",
         ),
     )
     _assert_schema_mentions(
@@ -378,19 +329,9 @@ def test_openapi_declares_runtime_request_and_response_shapes() -> None:
         ("Absolute path",),
     )
     assert "XRequestId" in openapi
-    assert "/v1/ingest/{job_id}/events:" in openapi
-    assert "#/components/schemas/IngestJobStatus" in openapi
-    assert "closes after terminal status" in openapi
-    event_stream_match = re.search(
-        r"            text/event-stream:\n(?P<body>(?:              .*\n|                .*\n|                  .*\n)*)",
-        openapi,
-    )
-    assert event_stream_match is not None
-    event_stream_block = event_stream_match.group("body")
-    assert "type: string" in event_stream_block
-    assert "event: status" in event_stream_block
-    assert "data: {\"job_id\"" in event_stream_block
-    assert "#/components/schemas/IngestJobStatus" not in event_stream_block
+    assert "/v1/ingest/{job_id}" not in openapi
+    assert "IngestJobStatus" not in openapi
+    assert "text/event-stream" not in openapi
 
     _assert_schema_mentions(
         "SearchEndpointRequest",
@@ -479,7 +420,6 @@ def test_runtime_retrieve_context_context_order_extrema_reorders_only_context_te
     app = create_app(
         config=config,
         core_factory=lambda _: cast(Any, core),
-        job_db_path=tmp_path / "jobs.sqlite3",
         ingest_roots=(tmp_path,),
     )
 
@@ -515,7 +455,6 @@ def test_runtime_retrieve_context_default_and_explicit_rank_output_are_byte_iden
         app = create_app(
             config=config,
             core_factory=lambda _: cast(Any, _ContextOrderCore()),
-            job_db_path=tmp_path / f"{body.get('context_order', 'default')}.sqlite3",
             ingest_roots=(tmp_path,),
         )
         with TestClient(app) as client:
@@ -569,7 +508,6 @@ def test_runtime_health_ready_unhealthy_body_is_sanitized(tmp_path: Path) -> Non
     app = create_app(
         config=config,
         core_factory=lambda _: cast(Any, _UnhealthyCore()),
-        job_db_path=tmp_path / "jobs.sqlite3",
         ingest_roots=(tmp_path,),
     )
     with TestClient(app) as client:
@@ -586,19 +524,13 @@ def test_runtime_health_ready_unhealthy_body_is_sanitized(tmp_path: Path) -> Non
     assert leak_marker not in response.text
 
 
-def test_runtime_failed_ingest_job_row_has_no_str_exc(tmp_path: Path) -> None:
-    """Sanity-check: the SQLite job row must not carry the raw ``str(exc)``."""
-
-    import sqlite3
-
-    job_db_path = tmp_path / "jobs.sqlite3"
+def test_runtime_failed_ingest_response_has_no_str_exc(tmp_path: Path) -> None:
     doc = tmp_path / "secret.md"
     doc.write_text("body\n", encoding="utf-8")
     config = Config.local()
     app = create_app(
         config=config,
         core_factory=lambda _: cast(Any, _FailingIngestCore()),
-        job_db_path=job_db_path,
         ingest_roots=(tmp_path,),
     )
     with TestClient(app) as client:
@@ -606,27 +538,16 @@ def test_runtime_failed_ingest_job_row_has_no_str_exc(tmp_path: Path) -> None:
             "/v1/ingest",
             json={"path": str(doc), "collection": "help"},
         )
-        assert created.status_code == 202
-        _wait_for_job(client, created.json()["job_id"], terminal_status="failed")
 
-    connection = sqlite3.connect(job_db_path)
-    try:
-        rows = connection.execute("SELECT error FROM ingest_jobs").fetchall()
-    finally:
-        connection.close()
-    assert rows, "expected at least one job row"
-    raw_error = rows[0][0]
-    assert raw_error is not None
-    # The persisted error column must be the JSON-encoded sanitized dict.
-    # ``ingest refused for`` is the literal substring of the SDK-like message
-    # produced by ``_FailingIngestCore``; if it ever lands in the SQLite row,
-    # the sanitization seam has regressed.
-    assert "ingest refused for" not in raw_error
-    assert "secret" not in raw_error
-    import json as _json
-
-    decoded = _json.loads(raw_error)
-    assert decoded == {"error_type": "RuntimeError", "error_code": "ingest_failed"}
+    assert created.status_code == 500
+    error = created.json()["error"]
+    assert error["code"] == "ingest_failed"
+    assert error["details"] == {
+        "error_type": "RuntimeError",
+        "error_code": "ingest_failed",
+    }
+    assert "ingest refused for" not in created.text
+    assert "secret" not in created.text
 
 
 def test_runtime_api_error_shape(runtime_client: TestClient) -> None:
@@ -864,11 +785,6 @@ def test_runtime_api_error_shape(runtime_client: TestClient) -> None:
         "field": "collections"
     }
 
-    missing_job = runtime_client.get("/v1/ingest/does-not-exist")
-    assert missing_job.status_code == 404
-    assert missing_job.json()["error"]["code"] == "not_found"
-    assert missing_job.json()["error"]["details"]["job_id"] == "does-not-exist"
-
 
 def test_runtime_ingest_rejects_paths_outside_ingest_roots(runtime_client: TestClient) -> None:
     response = runtime_client.post(
@@ -912,29 +828,6 @@ def test_runtime_unknown_route_returns_api_error(runtime_client: TestClient) -> 
     assert response.json()["error"]["code"] == "not_found"
 
 
-def _wait_for_job(
-    client: TestClient,
-    job_id: str,
-    *,
-    terminal_status: str = "completed",
-    timeout_s: float = 5.0,
-) -> dict[str, object]:
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        response = client.get(f"/v1/ingest/{job_id}")
-        assert response.status_code == 200
-        payload = response.json()
-        status = payload.get("status")
-        if status == terminal_status:
-            return dict(payload)
-        if status in {"completed", "failed"}:
-            pytest.fail(
-                f"ingest job reached {status}, expected {terminal_status}: {payload}"
-            )
-        time.sleep(0.05)
-    pytest.fail(f"ingest job did not reach {terminal_status} before timeout: {job_id}")
-
-
 def test_runtime_ingest_search_and_retrieve_context_journey(
     runtime_client: TestClient,
     tmp_path: Path,
@@ -953,19 +846,12 @@ def test_runtime_ingest_search_and_retrieve_context_journey(
             "collection": "help",
         },
     )
-    assert created.status_code == 202
+    assert created.status_code == 200
     created_payload = created.json()
-    assert set(created_payload) == {"job_id", "status"}
-    assert created_payload["status"] == "pending"
-    job_id = created_payload["job_id"]
-    finished = _wait_for_job(runtime_client, job_id)
-    assert {"job_id", "status", "path", "namespace", "collection", "result"}.issubset(
-        finished
-    )
-    result = finished.get("result")
-    assert isinstance(result, dict)
-    assert result.get("chunk_count", 0) > 0
-    document_id = result.get("document_id")
+    assert created_payload["chunk_count"] > 0
+    assert created_payload["namespace"] == "acme"
+    assert created_payload["collection"] == "help"
+    document_id = created_payload["document_id"]
     assert isinstance(document_id, str)
 
     search = runtime_client.post(
@@ -1017,85 +903,6 @@ def test_runtime_ingest_search_and_retrieve_context_journey(
     assert pack["max_tokens"] == 100
 
 
-def test_runtime_ingest_job_persists_across_app_restart(tmp_path: Path) -> None:
-    job_db_path = tmp_path / "jobs.sqlite3"
-    doc = tmp_path / "restart.md"
-    doc.write_text("Restart persistence keeps ingest job status available.\n", encoding="utf-8")
-
-    first_client = _make_runtime_client(job_db_path)
-    created = first_client.post(
-        "/v1/ingest",
-        json={
-            "path": str(doc),
-            "namespace": "acme",
-            "collection": "help",
-        },
-    )
-    assert created.status_code == 202
-    job_id = created.json()["job_id"]
-    finished = _wait_for_job(first_client, job_id)
-    first_client.close()
-
-    restarted_client = _make_runtime_client(job_db_path)
-    reloaded = restarted_client.get(f"/v1/ingest/{job_id}")
-    restarted_client.close()
-
-    assert reloaded.status_code == 200
-    assert reloaded.json() == finished
-
-
-def test_runtime_failed_ingest_job_exposes_error_after_restart(tmp_path: Path) -> None:
-    job_db_path = tmp_path / "jobs.sqlite3"
-    doc = tmp_path / "failure.md"
-    doc.write_text("This file intentionally fails in the injected core.\n", encoding="utf-8")
-    config = Config.local()
-
-    def make_client() -> TestClient:
-        return TestClient(
-            create_app(
-                config=config,
-                core_factory=lambda _: cast(Any, _FailingIngestCore()),
-                job_db_path=job_db_path,
-                ingest_roots=(tmp_path,),
-            )
-        )
-
-    first_client = make_client()
-    created = first_client.post(
-        "/v1/ingest",
-        json={
-            "path": str(doc),
-            "namespace": "acme",
-            "collection": "help",
-        },
-    )
-    assert created.status_code == 202
-    failed = _wait_for_job(
-        first_client,
-        created.json()["job_id"],
-        terminal_status="failed",
-    )
-    first_client.close()
-
-    restarted_client = make_client()
-    reloaded = restarted_client.get(f"/v1/ingest/{failed['job_id']}")
-    restarted_client.close()
-
-    assert failed["status"] == "failed"
-    # Public job body is sanitized: only error_type + a stable error_code.
-    # The raw exception message is forbidden. It can carry SDK error strings
-    # or licensed-source identifiers and must travel via the log/event sink.
-    assert failed["error"] == {
-        "error_type": "RuntimeError",
-        "error_code": "ingest_failed",
-    }
-    raw_error_text = "ingest refused for failure.md"
-    assert raw_error_text not in str(failed)
-    assert "result" not in failed
-    assert reloaded.status_code == 200
-    assert reloaded.json() == failed
-
-
 class _RecordingReranker:
     def __init__(self) -> None:
         self.calls: list[tuple[str, list[str], int]] = []
@@ -1116,7 +923,7 @@ class _RecordingReranker:
 def test_runtime_search_rerank_true_reaches_injected_reranker(tmp_path: Path) -> None:
     reranker = _RecordingReranker()
     config = Config(
-        qdrant=QdrantConfig(location=":memory:"),
+        vector_store=VectorStoreConfig(qdrant=QdrantConfig(location=":memory:")),
         embedding=EmbeddingConfig(
             provider="demo",
             model="demo-dense-v1",
@@ -1148,7 +955,6 @@ def test_runtime_search_rerank_true_reaches_injected_reranker(tmp_path: Path) ->
         create_app(
             config=config,
             core_factory=lambda cfg: core,
-            job_db_path=tmp_path / "jobs.sqlite3",
         )
     )
     response = client.post(
@@ -1180,9 +986,8 @@ def test_runtime_search_returns_hit_list(runtime_client: TestClient) -> None:
     assert isinstance(response.json(), list)
 
 
-def test_serve_cli_starts_without_nested_event_loop(tmp_path: Path) -> None:
+def test_serve_cli_starts_without_nested_event_loop() -> None:
     pytest.importorskip("uvicorn")
-    job_db_path = tmp_path / "serve-jobs.sqlite3"
     proc = subprocess.Popen(
         [
             sys.executable,
@@ -1193,10 +998,6 @@ def test_serve_cli_starts_without_nested_event_loop(tmp_path: Path) -> None:
             "127.0.0.1",
             "--port",
             "8797",
-            "--job-db-path",
-            str(job_db_path),
-            "--job-retention-seconds",
-            "3600",
             "--qdrant-location",
             ":memory:",
             "--embedding-provider",
@@ -1226,7 +1027,6 @@ def test_serve_cli_starts_without_nested_event_loop(tmp_path: Path) -> None:
         else:
             stderr = proc.stderr.read() if proc.stderr else ""
             raise AssertionError(f"serve never became healthy: {stderr}")
-        assert job_db_path.exists()
     finally:
         proc.terminate()
         proc.wait(timeout=5)

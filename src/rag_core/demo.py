@@ -10,6 +10,7 @@ from rag_core.config import (
     DEFAULT_RERANKER_PROVIDER,
     EmbeddingConfig,
     QdrantConfig,
+    VectorStoreConfig,
     RerankerConfig,
 )
 from rag_core.core import Engine, Config
@@ -98,11 +99,11 @@ def build_demo_core(
 ) -> Engine:
     return Engine(
         Config(
-            qdrant=QdrantConfig(
+            vector_store=VectorStoreConfig(qdrant=QdrantConfig(
                 location=qdrant_location,
                 store_collection=f"{_DEMO_COLLECTION_PREFIX}_{store_collection}",
                 dimension_aware_collection=False,
-            ),
+            )),
             embedding=EmbeddingConfig(
                 provider="demo",
                 model="demo-dense-v1",

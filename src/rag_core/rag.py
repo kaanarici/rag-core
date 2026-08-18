@@ -115,13 +115,13 @@ class RAGCore:
         config_or_engine: Config | Engine,
         *,
         tenant_id: str,
-        index: str,
+        collection: str,
         document_ids: Sequence[str] | None = None,
     ) -> None:
         self._tenant_id = validate_bound_namespace(normalize_namespace(tenant_id))
-        self._index = normalize_collection(index, field="index")
+        self._collection = normalize_collection(collection)
         _, self._document_ids = normalize_static_retrieval_scope(
-            collection=self._index,
+            collection=self._collection,
             document_ids=document_ids,
             limit=1,
         )
@@ -130,14 +130,14 @@ class RAGCore:
                 _bind_scope(
                     config_or_engine,
                     tenant_id=self._tenant_id,
-                    index=self._index,
+                    collection=self._collection,
                 )
             )
         elif isinstance(config_or_engine, Engine):
             _validate_engine_scope(
                 config_or_engine,
                 tenant_id=self._tenant_id,
-                index=self._index,
+                collection=self._collection,
             )
             self._engine = config_or_engine
         else:
@@ -147,7 +147,7 @@ class RAGCore:
     def from_env(
         cls,
         *,
-        index: str,
+        collection: str,
         tenant_id: str | None = None,
         document_ids: Sequence[str] | None = None,
     ) -> RAGCore:
@@ -165,7 +165,7 @@ class RAGCore:
         return cls(
             build_config_from_env(),
             tenant_id=resolved_tenant,
-            index=index,
+            collection=collection,
             document_ids=document_ids,
         )
 
@@ -174,8 +174,8 @@ class RAGCore:
         return self._tenant_id
 
     @property
-    def index(self) -> str:
-        return self._index
+    def collection(self) -> str:
+        return self._collection
 
     async def __aenter__(self) -> RAGCore:
         await self.ensure_ready()
@@ -207,7 +207,7 @@ class RAGCore:
             filename=Path(document.key).name or document.key,
             mime_type=document.content_type,
             namespace=self._tenant_id,
-            collection=self._index,
+            collection=self._collection,
             document_id=document.id,
             document_key=document.key,
             path=document.key,
@@ -254,7 +254,7 @@ class RAGCore:
         audit_context: AuditContext | None = None,
     ) -> tuple[_CollapsedSearchResult, ...]:
         _, requested_document_ids = normalize_static_retrieval_scope(
-            collection=self._index,
+            collection=self._collection,
             document_ids=document_ids,
             limit=limit,
         )
@@ -269,7 +269,7 @@ class RAGCore:
         hits = await self._engine.search(
             query=query,
             namespace=self._tenant_id,
-            collection=self._index,
+            collection=self._collection,
             limit=retrieval_limit,
             document_ids=scoped_document_ids,
             rerank=False,
@@ -283,7 +283,7 @@ class RAGCore:
         return await self._engine.delete_document(
             document_id=document_id,
             namespace=self._tenant_id,
-            collection=self._index,
+            collection=self._collection,
         )
 
     def tool(self) -> Any:
@@ -293,7 +293,7 @@ class RAGCore:
         return build_retrieve_context_tool(
             _RAGCoreContextAdapter(self),
             namespace=self._tenant_id,
-            collection=self._index,
+            collection=self._collection,
             document_ids=self._document_ids,
             default_rerank=False,
             default_use_lexical_search=False,
@@ -329,7 +329,7 @@ class _RAGCoreContextAdapter:
         max_tokens: int | None,
         audit_context: AuditContext | None,
     ) -> Context:
-        if namespace != self._rag.tenant_id or collections != [self._rag.index]:
+        if namespace != self._rag.tenant_id or collections != [self._rag.collection]:
             raise ValueError("tool retrieval scope does not match its RAGCore facade")
         if content_types is not None:
             raise ValueError("RAGCore.tool does not expose content-type strategy")
@@ -353,10 +353,10 @@ class _RAGCoreContextAdapter:
         )
 
 
-def _bind_scope(config: Config, *, tenant_id: str, index: str) -> Config:
+def _bind_scope(config: Config, *, tenant_id: str, collection: str) -> Config:
     policy = config.collection_policy or CollectionPolicy()
     policy.validate_namespace(tenant_id)
-    policy.validate_collections([index])
+    policy.validate_collections([collection])
     return replace(
         config,
         collection_policy=replace(
@@ -366,12 +366,12 @@ def _bind_scope(config: Config, *, tenant_id: str, index: str) -> Config:
     )
 
 
-def _validate_engine_scope(engine: Engine, *, tenant_id: str, index: str) -> None:
+def _validate_engine_scope(engine: Engine, *, tenant_id: str, collection: str) -> None:
     policy = engine._config.collection_policy
     if policy is None:
         return
     policy.validate_namespace(tenant_id)
-    policy.validate_collections([index])
+    policy.validate_collections([collection])
 
 
 def _evidence_from_hit(hit: SearchResult) -> Evidence:

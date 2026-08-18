@@ -1,8 +1,8 @@
 """Qdrant-specific adapter behavior outside the cross-vector-store contract.
 
 Wire-shape assertions (payload filter keys, prefetch channels, batching, dense
-dimension preflight) plus the pure helpers in ``qdrant_collection`` /
-``qdrant_payloads`` / ``qdrant_store``. The portable retrieve/delete behavior is
+dimension preflight) plus the pure helpers in ``qdrant_payloads`` /
+``qdrant_store``. The portable retrieve/delete behavior is
 covered by ``test_vector_store_contract.py``.
 """
 
@@ -20,7 +20,7 @@ from qdrant_client import models as rest
 from rag_core.search.pipeline import HybridRetrieve, PipelineContext, PipelineQuery
 from rag_core.search.planning import default_query_plan, query_plan_preset
 from rag_core.search.query_plan import UnsupportedQueryStage
-from rag_core.search.providers.qdrant_collection import (
+from rag_core.search.providers.qdrant_store import (
     CollectionConfig,
     assert_collection_compatible,
     build_quantization_config,

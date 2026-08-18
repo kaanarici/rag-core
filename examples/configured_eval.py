@@ -11,7 +11,7 @@ from pathlib import Path
 
 from rag_core import Config
 from rag_core.core import Engine
-from rag_core.config import EmbeddingConfig, LOCAL_EMBEDDING_MODEL, QdrantConfig
+from rag_core.config import EmbeddingConfig, LOCAL_EMBEDDING_MODEL, QdrantConfig, VectorStoreConfig
 from rag_core.evals import (
     eval_report,
     load_cases,
@@ -30,11 +30,11 @@ def _config(provider: str) -> tuple[Config, str]:
         raise RuntimeError("OPENAI_API_KEY is required for --provider openai.")
     return (
         Config(
-            qdrant=QdrantConfig(
+            vector_store=VectorStoreConfig(qdrant=QdrantConfig(
                 location=":memory:",
                 store_collection="rag_core_configured_eval",
                 dimension_aware_collection=False,
-            ),
+            )),
             embedding=EmbeddingConfig(
                 provider="openai",
                 model="text-embedding-3-small",

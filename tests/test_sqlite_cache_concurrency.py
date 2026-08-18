@@ -1,4 +1,4 @@
-"""Concurrency / WAL / per-tier path tests for the cache providers.
+"""Concurrency / WAL / path tests for the cache providers.
 
 Proof labels (per tests/README.md):
 
@@ -10,9 +10,7 @@ Proof labels (per tests/README.md):
 - ``test_sqlite_chunk_context_cache_one_hundred_concurrent_tasks_round_trip``:
   plumbing. Same shape against ``SqliteChunkContextCache``.
 - ``test_build_cache_path_refuses_shared_path_across_scope``: contract.
-  The path helper is the gate for per-tier isolation.
-- ``test_collection_policy_cache_disabled_swaps_in_no_cache``: contract. The
-  restricted-tier deploy switch must replace the configured cache.
+  The path helper is the gate for per-collection isolation.
 - ``test_open_sqlite_cache_hardens_wal_sidecar_files`` / ``..._shm``:
   plumbing. Exercises POSIX perms on the materialized WAL/SHM files.
 """
@@ -372,75 +370,3 @@ def test_build_cache_path_sanitizes_unsafe_segments(tmp_path: Path) -> None:
     for segment in segments:
         for ch in segment:
             assert ch.isalnum() or ch in ("-", "_", ".")
-
-
-# ----------------------------------------------------------------------
-# Restricted-tier cache_disabled deploy switch
-
-
-def test_collection_policy_cache_disabled_default_false() -> None:
-    from rag_core.search.policy import CollectionPolicy
-
-    assert CollectionPolicy().cache_disabled is False
-
-
-def test_collection_policy_cache_disabled_swaps_to_no_cache(tmp_path: Path) -> None:
-    """When ``cache_disabled=True`` the assembler must hand the embedding
-    provider a NoCache regardless of the IngestConfig.
-
-    This is the restricted-tier deploy contract. Sensitive paraphrases
-    cannot land on disk in a cache file.
-    """
-
-    from rag_core.core import Engine
-    from rag_core.config import IngestConfig
-    from rag_core.search.policy import CollectionPolicy
-    from rag_core.search.providers.cache_sqlite import SQLITE_CACHE_PROVIDER
-    from rag_core.search.providers.cached_embedding import CachedEmbeddingProvider
-    from rag_core.search.providers.embedding_cache import NoCache
-    from tests.support import (
-        FakeEmbeddingProvider,
-        FakeSparseEmbedder,
-        RecordingVectorStore,
-        make_test_config,
-    )
-
-    base = make_test_config(
-        qdrant_collection="rag_core_restricted_cache_disabled",
-        embedding_dimensions=4,
-    )
-    config = type(base)(
-        qdrant=base.qdrant,
-        embedding=base.embedding,
-        reranker=base.reranker,
-        chunking=base.chunking,
-        ingest=IngestConfig(
-            processing_version=base.ingest.processing_version,
-            source_type=base.ingest.source_type,
-            enable_lexical_search=False,
-            manifest_directory=base.ingest.manifest_directory,
-            embedding_cache_provider=SQLITE_CACHE_PROVIDER,
-            embedding_cache_path=tmp_path / "would_have_been_sqlite.db",
-        ),
-        policy=base.policy,
-        collection_policy=CollectionPolicy(
-            bound_namespace="signal-workspace-1",
-            allowed_collections=frozenset({"restricted"}),
-            allow_rerank=False,
-            allow_lexical_sidecar=False,
-            cache_disabled=True,
-        ),
-    )
-    core = Engine(
-        config,
-        embedding_provider=FakeEmbeddingProvider(),
-        sparse_embedder=FakeSparseEmbedder(),
-        vector_store=RecordingVectorStore(),
-    )
-    try:
-        assert isinstance(core._embedding, CachedEmbeddingProvider)
-        assert isinstance(core._embedding._cache, NoCache)
-        # The configured sqlite path must NOT have been touched.
-        assert not (tmp_path / "would_have_been_sqlite.db").exists()
-    finally:
-        asyncio.run(core.close())

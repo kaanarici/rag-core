@@ -177,21 +177,9 @@ class SearchPipelineRunner:
             else req.execution.use_lexical_search
         )
         if self._collection_policy is not None:
-            # Tier fence: refuse cross-namespace, cross-collection, and disallowed
-            # capability requests at the seam before any provider call so a
-            # restricted-tier process cannot leak through wider tiers' code paths.
-            # An explicit caller-supplied query plan is checked by its
-            # search-profile name; internally resolved default plans follow the
-            # store's declared capabilities.
-            explicit_plan = req.execution.query_plan
             self._collection_policy.validate_search(
                 namespace=req.namespace,
                 collections=req.collections,
-                rerank=req.rerank,
-                use_lexical_search=effective_use_lexical_search,
-                query_plan_preset=(
-                    explicit_plan.search_profile if explicit_plan is not None else None
-                ),
             )
         started_ms = now_ms()
         results: list[SearchResult] = []

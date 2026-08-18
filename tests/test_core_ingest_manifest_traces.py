@@ -11,7 +11,6 @@ import rag_core._engine.core_ingest_delete as core_ingest_delete
 import rag_core._engine.core_ingest_recovery as core_ingest_recovery
 from rag_core.config import SKIP_UNCHANGED_MATERIALIZE
 from rag_core._engine.core_ingest import CoreIngestor
-from rag_core._engine.core_ingest_write_ahead import IngestWriteAheadJournal
 from rag_core.core_models import (
     CollectionManifestEntry,
     IngestedDocument,
@@ -59,7 +58,7 @@ class RecordingIndexer:
     ) -> "DeleteAck":
         self.delete_document_calls += 1
         # Mirror the real indexer contract: a successful delete returns an ack
-        # that the right-to-forget facade flips into ``index_deleted=True``.
+        # that the right-to-forget path flips into ``vector_store_acked=True``.
         return DeleteAck(succeeded=True, deleted_point_count=-1)
 
 
@@ -725,7 +724,7 @@ def test_failed_reindex_repairs_null_document_key_from_resolved_identity(
     assert entry.content_sha256 == "old-content"
 
 
-def test_existing_document_manifest_write_failure_surfaces_and_leaves_pending_replay(
+def test_existing_document_manifest_write_failure_surfaces(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -789,10 +788,8 @@ def test_existing_document_manifest_write_failure_surfaces_and_leaves_pending_re
     assert write_calls == 2
     assert indexer.index_document_calls == 1
     assert indexer.delete_document_calls == 0
-    # The write-ahead entry stays pending, so the next ingest replays the doc
-    # (purge + reindex) and self-heals rather than masking the failure.
-    pending = IngestWriteAheadJournal(directory=manifest_directory).pending_entries()
-    assert [entry.document_id for entry in pending] == ["doc-1"]
+    staged = read_entries(manifest_directory, namespace="acme", collection="help")
+    assert [entry.document_id for entry in staged] == ["doc-1"]
 
 
 def test_sidecar_sync_failure_is_not_reported_as_success(
@@ -834,7 +831,7 @@ def test_sidecar_sync_failure_is_not_reported_as_success(
     ]
 
 
-def test_existing_document_sidecar_failure_does_not_delete_reindexed_document(
+def test_existing_document_sidecar_failure_rolls_back_reindexed_document(
     tmp_path: Path,
 ) -> None:
     processing_version = ProcessingFingerprint(
@@ -915,15 +912,9 @@ def test_existing_document_sidecar_failure_does_not_delete_reindexed_document(
     entries = read_entries(manifest_directory, namespace="acme", collection="help")
 
     assert indexer.index_document_calls == 1
-    assert indexer.delete_document_calls == 0
-    assert sidecar.deleted == [("acme", "doc-1")]
-    assert [(entry.document_id, entry.content_sha256, entry.chunk_count) for entry in entries] == [
-        ("doc-1", "indexed-content-sha256", 1)
-    ]
-    [entry] = entries
-    assert entry.parser == "local:pdf"
-    assert entry.needs_ocr is True
-    assert entry.metadata["ocr_page_indices"] == [0, 2]
+    assert indexer.delete_document_calls == 1
+    assert sidecar.deleted == [("acme", "doc-1"), ("acme", "doc-1")]
+    assert [entry.document_id for entry in entries] == ["doc-1"]
 
 
 def test_manifest_write_failure_reports_failed_index_rollback(
@@ -986,14 +977,11 @@ def test_delete_document_removes_manifest_entry(tmp_path: Path) -> None:
             collection="help",
         )
         assert result.document_id == "doc-1"
-        assert result.index_deleted is True
         assert result.vector_store_acked is True
-        assert result.sidecar_deleted is None
         assert result.lexical_sidecar_purged is None
         # No cache wired -> right-to-forget honestly reports ``None``.
         assert result.embedding_cache_purged is None
         assert result.chunk_context_cache_purged is None
-        assert result.manifest_entry_deleted is True
         assert result.manifest_removed is True
 
     asyncio.run(run())
@@ -1047,13 +1035,6 @@ def test_delete_document_keeps_manifest_when_index_delete_fails(
     assert sidecar.deleted == []
     entries = read_entries(manifest_directory, namespace="acme", collection="help")
     assert [entry.document_id for entry in entries] == ["doc-1"]
-    # The delete-recovery journal records the partial state so the next
-    # ingest of this triple replays the purge before writing new content.
-    journal_file = manifest_directory / ".delete_recovery.jsonl"
-    assert journal_file.exists()
-    journal_text = journal_file.read_text(encoding="utf-8")
-    assert "\"completed\":false" in journal_text
-    assert "RuntimeError" in journal_text
 
 
 def test_delete_document_keeps_manifest_when_manifest_delete_fails(
@@ -1064,8 +1045,7 @@ def test_delete_document_keeps_manifest_when_manifest_delete_fails(
 
     Under the right-to-forget order vector store -> sidecar -> caches ->
     manifest, a manifest-step failure means vector store + sidecar already
-    succeeded and only the local ingest record remains. The recovery journal
-    records the partial state.
+    succeeded and only the local ingest record remains. Retry delete.
     """
     manifest_directory = tmp_path / "manifest"
 
@@ -1108,21 +1088,17 @@ def test_delete_document_keeps_manifest_when_manifest_delete_fails(
     assert sidecar.deleted == [("acme", "doc-1")]
     entries = read_entries(manifest_directory, namespace="acme", collection="help")
     assert [entry.document_id for entry in entries] == ["doc-1"]
-    journal_file = manifest_directory / ".delete_recovery.jsonl"
-    assert journal_file.exists()
-    journal_text = journal_file.read_text(encoding="utf-8")
-    assert "\"last_error_stage\":\"manifest\"" in journal_text
 
 
 def test_delete_document_keeps_index_and_manifest_when_sidecar_delete_fails(
     tmp_path: Path,
 ) -> None:
-    """Sidecar failure leaves manifest intact; recovery journal records partial.
+    """Sidecar failure leaves manifest intact.
 
     Vector store is purged FIRST (canonical retrieval), then sidecar runs.
     A sidecar-step crash means the vector store has already completed; the
     manifest stage further down the order never runs, so the local ingest
-    record survives for replay.
+    record survives. Retry delete.
     """
     manifest_directory = tmp_path / "manifest"
 
@@ -1159,10 +1135,6 @@ def test_delete_document_keeps_index_and_manifest_when_sidecar_delete_fails(
     assert indexer.delete_document_calls == 1
     entries = read_entries(manifest_directory, namespace="acme", collection="help")
     assert [entry.document_id for entry in entries] == ["doc-1"]
-    journal_file = manifest_directory / ".delete_recovery.jsonl"
-    assert journal_file.exists()
-    journal_text = journal_file.read_text(encoding="utf-8")
-    assert "\"last_error_stage\":\"lexical_sidecar\"" in journal_text
 
 
 def _make_ingestor(

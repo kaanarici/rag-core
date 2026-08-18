@@ -42,7 +42,7 @@ class RerankBudget:
 
     candidate_count: int | None = None
     timeout_seconds: float | None = None
-    fallback_on_error: bool = True
+    fallback_on_error: bool = False
     max_output: int | None = None
 
     def __post_init__(self) -> None:
@@ -142,8 +142,8 @@ class DeleteFilter:
     up clearing the collection or namespace). Empty strings are now rejected;
     callers wanting a collection-wide or namespace-wide delete must pass
     ``None`` deliberately (and the engine routes those through the
-    explicit ``delete_collection`` / ``delete_namespace`` helpers in
-    ``facade/ingest.py``).
+    explicit ``delete_collection`` / ``delete_namespace`` helpers on
+    ``Engine``).
     """
 
     namespace: Optional[str] = None

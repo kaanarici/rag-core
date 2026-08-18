@@ -13,7 +13,7 @@ from rag_core.events.types import (
     SearchStageCompleted,
     StageError,
 )
-from rag_core.search.pipeline import IdentityFuse, PassThroughRerank, RetrievalPipeline
+from rag_core.search.pipeline import RetrievalPipeline
 from rag_core.search.pipeline.types import PipelineContext, PipelineQuery
 from rag_core.search.pipeline_runner import SearchPipelineRunner, SearchRequest
 from rag_core.search.vector_models import SearchResult
@@ -99,8 +99,6 @@ class _FailingPostprocess:
             query_rerank=False,
             factory=lambda results: RetrievalPipeline(
                 retrieve=_StaticRetrieve(results),
-                fuse=IdentityFuse(),
-                rerank=PassThroughRerank(),
                 query_transforms=(_FailingTransform(),),
             ),
         ),
@@ -109,8 +107,6 @@ class _FailingPostprocess:
             query_rerank=False,
             factory=lambda results: RetrievalPipeline(
                 retrieve=_FailingRetrieve(),
-                fuse=IdentityFuse(),
-                rerank=PassThroughRerank(),
             ),
         ),
         _StageCase(
@@ -119,7 +115,6 @@ class _FailingPostprocess:
             factory=lambda results: RetrievalPipeline(
                 retrieve=_StaticRetrieve(results),
                 fuse=_FailingFuse(),
-                rerank=PassThroughRerank(),
             ),
         ),
         _StageCase(
@@ -127,7 +122,6 @@ class _FailingPostprocess:
             query_rerank=True,
             factory=lambda results: RetrievalPipeline(
                 retrieve=_StaticRetrieve(results),
-                fuse=IdentityFuse(),
                 rerank=_FailingRerank(),
             ),
         ),
@@ -136,8 +130,6 @@ class _FailingPostprocess:
             query_rerank=False,
             factory=lambda results: RetrievalPipeline(
                 retrieve=_StaticRetrieve(results),
-                fuse=IdentityFuse(),
-                rerank=PassThroughRerank(),
                 postprocesses=(_FailingPostprocess(),),
             ),
         ),
@@ -179,8 +171,6 @@ def test_search_pipeline_runner_stage_errors_stay_sanitized_on_public_path() -> 
         events = EventBuffer()
         pipeline = RetrievalPipeline(
             retrieve=_FailingRetrieve(),
-            fuse=IdentityFuse(),
-            rerank=PassThroughRerank(),
         )
         pipeline_runner = SearchPipelineRunner(
             embedding_provider=FakeEmbeddingProvider(),

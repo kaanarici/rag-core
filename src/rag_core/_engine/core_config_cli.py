@@ -60,23 +60,23 @@ def build_rag_core_config_from_cli_args(
     pgvector_selected = vector_store_provider == PGVECTOR_VECTOR_STORE_PROVIDER
     turbopuffer_selected = vector_store_provider == TURBOPUFFER_VECTOR_STORE_PROVIDER
     return config_type(
-        qdrant=QdrantConfig(
-            url=_arg(args, "qdrant_url"),
-            location=_arg(args, "qdrant_location"),
-            api_key=_arg(args, "qdrant_api_key", default="") or "",
-            store_collection=(
-                _arg(args, "qdrant_collection", default=DEFAULT_QDRANT_COLLECTION)
-                or DEFAULT_QDRANT_COLLECTION
-            ),
-            dimension_aware_collection=_env_backed_bool_arg(
-                args,
-                "dimension_aware_collection",
-                env_name=QDRANT_DIMENSION_AWARE_COLLECTION_ENV,
-                default=DEFAULT_QDRANT_DIMENSION_AWARE_COLLECTION,
-            ),
-        ),
         vector_store=VectorStoreConfig(
             provider=vector_store_provider,
+            qdrant=QdrantConfig(
+                url=_arg(args, "qdrant_url"),
+                location=_arg(args, "qdrant_location"),
+                api_key=_arg(args, "qdrant_api_key", default="") or "",
+                store_collection=(
+                    _arg(args, "qdrant_collection", default=DEFAULT_QDRANT_COLLECTION)
+                    or DEFAULT_QDRANT_COLLECTION
+                ),
+                dimension_aware_collection=_env_backed_bool_arg(
+                    args,
+                    "dimension_aware_collection",
+                    env_name=QDRANT_DIMENSION_AWARE_COLLECTION_ENV,
+                    default=DEFAULT_QDRANT_DIMENSION_AWARE_COLLECTION,
+                ),
+            ),
             pgvector=PgVectorStoreConfig(
                 dsn=_arg(args, "pgvector_dsn") if pgvector_selected else None,
                 table=_arg(args, "pgvector_table") if pgvector_selected else None,

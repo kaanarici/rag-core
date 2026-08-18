@@ -4,7 +4,7 @@ description: rag-core adds scoped production retrieval to an existing Python app
 ---
 
 rag-core is an embeddable Python retrieval engine for applications that already
-own their infrastructure. Bind a tenant and index, ingest documents, and expose
+own their infrastructure. Bind a tenant and collection, ingest documents, and expose
 the same scoped retrieval path to an agent.
 
 It owns the retrieval path: ingest, chunking, indexing, search, context assembly,
@@ -24,7 +24,7 @@ pip install rag-core   # or: uv add rag-core
 from agents import Agent
 from rag_core import RAGCore
 
-rag = RAGCore.from_env(index="company-docs")
+rag = RAGCore.from_env(collection="company-docs")
 agent = Agent(name="support", tools=[rag.tool()])
 ```
 

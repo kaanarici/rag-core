@@ -315,14 +315,12 @@ def build_cache_path(
     """Compute a cache path scoped to ``(fingerprint, embedder, collection)``.
 
     Two Engine processes that disagree on processing pipeline, embedder
-    identity, or collection tier must never share a cache file: a
-    cached vector for one collection landing into another collection's cache would
-    leak bytes across the tier boundary.
+    identity, or collection must never share a cache file: a cached vector
+    for one collection landing into another collection's cache would leak
+    bytes across the collection boundary.
 
     ``collection`` must be the same scope value that ends up in
-    ``EmbedCacheKey.collection`` / ``ChunkContextKey.collection``. Restricted
-    tier processes also receive ``cache_disabled=True`` from their bound
-    ``CollectionPolicy`` and never reach this helper.
+    ``EmbedCacheKey.collection`` / ``ChunkContextKey.collection``.
     """
 
     for label, value in (

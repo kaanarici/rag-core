@@ -11,6 +11,7 @@ from rag_core.config import (
     DEMO_EMBEDDING_PROVIDER,
     EmbeddingConfig,
     QdrantConfig,
+    VectorStoreConfig,
 )
 from rag_core.config.env_config import build_config_from_env
 from rag_core.core import Engine
@@ -31,7 +32,7 @@ def _make_rag(
     store: RecordingVectorStore,
     *,
     tenant_id: str = "acme",
-    index: str = "company-docs",
+    collection: str = "company-docs",
     document_ids: tuple[str, ...] | None = ("doc-1",),
 ) -> RAGCore:
     engine = Engine(
@@ -46,7 +47,7 @@ def _make_rag(
     return RAGCore(
         engine,
         tenant_id=tenant_id,
-        index=index,
+        collection=collection,
         document_ids=document_ids,
     )
 
@@ -141,11 +142,11 @@ def test_rag_core_rejects_scope_widening_before_engine_calls() -> None:
                 vector_store=RecordingVectorStore(),
             ),
             tenant_id="acme",
-            index="company-docs",
+            collection="company-docs",
         )
 
-    with pytest.raises(ValueError, match="index"):
-        RAGCore(make_test_config(), tenant_id="acme", index=" ")
+    with pytest.raises(ValueError, match="collection"):
+        RAGCore(make_test_config(), tenant_id="acme", collection=" ")
 
 
 def test_rag_core_runs_on_qdrant_memory() -> None:
@@ -153,7 +154,7 @@ def test_rag_core_runs_on_qdrant_memory() -> None:
         rag = RAGCore(
             build_demo_core(store_collection="rag_core_facade_integration"),
             tenant_id="acme",
-            index="company-docs",
+            collection="company-docs",
         )
         async with rag:
             ingested = await rag.ingest(
@@ -173,7 +174,7 @@ def test_rag_core_runs_on_qdrant_memory() -> None:
             == f"acme:company-docs:{ingested.document_id}#chunk-0"
         )
         assert result.evidence[0].locator.chunk_index == 0
-        assert deleted.index_deleted is True
+        assert deleted.vector_store_acked is True
 
     asyncio.run(scenario())
 
@@ -275,11 +276,11 @@ def test_rag_core_ingest_is_idempotent_and_collapses_duplicate_sources_on_qdrant
         embedding = CountingEmbeddingProvider()
         engine = Engine(
             Config(
-                qdrant=QdrantConfig(
+                vector_store=VectorStoreConfig(qdrant=QdrantConfig(
                     location=":memory:",
                     store_collection="rag_core_idempotency_integration",
                     dimension_aware_collection=False,
-                ),
+                )),
                 embedding=EmbeddingConfig(
                     provider=DEMO_EMBEDDING_PROVIDER,
                     model=DEMO_EMBEDDING_MODEL,
@@ -288,7 +289,7 @@ def test_rag_core_ingest_is_idempotent_and_collapses_duplicate_sources_on_qdrant
             ),
             embedding_provider=embedding,
         )
-        rag = RAGCore(engine, tenant_id="acme", index="company-docs")
+        rag = RAGCore(engine, tenant_id="acme", collection="company-docs")
         content = b"Invoices can be paid by ACH."
         async with rag:
             first = await rag.ingest(
@@ -354,11 +355,11 @@ def test_rag_core_reindexes_payload_metadata_changes_on_qdrant() -> None:
         rag = RAGCore(
             Engine(
                 Config(
-                    qdrant=QdrantConfig(
+                    vector_store=VectorStoreConfig(qdrant=QdrantConfig(
                         location=":memory:",
                         store_collection="rag_core_metadata_update_integration",
                         dimension_aware_collection=False,
-                    ),
+                    )),
                     embedding=EmbeddingConfig(
                         provider=DEMO_EMBEDDING_PROVIDER,
                         model=DEMO_EMBEDDING_MODEL,
@@ -368,7 +369,7 @@ def test_rag_core_reindexes_payload_metadata_changes_on_qdrant() -> None:
                 embedding_provider=embedding,
             ),
             tenant_id="acme",
-            index="company-docs",
+            collection="company-docs",
         )
         document = Document(
             id="doc-a",
@@ -422,7 +423,7 @@ def test_rag_core_tool_uses_the_same_duplicate_collapsing_path(
         rag = RAGCore(
             build_demo_core(store_collection="rag_core_tool_dedup_integration"),
             tenant_id="acme",
-            index="company-docs",
+            collection="company-docs",
         )
         content = b"Invoices can be paid by ACH."
         async with rag:
@@ -455,11 +456,11 @@ def test_rag_core_tool_uses_the_same_duplicate_collapsing_path(
 def test_rag_core_scope_does_not_rename_an_app_owned_physical_collection() -> None:
     rag = RAGCore(
         Config(
-            qdrant=QdrantConfig(
+            vector_store=VectorStoreConfig(qdrant=QdrantConfig(
                 location=":memory:",
                 store_collection="app_owned_index",
                 dimension_aware_collection=False,
-            ),
+            )),
             embedding=EmbeddingConfig(
                 provider=DEMO_EMBEDDING_PROVIDER,
                 model=DEMO_EMBEDDING_MODEL,
@@ -467,7 +468,7 @@ def test_rag_core_scope_does_not_rename_an_app_owned_physical_collection() -> No
             ),
         ),
         tenant_id="acme",
-        index="company-docs",
+        collection="company-docs",
     )
     try:
         assert rag._engine._collection_name == "app_owned_index"
@@ -488,10 +489,10 @@ def test_from_env_builds_scoped_dense_qdrant_facade(
     monkeypatch.setenv("RAG_CORE_EMBEDDING_MODEL", DEMO_EMBEDDING_MODEL)
     monkeypatch.setenv("RAG_CORE_EMBEDDING_DIMENSIONS", "64")
 
-    rag = RAGCore.from_env(index="company-docs")
+    rag = RAGCore.from_env(collection="company-docs")
     try:
         assert rag.tenant_id == "acme"
-        assert rag.index == "company-docs"
+        assert rag.collection == "company-docs"
         assert rag._engine._sparse is None
         assert rag._engine._store.capabilities.query_plan.dense is True
         assert rag._engine._store.capabilities.query_plan.sparse is False
@@ -504,13 +505,13 @@ def test_from_env_fails_closed_without_tenant_or_store_target(
 ) -> None:
     monkeypatch.delenv("RAG_CORE_TENANT_ID", raising=False)
     with pytest.raises(ValueError, match="RAG_CORE_TENANT_ID"):
-        RAGCore.from_env(index="company-docs")
+        RAGCore.from_env(collection="company-docs")
 
     monkeypatch.setenv("RAG_CORE_TENANT_ID", "acme")
     monkeypatch.delenv("RAG_CORE_QDRANT_URL", raising=False)
     monkeypatch.delenv("RAG_CORE_QDRANT_LOCATION", raising=False)
     with pytest.raises(ValueError, match="requires exactly one"):
-        RAGCore.from_env(index="company-docs")
+        RAGCore.from_env(collection="company-docs")
 
 
 def test_from_env_maps_existing_pgvector_and_turbopuffer_configuration(
@@ -541,7 +542,7 @@ def test_default_config_does_not_construct_sparse_machinery(
     )
     rag = RAGCore(
         Config(
-            qdrant=QdrantConfig(location=":memory:"),
+            vector_store=VectorStoreConfig(qdrant=QdrantConfig(location=":memory:")),
             embedding=EmbeddingConfig(
                 provider=DEMO_EMBEDDING_PROVIDER,
                 model=DEMO_EMBEDDING_MODEL,
@@ -549,7 +550,7 @@ def test_default_config_does_not_construct_sparse_machinery(
             ),
         ),
         tenant_id="acme",
-        index="company-docs",
+        collection="company-docs",
     )
     try:
         assert rag._engine._sparse is None

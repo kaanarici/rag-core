@@ -5,7 +5,7 @@ from typing import Any
 
 from rag_core import Config
 from rag_core.core import Engine
-from rag_core.config import ContextualizerConfig, EmbeddingConfig, QdrantConfig
+from rag_core.config import ContextualizerConfig, EmbeddingConfig, QdrantConfig, VectorStoreConfig
 from rag_core.documents.contextualizer import (
     ChunkContextRequest,
     ChunkContextualizer,
@@ -16,7 +16,6 @@ import rag_core.documents.contextualizer_adapters as contextualizer_adapters_mod
 from rag_core.events import EventBuffer
 from rag_core.events.types import ContextualizeCompleted
 from rag_core.search.context_pack import build_context_pack
-from rag_core.search.policy import CollectionPolicy
 from rag_core.search.stored_payload import payload_to_result
 from rag_core.search.providers.chunk_context_cache import (
     ChunkContextKey,
@@ -107,7 +106,7 @@ def _build_core(
     core = Engine(
         config
         or Config(
-            qdrant=QdrantConfig(location=":memory:", store_collection="contextual_integration"),
+            vector_store=VectorStoreConfig(qdrant=QdrantConfig(location=":memory:", store_collection="contextual_integration")),
             embedding=EmbeddingConfig(dimensions=4),
         ),
         embedding_provider=embedding,
@@ -139,7 +138,7 @@ def _config_with_contextualizer(
     enabled: bool = True,
 ) -> Config:
     return Config(
-        qdrant=QdrantConfig(location=":memory:", store_collection=collection),
+        vector_store=VectorStoreConfig(qdrant=QdrantConfig(location=":memory:", store_collection=collection)),
         embedding=EmbeddingConfig(dimensions=4),
         contextualizer=ContextualizerConfig(
             provider="anthropic",
@@ -503,35 +502,6 @@ def test_chunk_context_cache_is_scoped_and_delete_purges_only_that_document() ->
     assert len(contextualizer.requests) == second_request_count + first.chunk_count
 
 
-def test_prepare_uses_resolved_noop_chunk_context_cache_when_cache_disabled() -> None:
-    contextualizer = _StubContextualizer()
-    cache = _RecordingChunkContextCache()
-    config = Config(
-        qdrant=QdrantConfig(location=":memory:", store_collection="contextual_disabled_cache"),
-        embedding=EmbeddingConfig(dimensions=4),
-        collection_policy=CollectionPolicy(cache_disabled=True),
-    )
-    core, _embedding, _store = _build_core(
-        config=config,
-        chunk_contextualizer=contextualizer,
-        chunk_context_cache=cache,
-    )
-    try:
-        prepared = asyncio.run(
-            core.prepare_bytes(
-                file_bytes=_DOCUMENT.encode("utf-8"),
-                filename="doc.md",
-                mime_type="text/markdown",
-            )
-        )
-    finally:
-        asyncio.run(core.close())
-
-    assert prepared.chunks
-    assert len(contextualizer.requests) == len(prepared.chunks)
-    assert cache.write_count == 0
-
-
 def test_contextualizer_chunk_cap_indexes_raw_tail_and_reports_skipped_count() -> None:
     contextualizer = _CappedStubContextualizer(chunk_cap=1)
     events = EventBuffer()
@@ -567,7 +537,7 @@ def test_contextualizer_chunk_cap_indexes_raw_tail_and_reports_skipped_count() -
 
 def test_contextualizer_chunk_cap_participates_in_processing_fingerprint() -> None:
     config = Config(
-        qdrant=QdrantConfig(location=":memory:", store_collection="contextual_cap_fingerprint"),
+        vector_store=VectorStoreConfig(qdrant=QdrantConfig(location=":memory:", store_collection="contextual_cap_fingerprint")),
         embedding=EmbeddingConfig(dimensions=4),
     )
     core_a, _embedding_a, _store_a = _build_core(

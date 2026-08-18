@@ -72,14 +72,16 @@ def make_test_config(
     cares about.
     """
     return Config(
-        qdrant=QdrantConfig(
-            url=qdrant_url,
-            location=None if qdrant_url else qdrant_location,
-            api_key=qdrant_api_key,
-            store_collection=qdrant_collection,
-            dimension_aware_collection=qdrant_dimension_aware_collection,
+        vector_store=VectorStoreConfig(
+            provider=vector_store_provider,
+            qdrant=QdrantConfig(
+                url=qdrant_url,
+                location=None if qdrant_url else qdrant_location,
+                api_key=qdrant_api_key,
+                store_collection=qdrant_collection,
+                dimension_aware_collection=qdrant_dimension_aware_collection,
+            ),
         ),
-        vector_store=VectorStoreConfig(provider=vector_store_provider),
         embedding=EmbeddingConfig(
             provider=embedding_provider,
             model=embedding_model,

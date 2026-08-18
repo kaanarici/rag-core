@@ -26,8 +26,7 @@ from rag_core.search.lexical_sidecar import (
     LexicalSidecarRecord,
     PortableLexicalSidecar,
 )
-from rag_core.search.policy import CollectionPolicy, collection_slug_for
-from rag_core.search.providers.qdrant_collection import (
+from rag_core.search.providers.qdrant_store import (
     EMBEDDING_DIMENSIONS_METADATA_KEY,
     EMBEDDING_MODEL_METADATA_KEY,
     EmbeddingIdentityMismatch,
@@ -43,74 +42,30 @@ from rag_core.search.vector_models import SearchResult
 
 
 # ---------------------------------------------------------------------------
-# collection_slug + resolve_collection_name + CollectionPolicy.store_collection_slug
+# resolve_collection_name
 # ---------------------------------------------------------------------------
 
 
-def test_collection_slug_lowercases_and_canonicalizes() -> None:
-    assert collection_slug_for("public") == "public"
-    assert collection_slug_for("Licensed") == "licensed"
-    assert collection_slug_for("Restricted!!!") == "restricted"
-    assert collection_slug_for("MIXED 2025/Q1") == "mixed_2025_q1"
-
-
-def test_collection_slug_rejects_empty_after_sanitization() -> None:
-    with pytest.raises(ValueError):
-        collection_slug_for("")
-    with pytest.raises(ValueError):
-        collection_slug_for("///")
-
-
-def test_resolve_collection_name_includes_collection_slug() -> None:
+def test_resolve_collection_name_includes_model_and_dimensions() -> None:
     name = resolve_collection_name(
         base_name="rag_core_chunks",
         model_name="text-embedding-3-large",
         dimensions=3072,
         dimension_aware=True,
-        collection_slug="restricted",
     )
-    assert name == "rag_core_chunks__restricted__text_embedding_3_large_3072d"
-
-
-def test_resolve_collection_name_omits_slug_when_none() -> None:
-    legacy = resolve_collection_name(
-        base_name="rag_core_chunks",
-        model_name="text-embedding-3-large",
-        dimensions=3072,
-        dimension_aware=True,
-        collection_slug=None,
-    )
-    # Legacy single-collection layout preserved when no policy is bound.
-    assert legacy == "rag_core_chunks__text_embedding_3_large_3072d"
+    assert name == "rag_core_chunks__text_embedding_3_large_3072d"
 
 
 def test_resolve_collection_name_handles_dimension_aware_false() -> None:
-    assert resolve_collection_name(
-        base_name="rag_core_chunks",
-        model_name="m",
-        dimensions=4,
-        dimension_aware=False,
-        collection_slug="public",
-    ) == "rag_core_chunks__public"
-
-
-def test_collection_policy_collection_slug_only_when_single_tier() -> None:
-    bound = CollectionPolicy(
-        bound_namespace="workspace_42",
-        allowed_collections=frozenset({"restricted"}),
+    assert (
+        resolve_collection_name(
+            base_name="rag_core_chunks",
+            model_name="m",
+            dimensions=4,
+            dimension_aware=False,
+        )
+        == "rag_core_chunks"
     )
-    assert bound.store_collection_slug == "restricted"
-
-    multi = CollectionPolicy(allowed_collections=frozenset({"public", "restricted"}))
-    assert multi.store_collection_slug is None
-
-    unbounded = CollectionPolicy()
-    assert unbounded.store_collection_slug is None
-
-
-def test_collection_policy_collection_slug_sluggifies_uppercase_tier() -> None:
-    policy = CollectionPolicy(allowed_collections=frozenset({"Licensed"}))
-    assert policy.store_collection_slug == "licensed"
 
 
 # ---------------------------------------------------------------------------

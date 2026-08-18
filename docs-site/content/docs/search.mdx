@@ -230,10 +230,9 @@ you request rerank without a provider, the search still completes: it records
 `requested_rerank=true`, `attempted_rerank=false`, and emits no rerank stage
 event.
 
-Reranking is fail-open by default. `RerankBudget(fallback_on_error=True)`
-returns the original retrieval ordering when the reranker errors or times out,
-and records the fallback reason. Pass `fallback_on_error=False` to make a
-rerank failure fail the request.
+Reranking is fail-closed by default. A reranker error or timeout fails the
+request. Pass `RerankBudget(fallback_on_error=True)` to keep the original
+retrieval ordering and record the fallback reason.
 
 ```python
 from rag_core.search import RerankBudget
@@ -242,7 +241,7 @@ hits = await core.search(
     query="billing policy",
     collection="help",
     rerank=True,
-    rerank_budget=RerankBudget(timeout_seconds=2.0, fallback_on_error=False),
+    rerank_budget=RerankBudget(timeout_seconds=2.0, fallback_on_error=True),
 )
 ```
 

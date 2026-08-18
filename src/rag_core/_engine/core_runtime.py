@@ -41,20 +41,10 @@ def resolve_collection_name(
     model_name: str,
     dimensions: int,
     dimension_aware: bool,
-    collection_slug: str | None = None,
 ) -> str:
-    # Per-tier physical isolation: when CollectionPolicy binds the process to one
-    # logical collection, the slug lands between the base and the embed-model marker
-    # so 'rag_core_chunks__restricted__text_embedding_3_large_3072d' cannot
-    # collide with the public tier. Multi-collection or unrestricted processes pass
-    # ``collection_slug=None`` and keep the legacy single store collection name.
     if not dimension_aware:
-        if collection_slug:
-            return f"{base_name}__{collection_slug}"
         return base_name
     model_slug = re.sub(r"[^a-z0-9]+", "_", model_name.strip().lower()).strip("_")
-    if collection_slug:
-        return f"{base_name}__{collection_slug}__{model_slug}_{dimensions}d"
     return f"{base_name}__{model_slug}_{dimensions}d"
 
 
@@ -65,29 +55,21 @@ def resolve_runtime_collection_name(
     dimensions: int,
 ) -> str:
     if config.vector_store.provider == QDRANT_VECTOR_STORE_PROVIDER:
-        qdrant_collection_slug: str | None = None
-        if config.collection_policy is not None:
-            qdrant_collection_slug = config.collection_policy.store_collection_slug
         return resolve_collection_name(
-            base_name=config.qdrant.store_collection,
+            base_name=config.vector_store.qdrant.store_collection,
             model_name=model_name,
             dimensions=dimensions,
-            dimension_aware=config.qdrant.dimension_aware_collection,
-            collection_slug=qdrant_collection_slug,
+            dimension_aware=config.vector_store.qdrant.dimension_aware_collection,
         )
     if config.vector_store.provider == PGVECTOR_VECTOR_STORE_PROVIDER:
         table_name = config.vector_store.pgvector.table
         if table_name:
             return table_name
-        pgvector_collection_slug: str | None = None
-        if config.collection_policy is not None:
-            pgvector_collection_slug = config.collection_policy.store_collection_slug
         return resolve_collection_name(
-            base_name=config.qdrant.store_collection,
+            base_name=config.vector_store.qdrant.store_collection,
             model_name=model_name,
             dimensions=dimensions,
-            dimension_aware=config.qdrant.dimension_aware_collection,
-            collection_slug=pgvector_collection_slug,
+            dimension_aware=config.vector_store.qdrant.dimension_aware_collection,
         )
     if config.vector_store.provider == TURBOPUFFER_VECTOR_STORE_PROVIDER:
         namespace = config.vector_store.turbopuffer.namespace

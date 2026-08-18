@@ -141,7 +141,7 @@ result = await core.delete_document(
     namespace="acme",
     collection="help",
 )
-print(result.index_deleted, result.vector_store_acked)
+print(result.vector_store_acked)
 ```
 
 Your application owns the schedule and the decision of what changed. rag-core

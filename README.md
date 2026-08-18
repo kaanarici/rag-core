@@ -7,19 +7,17 @@ back ranked chunks with citations.
 
 ```bash
 pip install rag-core   # or: uv add rag-core
-pip install "rag-core[openai-agents]"   # for the Agent example below
 ```
 
 ## Usage
 
 ```python
-from agents import Agent, Runner
 from rag_core import Config, Document, RAGCore
 
 async with RAGCore(
     Config.local(),
     tenant_id="acme",
-    index="company-docs",
+    collection="company-docs",
 ) as rag:
     await rag.ingest(
         Document(
@@ -28,16 +26,17 @@ async with RAGCore(
             content_type="text/markdown",
         )
     )
-    agent = Agent(name="support", tools=[rag.tool()])
-    result = await Runner.run(agent, "How can invoices be paid?")
+    result = await rag.search("How can invoices be paid?")
+    print(result.evidence[0].text)
 ```
 
-Tenant and index scope are bound when `RAGCore` is created. The model cannot
-change them. Retrieval tools return prompt-safe context with citation labels;
-`search()` returns structured evidence with source identity and locators.
+Tenant and collection scope are bound when `RAGCore` is created. Retrieval
+returns structured evidence with source identity and locators. Retrieval tools
+return prompt-safe context with citation labels.
 
 `Config.local()` is for development and tests. Production configuration is
-covered in [Configured stores](#configured-stores).
+covered in [Configured stores](#configured-stores). Agent tools are optional:
+install `rag-core[openai-agents]` and pass `rag.tool()` into an agent SDK.
 
 For a process configured through environment variables:
 
@@ -45,7 +44,7 @@ For a process configured through environment variables:
 from agents import Agent
 from rag_core import RAGCore
 
-rag = RAGCore.from_env(index="company-docs")
+rag = RAGCore.from_env(collection="company-docs")
 agent = Agent(name="support", tools=[rag.tool()])
 ```
 
@@ -89,7 +88,7 @@ from rag_core import RAGCore
 from rag_core.core import Engine
 
 engine = Engine(config, embedding_provider=embedding, vector_store=store)
-rag = RAGCore(engine, tenant_id="acme", index="company-docs")
+rag = RAGCore(engine, tenant_id="acme", collection="company-docs")
 ```
 
 `Engine` is the advanced integration surface.
@@ -132,7 +131,7 @@ Known local and OpenAI models infer their dimensions. Pass
 ## Scope
 
 `RAGCore` ingests, searches, and deletes documents inside an application-owned
-tenant and index. It returns stable `Evidence` objects and exposes the same
+tenant and collection. It returns stable `Evidence` objects and exposes the same
 scope as an agent tool. Dense retrieval is the default. Advanced engine APIs
 provide archives, URLs, query plans, traces, and eval hooks without expanding
 the common facade. Auth, connectors, product workflows, and model orchestration
@@ -195,8 +194,8 @@ Server-local ingest paths are limited to the working directory by default; with
 uv pip install -e .
 ```
 
-Extras: `semantic`, `html`, `pdf`, `rerank`, `voyage`, `zeroentropy`, `turbopuffer`,
-`opentelemetry`, `anthropic`, `langchain`, `openai-agents`, `mcp`, `runtime`.
+Extras: `semantic`, `html`, `pdf`, `office`, `openai`, `rerank`, `voyage`, `zeroentropy`,
+`turbopuffer`, `opentelemetry`, `anthropic`, `langchain`, `openai-agents`, `mcp`, `runtime`.
 
 ## Development
 

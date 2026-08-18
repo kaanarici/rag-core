@@ -182,10 +182,9 @@ class DocumentIndexer:
         and clear the whole collection (caught by ``DeleteFilter.__post_init__``
         too, but raised earlier here with a clearer message).
 
-        Returns a ``DeleteAck`` so the facade can populate
-        ``DeleteDocumentResult.index_deleted`` from the store's actual ack
-        rather than the engine's optimism. Raises propagate (the facade then
-        decides whether to write a recovery-journal entry).
+        Returns a ``DeleteAck`` so the engine can populate
+        ``DeleteDocumentResult.vector_store_acked`` from the store's actual ack
+        rather than the engine's optimism. Raises propagate.
         """
         namespace_scoped, collection_scoped = validate_delete_scope(namespace, collection)
         if not isinstance(document_id, str) or not document_id.strip():
@@ -208,8 +207,8 @@ class DocumentIndexer:
         )
         # Most adapters don't expose a deleted-point count without a follow-up
         # read; surface ``-1`` (unknown) and rely on absence-of-exception as the
-        # success signal. The facade fields ``succeeded`` straight into
-        # ``DeleteDocumentResult.index_deleted`` so callers see the store ack.
+        # success signal. The engine fields ``succeeded`` straight into
+        # ``DeleteDocumentResult.vector_store_acked`` so callers see the store ack.
         return DeleteAck(succeeded=True, deleted_point_count=-1)
 
     async def delete_collection(

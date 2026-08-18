@@ -135,6 +135,8 @@ def _timeout_ms(timeout_seconds: float | None) -> float:
 
 
 def _stage_name(stage: object) -> str:
+    if stage is None:
+        return TRACE_ABSENT_LABEL
     return type(stage).__name__
 
 

@@ -10,7 +10,7 @@ from rag_core import RAGCore
 
 async def main() -> None:
     question = " ".join(sys.argv[1:]) or "How can customers pay invoices?"
-    async with RAGCore.from_env(index="company-docs") as rag:
+    async with RAGCore.from_env(collection="company-docs") as rag:
         agent = Agent(
             name="Docs assistant",
             instructions=(

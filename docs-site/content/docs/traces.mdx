@@ -27,7 +27,7 @@ Representative lines from a search run:
 
 ```json
 {"event_type": "parse.completed", "filename": "invoices.md", "parser": "markdown", "quality_verdict": "ok", "meaningful_ratio": 0.98, "char_count": 1840, "duration_ms": 3.1}
-{"event_type": "search.planned", "channels": ["dense"], "final_limit": 5, "rerank_fallback_on_error": true, "use_lexical_search": false}
+{"event_type": "search.planned", "channels": ["dense"], "final_limit": 5, "rerank_fallback_on_error": false, "use_lexical_search": false}
 {"event_type": "search.stage.completed", "stage": "retrieve", "candidate_count": 12, "result_count": 5, "duration_ms": 8.4}
 {"event_type": "rerank.applied", "provider": "cohere", "succeeded": false, "fallback_reason": "timeout", "accepted_count": 0, "result_count": 5}
 {"event_type": "search.completed", "result_count": 5, "requested_rerank": true, "applied_rerank": false, "succeeded": true, "duration_ms": 22.7}

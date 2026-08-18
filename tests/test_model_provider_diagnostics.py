@@ -15,6 +15,7 @@ from rag_core.config import (
     EmbeddingConfig,
     IngestConfig,
     QdrantConfig,
+    VectorStoreConfig,
     RerankerConfig,
 )
 from rag_core.core_models import Config
@@ -86,7 +87,7 @@ def _readiness_scopes(value: object) -> set[str]:
 
 
 def _diagnostic_config(**kwargs: Any) -> Config:
-    return Config(qdrant=QdrantConfig(location=":memory:"), **kwargs)
+    return Config(vector_store=VectorStoreConfig(qdrant=QdrantConfig(location=":memory:")), **kwargs)
 
 
 def _find_spec_for(

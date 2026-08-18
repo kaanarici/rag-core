@@ -76,7 +76,6 @@ class _ConfigMeta(type):
 
 @dataclass(frozen=True, kw_only=True)
 class Config(metaclass=_ConfigMeta):
-    qdrant: QdrantConfig = field(default_factory=QdrantConfig)
     vector_store: VectorStoreConfig = field(default_factory=VectorStoreConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     reranker: RerankerConfig = field(default_factory=RerankerConfig)
@@ -84,16 +83,16 @@ class Config(metaclass=_ConfigMeta):
     chunking: ChunkingConfig = field(default_factory=ChunkingConfig)
     ingest: IngestConfig = field(default_factory=IngestConfig)
     policy: VectorStorePolicy = DEFAULT_POLICY
-    # Optional per-process collection/tier fence. ``None`` = unrestricted behavior.
-    # Tiered deployments can pass a CollectionPolicy so rerank, lexical sidecar,
-    # and cross-namespace requests fail at the seam before provider calls.
+    # Optional per-process namespace/collection fence. ``None`` = unrestricted.
     collection_policy: CollectionPolicy | None = None
 
     @classmethod
     def local(cls, persist_dir: str | Path | None = None) -> "Config":
         return cls(
-            qdrant=QdrantConfig(
-                location=":memory:" if persist_dir is None else str(persist_dir),
+            vector_store=VectorStoreConfig(
+                qdrant=QdrantConfig(
+                    location=":memory:" if persist_dir is None else str(persist_dir),
+                ),
             ),
             embedding=EmbeddingConfig(
                 provider=LOCAL_EMBEDDING_PROVIDER,
@@ -131,11 +130,13 @@ def _config_qdrant(
     dimension_aware_collection: bool = DEFAULT_QDRANT_DIMENSION_AWARE_COLLECTION,
 ) -> Config:
     return cls(
-        qdrant=QdrantConfig(
-            url=url,
-            api_key=qdrant_api_key,
-            store_collection=store_collection,
-            dimension_aware_collection=dimension_aware_collection,
+        vector_store=VectorStoreConfig(
+            qdrant=QdrantConfig(
+                url=url,
+                api_key=qdrant_api_key,
+                store_collection=store_collection,
+                dimension_aware_collection=dimension_aware_collection,
+            ),
         ),
         embedding=EmbeddingConfig(
             provider=embedding_provider,
@@ -195,23 +196,17 @@ class IngestedDocument:
 class DeleteDocumentResult:
     """Honest accounting of which surfaces actually purged the document.
 
-    ``index_deleted`` reflects the vector-store ack, not an optimistic "we
-    asked the store" assumption. The cache and sidecar booleans are tri-state
-    so callers can distinguish "purge succeeded" (``True``), "purge failed
-    and a recovery journal entry was written" (``False``), and "no such
-    surface configured on this Engine" (``None``).
+    ``vector_store_acked`` reflects the vector-store ack, not an optimistic
+    "we asked the store" assumption. The cache and sidecar booleans are
+    tri-state so callers can distinguish "purge succeeded" (``True``),
+    "purge failed" (``False``), and "no such surface configured on this
+    Engine" (``None``). Vector-store failure raises before later steps run.
     """
 
     document_id: str
     namespace: str
     collection: str
-    index_deleted: bool
-    sidecar_deleted: bool | None = None
-    manifest_entry_deleted: bool | None = None
-    # Right-to-forget completeness fields. ``None`` = surface not wired on
-    # this Engine (e.g. NoCache); ``True`` = scoped purge succeeded; ``False``
-    # = purge failed and a delete-recovery journal entry now tracks it.
-    vector_store_acked: bool = False
+    vector_store_acked: bool
     lexical_sidecar_purged: bool | None = None
     embedding_cache_purged: bool | None = None
     chunk_context_cache_purged: bool | None = None

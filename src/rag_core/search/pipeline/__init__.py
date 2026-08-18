@@ -2,8 +2,8 @@
 
 The pipeline is the extension point for advanced and experimental retrieval
 techniques (HyDE, multi-query, MMR, reranker cascades, parent-child expansion,
-etc.). Stages are typed protocols; the runner is a frozen dataclass with five
-fields.
+etc.). Stages are typed protocols. Fuse and rerank are optional; a multi-retrieve
+fan-out requires a FuseStage.
 """
 
 from __future__ import annotations
@@ -16,12 +16,6 @@ from rag_core.search.pipeline.merge_strategies import (
 )
 from rag_core.search.pipeline.runner import RetrievalPipeline
 from rag_core.search.pipeline.stages.hybrid_retrieve import HybridRetrieve
-from rag_core.search.pipeline.stages.identity import (
-    IdentityFuse,
-    IdentityPostprocess,
-    IdentityQueryTransform,
-    PassThroughRerank,
-)
 from rag_core.search.pipeline.stages.query_expansion import (
     AnthropicQueryVariantGenerator,
     HydeTransform,
@@ -50,12 +44,8 @@ __all__ = (
     "AnthropicQueryVariantGenerator",
     "HydeTransform",
     "HybridRetrieve",
-    "IdentityFuse",
-    "IdentityPostprocess",
-    "IdentityQueryTransform",
     "MultiQueryTransform",
     "NeighborExpandPostprocess",
-    "PassThroughRerank",
     "PipelineContext",
     "PipelineQuery",
     "Postprocess",

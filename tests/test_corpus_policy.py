@@ -1,7 +1,6 @@
-"""Tier-widening fail-closed seam tests for ``DeleteFilter`` and ``CollectionPolicy``.
+"""Fail-closed seam tests for ``DeleteFilter`` and ``CollectionPolicy``.
 
-Covers four guarantees for tiered deployments that run one ``Engine`` per
-workspace/collection tier:
+Covers four guarantees:
 
 1. ``DeleteFilter.__post_init__`` rejects empty / blank ``document_id`` or
    ``collection`` strings so a formatting bug cannot silently widen a
@@ -9,9 +8,8 @@ workspace/collection tier:
 2. The retrieval facade (``Engine.search`` / ``Engine.context``)
    refuses ``collections=None`` and ``collections=[]`` because silent widening is
    forbidden.
-3. ``CollectionPolicy`` validates namespace binding, allowed collections, rerank
-   and lexical-sidecar capability flags from the engine seam before any
-   provider call.
+3. ``CollectionPolicy`` validates namespace binding and allowed collections
+   from the engine seam before any provider call.
 4. Explicit ``delete_collection`` and ``delete_namespace`` facade helpers exist
    so callers reach collection-wide or namespace-wide deletes deliberately, not
    by accident.
@@ -96,47 +94,6 @@ def test_collection_policy_refuses_none_collections_when_allowlist_set() -> None
     policy = CollectionPolicy(allowed_collections=frozenset({"public"}))
     with pytest.raises(CollectionPolicyViolation, match="silently widens"):
         policy.validate_collections(None)
-
-
-def test_collection_policy_disallows_rerank_on_restricted_tier() -> None:
-    policy = CollectionPolicy(allow_rerank=False)
-    with pytest.raises(CollectionPolicyViolation, match="rerank"):
-        policy.validate_search(
-            namespace="ws",
-            collections=["restricted"],
-            rerank=True,
-            use_lexical_search=False,
-        )
-
-
-def test_collection_policy_disallows_lexical_sidecar_on_restricted_tier() -> None:
-    policy = CollectionPolicy(allow_lexical_sidecar=False)
-    with pytest.raises(CollectionPolicyViolation, match="lexical sidecar"):
-        policy.validate_search(
-            namespace="ws",
-            collections=["restricted"],
-            rerank=False,
-            use_lexical_search=True,
-        )
-
-
-def test_collection_policy_validates_allowed_query_plan_presets() -> None:
-    policy = CollectionPolicy(allowed_query_plan_presets=frozenset({"dense_only"}))
-    policy.validate_search(
-        namespace="ws",
-        collections=["c"],
-        rerank=False,
-        use_lexical_search=False,
-        query_plan_preset="dense_only",
-    )
-    with pytest.raises(CollectionPolicyViolation, match="query_plan_preset"):
-        policy.validate_search(
-            namespace="ws",
-            collections=["c"],
-            rerank=False,
-            use_lexical_search=False,
-            query_plan_preset="hybrid_full",
-        )
 
 
 def test_collection_policy_rejects_invalid_construction() -> None:
@@ -256,55 +213,6 @@ def test_pipeline_runner_refuses_disallowed_collection_under_bound_policy() -> N
                 )
         finally:
             await core.close()
-
-    asyncio.run(_run())
-
-
-def test_pipeline_runner_refuses_rerank_when_policy_forbids_it() -> None:
-    async def _run() -> None:
-        policy = CollectionPolicy(allow_rerank=False)
-        core, _ = _make_core_with_policy(policy)
-        try:
-            with pytest.raises(CollectionPolicyViolation, match="rerank"):
-                await core.search(
-                    query="q",
-                    namespace="ws",
-                    collections=["restricted"],
-                    rerank=True,
-                )
-        finally:
-            await core.close()
-
-    asyncio.run(_run())
-
-
-def test_pipeline_runner_refuses_disallowed_search_profile_under_policy() -> None:
-    """An explicit caller plan is fenced by its search-profile name."""
-    from rag_core.search.pipeline_runner import (
-        SearchExecutionOptions,
-        SearchPipelineRunner,
-        SearchRequest,
-    )
-    from rag_core.search.query_plan_presets import search_profile
-
-    async def _run() -> None:
-        policy = CollectionPolicy(allowed_query_plan_presets=frozenset({"fast"}))
-        runner = SearchPipelineRunner(
-            FakeEmbeddingProvider(),
-            FakeSparseEmbedder(),
-            RecordingVectorStore(),
-            collection_policy=policy,
-        )
-        plan = search_profile("balanced", limit=5)
-        with pytest.raises(CollectionPolicyViolation, match="query_plan_preset"):
-            await runner.search(
-                SearchRequest(
-                    query="q",
-                    collections=["c"],
-                    namespace="ws",
-                    execution=SearchExecutionOptions(query_plan=plan),
-                )
-            )
 
     asyncio.run(_run())
 

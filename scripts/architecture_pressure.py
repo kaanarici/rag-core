@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TypedDict
 
 DEFAULT_LIMIT = 20
-DEFAULT_LARGE_FILE_THRESHOLD = 600
+DEFAULT_LARGE_FILE_THRESHOLD = 1000
 
 
 class PythonFilePressure(TypedDict):

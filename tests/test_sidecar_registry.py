@@ -73,7 +73,7 @@ def test_rag_core_resolves_lexical_search_provider_from_config() -> None:
         embedding_dimensions=4,
     )
     config = type(base)(
-        qdrant=base.qdrant,
+        vector_store=base.vector_store,
         embedding=base.embedding,
         reranker=base.reranker,
         chunking=base.chunking,

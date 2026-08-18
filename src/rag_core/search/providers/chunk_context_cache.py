@@ -105,8 +105,7 @@ class ScopedDeletableChunkContextCache(Protocol):
     Probed via ``getattr`` by the delete facade so a third-party cache that
     cannot scope-delete is fine. Its
     ``DeleteDocumentResult.chunk_context_cache_purged`` field just stays
-    ``None`` and the delete-recovery journal does not retain a partial-state
-    entry for that surface.
+    ``None``.
     """
 
     async def delete_by_document_scope(

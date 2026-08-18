@@ -16,6 +16,7 @@ from rag_core.search.pipeline_runner import (
 )
 from rag_core.search.filters import Term
 from rag_core.search.request_models import (
+    RerankBudget,
     RerankResult,
     SearchSidecarQuery,
 )
@@ -208,7 +209,7 @@ def test_search_uses_first_sparse_channel_when_bm25_missing() -> None:
     asyncio.run(_run())
 
 
-def test_search_downgrades_when_no_sparse_vector_is_available() -> None:
+def test_search_succeeds_when_dense_default_has_no_sparse_vector() -> None:
     async def _run() -> None:
         store = RecordingVectorStore(search_results=[make_search_result()])
         pipeline_runner = _pipeline_runner(
@@ -226,7 +227,6 @@ def test_search_downgrades_when_no_sparse_vector_is_available() -> None:
         )
 
         assert store.search_calls[0].query_plan is not None
-        assert store.search_calls[0].query_plan.search_profile is None
         assert store.search_calls[0].sparse_vector.indices == []
 
     asyncio.run(_run())
@@ -320,7 +320,11 @@ def test_search_reranks_results_and_falls_back_on_error() -> None:
         )
         fallback = await failing.search(
             SearchRequest(
-                query="query", collections=["corpus-1"], namespace="space-1", rerank=True
+                query="query",
+                collections=["corpus-1"],
+                namespace="space-1",
+                rerank=True,
+                rerank_budget=RerankBudget(fallback_on_error=True),
             )
         )
         assert [r.id for r in fallback] == ["doc-a"]

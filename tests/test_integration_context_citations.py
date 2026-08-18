@@ -17,15 +17,13 @@ import pytest
 
 from rag_core import Config
 from rag_core.core import Engine
-from rag_core.config import EmbeddingConfig, QdrantConfig
+from rag_core.config import EmbeddingConfig, QdrantConfig, VectorStoreConfig
 from rag_core.demo import build_demo_core
 from rag_core.demo import DemoEmbeddingProvider, DemoSparseEmbedder
 from rag_core.documents.contextualizer import ChunkContextRequest
 from rag_core.search import search_profile
 from rag_core.search.pipeline import (
     HybridRetrieve,
-    IdentityFuse,
-    PassThroughRerank,
     RetrievalPipeline,
 )
 from rag_core.search.pipeline.stages.neighbor_expand import NeighborExpandPostprocess
@@ -227,11 +225,11 @@ def test_qdrant_contextualized_retrieval_keeps_clean_citation_text() -> None:
     async def go() -> None:
         core = Engine(
             Config(
-                qdrant=QdrantConfig(
+                vector_store=VectorStoreConfig(qdrant=QdrantConfig(
                     location=":memory:",
                     store_collection=f"clean_context_{uuid.uuid4().hex}",
                     dimension_aware_collection=False,
-                ),
+                )),
                 embedding=EmbeddingConfig(
                     provider="demo",
                     model="demo-dense-v1",
@@ -381,8 +379,6 @@ def test_neighbor_expansion_keeps_original_citation_span() -> None:
                 event_sink=core._event_sink,
                 pipeline=RetrievalPipeline(
                     retrieve=HybridRetrieve(),
-                    fuse=IdentityFuse(),
-                    rerank=PassThroughRerank(),
                     postprocesses=(NeighborExpandPostprocess(window=1),),
                 ),
             )

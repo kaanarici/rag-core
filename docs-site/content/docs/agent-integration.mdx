@@ -309,7 +309,7 @@ from rag_core import RAGCore
 
 
 async def main() -> None:
-    async with RAGCore.from_env(index="company-docs") as rag:
+    async with RAGCore.from_env(collection="company-docs") as rag:
         agent = Agent(
             name="Docs assistant",
             instructions=(
@@ -482,7 +482,6 @@ Run:
 rag-core serve \
   --host 127.0.0.1 --port 8787 \
   --ingest-root "$PWD" \
-  --job-db-path .rag-core/runtime/jobs.sqlite3 \
   --qdrant-location :memory: \
   --embedding-provider demo \
   --embedding-model demo-dense-v1 \
@@ -499,15 +498,10 @@ Validation:
 ```bash
 export BASE_URL=http://127.0.0.1:8787
 
-JOB=$(curl -s -X POST "$BASE_URL/v1/ingest" \
+curl -s -X POST "$BASE_URL/v1/ingest" \
   -H 'Content-Type: application/json' \
-  -d "{\"path\":\"$PWD/examples/demo_corpus/billing.md\",\"namespace\":\"acme\",\"collection\":\"help\"}" \
-  | python -c 'import json,sys; print(json.load(sys.stdin)["job_id"])')
+  -d "{\"path\":\"$PWD/examples/demo_corpus/billing.md\",\"namespace\":\"acme\",\"collection\":\"help\"}"
 # paths must be absolute and under a configured --ingest-root
-
-until curl -s "$BASE_URL/v1/ingest/$JOB" | grep -q '"status": "completed"'; do
-  sleep 0.2
-done
 
 curl -s -X POST "$BASE_URL/v1/search" \
   -H 'Content-Type: application/json' \

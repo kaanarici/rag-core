@@ -17,7 +17,6 @@ PY
 fi
 BASE_URL="${BASE_URL:-http://127.0.0.1:${PORT}}"
 RUNTIME_TMPDIR="$(mktemp -d)"
-JOB_DB_PATH="${JOB_DB_PATH:-$RUNTIME_TMPDIR/jobs.sqlite3}"
 SERVER_PID=""
 
 cleanup() {
@@ -32,7 +31,6 @@ trap cleanup EXIT
 uv run rag-core serve \
   --host 127.0.0.1 \
   --port "$PORT" \
-  --job-db-path "$JOB_DB_PATH" \
   --qdrant-location :memory: \
   --embedding-provider demo \
   --embedding-model demo-dense-v1 \

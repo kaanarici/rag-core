@@ -18,7 +18,7 @@ import pytest
 pytest.importorskip("starlette")
 from starlette.testclient import TestClient
 
-from rag_core.config import EmbeddingConfig, QdrantConfig
+from rag_core.config import EmbeddingConfig, QdrantConfig, VectorStoreConfig
 from rag_core.core import Engine
 from rag_core.core_models import Config
 from rag_core.demo import DemoEmbeddingProvider, DemoSparseEmbedder
@@ -31,7 +31,7 @@ pytestmark = [pytest.mark.integration]
 
 def _make_runtime_client(tmp_path: Path) -> tuple[TestClient, Engine]:
     config = Config(
-        qdrant=QdrantConfig(location=":memory:"),
+        vector_store=VectorStoreConfig(qdrant=QdrantConfig(location=":memory:")),
         embedding=EmbeddingConfig(
             provider="demo",
             model="demo-dense-v1",
@@ -52,7 +52,6 @@ def _make_runtime_client(tmp_path: Path) -> tuple[TestClient, Engine]:
     app = create_app(
         config=config,
         core_factory=core_factory,
-        job_db_path=tmp_path / "jobs.sqlite3",
         ingest_roots=(tmp_path,),
     )
     return TestClient(app), core
@@ -87,15 +86,13 @@ def test_delete_route_returns_honest_per_surface_result(tmp_path: Path) -> None:
         assert body["document_id"] == document_id
         assert body["namespace"] == "workspace-alpha"
         assert body["collection"] == "public"
-        # Vector store ack drives both index_deleted and vector_store_acked.
-        assert body["index_deleted"] is True
+        # Vector store ack drives vector_store_acked.
         assert body["vector_store_acked"] is True
         # No sidecar / cache wired in this runtime build -> honest None.
         assert body["lexical_sidecar_purged"] is None
         assert body["embedding_cache_purged"] is None
         assert body["chunk_context_cache_purged"] is None
         # No manifest directory configured for this in-memory runtime.
-        assert body["manifest_entry_deleted"] is None
         assert body["manifest_removed"] is None
     finally:
         asyncio.run(core.close())
@@ -166,7 +163,7 @@ def test_delete_route_enforces_bound_namespace(tmp_path: Path) -> None:
     different namespace is refused at the HTTP boundary. Symmetric with
     /v1/ingest and /v1/search."""
     config = Config(
-        qdrant=QdrantConfig(location=":memory:"),
+        vector_store=VectorStoreConfig(qdrant=QdrantConfig(location=":memory:")),
         embedding=EmbeddingConfig(
             provider="demo",
             model="demo-dense-v1",
@@ -188,7 +185,6 @@ def test_delete_route_enforces_bound_namespace(tmp_path: Path) -> None:
     app = create_app(
         config=config,
         core_factory=core_factory,
-        job_db_path=tmp_path / "jobs.sqlite3",
         ingest_roots=(tmp_path,),
     )
     client = TestClient(app)

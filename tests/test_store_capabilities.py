@@ -165,8 +165,8 @@ def test_vector_store_capability_specs_do_not_import_qdrant_implementation() -> 
         encoding="utf-8"
     )
 
-    assert "from .qdrant" not in source
-    assert "providers.qdrant" not in source
+    assert "from .vector_store.qdrant" not in source
+    assert "providers.vector_store.qdrant" not in source
     assert "KNOWN_SPARSE_CHANNELS" in source
 
 

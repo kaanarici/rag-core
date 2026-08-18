@@ -9,7 +9,7 @@ boundaries, see [Self-host the HTTP API](/docs/self-host). The machine-readable
 contract is
 [openapi.yaml](https://github.com/kaanarici/rag-core/blob/main/docs/self-host/openapi.yaml).
 
-The runtime exposes health, runtime description, async ingest jobs, search,
+The runtime exposes health, runtime description, ingest, search,
 context retrieval, and document delete. It does not expose eval over HTTP.
 
 ## Routes
@@ -19,9 +19,7 @@ context retrieval, and document delete. It does not expose eval over HTTP.
 | `GET` | `/health` | Liveness. Process-up check only |
 | `GET` | `/health/ready` | Readiness. Initializes the engine and probes the store. `503` when not ready |
 | `GET` | `/v1/runtime` | `describe_runtime()` JSON |
-| `POST` | `/v1/ingest` | Start an ingest job. Returns `202` with `job_id` |
-| `GET` | `/v1/ingest/{job_id}` | Job status |
-| `GET` | `/v1/ingest/{job_id}/events` | Job status changes as `text/event-stream`. Closes after a terminal status |
+| `POST` | `/v1/ingest` | Ingest a server-local file. Returns `200` with the document result |
 | `POST` | `/v1/search` | Ranked hits (`SearchResult` array) |
 | `POST` | `/v1/search/context` | Context pack plus prompt-safe `context_text` |
 | `DELETE` | `/v1/documents/{document_id}` | Purge one document across index, sidecars, caches, and manifest |
@@ -47,39 +45,22 @@ paths, `~`, symlinks escaping the root, and non-regular files are rejected with
 `400`. `namespace` defaults to the runtime namespace. Unknown fields return
 `400`.
 
-Response `202`:
-
-```json
-{ "job_id": "5f3c...e1", "status": "pending" }
-```
-
-Other statuses: `413` when the body exceeds `--max-body-bytes` (4 MiB default),
-`503` with `code="busy"` when `--ingest-concurrency` slots are full.
-
-### GET `/v1/ingest/{job_id}`
+Response `200`:
 
 ```json
 {
-  "job_id": "5f3c...e1",
-  "status": "completed",
-  "path": "/srv/docs/billing.md",
+  "document_id": "...",
+  "chunk_count": 3,
+  "ingest_state": "created",
   "namespace": "acme",
-  "collection": "help",
-  "result": { "document_id": "...", "chunk_count": 3, "ingest_state": "created" }
+  "collection": "help"
 }
 ```
 
-`status` is `pending`, `running`, `completed`, or `failed`. `result` is present
-only on `completed`. On `failed`, an `error` object carries `error_type` (the
-exception class name) and a stable `error_code`. The exception message is never
-included. After a process restart, in-flight jobs become `failed` with
-`error_code="orphaned_by_restart"`.
-
-### GET `/v1/ingest/{job_id}/events`
-
-`Content-Type: text/event-stream`. Emits `event: status` frames whose `data` is
-the job-status JSON above, with `: heartbeat` comments while the job is not
-terminal. The stream closes after the first `completed` or `failed` frame.
+Other statuses: `413` when the body exceeds `--max-body-bytes` (4 MiB default),
+`503` with `code="busy"` when `--ingest-concurrency` slots are full, `500` with
+`code="ingest_failed"` when ingest raises. Failed ingest bodies carry sanitized
+`error_type` and `error_code` only. The exception message is never included.
 
 ## POST /v1/search
 

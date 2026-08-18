@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import pytest
 
-from rag_core.search.providers.qdrant_collection import create_qdrant_collection
+from rag_core.search.providers.qdrant_store import create_qdrant_collection
 from rag_core.search.providers.qdrant_store import QdrantVectorStore
 from tests.support import TEST_API_SECRET, assert_caplog_omits_private
 

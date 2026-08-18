@@ -11,7 +11,7 @@ fallback.
 
 ## Production facade
 
-`RAGCore.from_env(index=...)` uses the variables below and fails closed on
+`RAGCore.from_env(collection=...)` uses the variables below and fails closed on
 missing tenant scope, ambiguous Qdrant targets, missing selected-store settings,
 unknown providers without an explicit model, and invalid integer or boolean
 values. It does not load dotenv files.
@@ -110,11 +110,6 @@ in library code. See [Keep an index in sync](/docs/sync) and
 These apply only to `rag-core serve`. See [Self-host the HTTP API](/docs/self-host)
 and the [HTTP API reference](/docs/http).
 
-| Environment variable | CLI flag | Default | Notes |
-| --- | --- | --- | --- |
-| `RAG_CORE_RUNTIME_JOB_DB_PATH` | `--job-db-path` | `.rag-core/runtime/jobs.sqlite3` | SQLite path for ingest job status |
-| `RAG_CORE_RUNTIME_JOB_RETENTION_SECONDS` | `--job-retention-seconds` | unbounded | Prune old terminal job rows |
-
-Serve-only flags without an environment variable: `--host`, `--port`,
-`--ingest-root`, `--unix-socket`, `--bind-non-loopback`, `--max-body-bytes`,
-`--ingest-concurrency`, and `--limit-concurrency`.
+Serve-only flags: `--host`, `--port`, `--ingest-root`, `--unix-socket`,
+`--bind-non-loopback`, `--max-body-bytes`, `--ingest-concurrency`, and
+`--limit-concurrency`.

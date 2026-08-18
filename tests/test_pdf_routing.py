@@ -8,7 +8,7 @@ from typing import cast
 
 import pytest
 
-import rag_core.facade.prepare as core_prepare_facade
+import rag_core.core as rag_core_engine
 import rag_core.documents.converters.pdf_converter as pdf_converter_module
 import rag_core.documents.converters.pdf_converter_inspector as pdf_converter_inspector_module
 import rag_core.documents.converters.pdf_converter_extraction as pdf_extraction_module
@@ -1971,7 +1971,7 @@ def test_prepare_bytes_surfaces_ocr_routing_signal(
         )
 
     monkeypatch.setattr(
-        core_prepare_facade,
+        rag_core_engine,
         "prepare_document_bytes",
         fake_prepare_document_bytes,
     )

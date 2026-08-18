@@ -575,7 +575,7 @@ def test_public_extension_modules_type_against_curated_search_surface() -> None:
 def test_user_facing_retrieval_modules_type_against_curated_search_surface() -> None:
     for path in (
         Path("src/rag_core/_engine/core_retrieval.py"),
-        Path("src/rag_core/facade/retrieval.py"),
+        Path("src/rag_core/core.py"),
         Path("src/rag_core/cli/commands/search.py"),
         Path("src/rag_core/local_search/runner.py"),
     ):

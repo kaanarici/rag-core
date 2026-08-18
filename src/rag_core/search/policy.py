@@ -5,39 +5,16 @@ tenant-payload-index hint live here so adapters can override the shape and
 multi-tenant indexing strategy without forcing edits inside the indexer or
 filter helpers. The defaults preserve the Qdrant-shaped layout byte-for-byte.
 
-``CollectionPolicy`` is a separate, optional seam: a single ``Engine`` process
-can be bound to one namespace, an allowed collection set, and a capability
-subset. That lets a sensitive tier refuse rerank, lexical sidecar, cache, or
-non-allowed query-plan usage at the engine seam before provider egress.
+``CollectionPolicy`` is an optional process fence: one ``Engine`` can bind to
+a namespace and an allowed collection set so cross-scope requests fail at the
+engine seam before provider egress.
 """
 
 from __future__ import annotations
 
-import re
 import uuid
 from dataclasses import dataclass
 from typing import Callable
-
-
-# Per-tier collection isolation. The slug is folded into the Qdrant collection
-# name so independently configured logical collections point at physically
-# distinct store collections.
-_COLLECTION_SLUG_SAFE = re.compile(r"[^a-z0-9_-]+")
-
-
-def collection_slug_for(collection: str) -> str:
-    """Deterministic ``[a-z0-9_-]`` slug used in collection naming."""
-
-    if not isinstance(collection, str) or not collection.strip():
-        raise ValueError("collection must be a non-empty string to slug")
-    lowered = collection.strip().lower()
-    sanitized = _COLLECTION_SLUG_SAFE.sub("_", lowered)
-    collapsed = re.sub(r"_+", "_", sanitized).strip("_")
-    if not collapsed:
-        raise ValueError(
-            f"collection={collection!r} produces an empty slug after sanitization"
-        )
-    return collapsed
 
 
 class CollectionPolicyViolation(ValueError):
@@ -114,26 +91,14 @@ DEFAULT_POLICY = VectorStorePolicy()
 
 @dataclass(frozen=True)
 class CollectionPolicy:
-    """Per-process retrieval/delete capability fence.
+    """Per-process namespace and collection fence.
 
-    All fields are optional; ``CollectionPolicy()`` (all defaults) is a no-op
-    seam useful only to assert "policy was wired but unrestricted." A
-    restricted-tier instance typically sets ``bound_namespace``,
-    ``allowed_collections``, and turns ``allow_rerank`` /
-    ``allow_lexical_sidecar`` off.
-
-    Violations always raise ``CollectionPolicyViolation``. A tenancy/capability
-    fence must not degrade to a warning.
+    All fields are optional; ``CollectionPolicy()`` is unrestricted.
+    Violations always raise ``CollectionPolicyViolation``.
     """
 
     bound_namespace: str | None = None
     allowed_collections: frozenset[str] | None = None
-    allow_rerank: bool = True
-    allow_lexical_sidecar: bool = True
-    allowed_query_plan_presets: frozenset[str] | None = None
-    # Sensitive-tier deploy switch: when True, ``core_assembly`` swaps the
-    # configured embedding and chunk-context caches for no-op providers.
-    cache_disabled: bool = False
 
     def __post_init__(self) -> None:
         if self.bound_namespace is not None and (
@@ -153,16 +118,7 @@ class CollectionPolicy:
                     raise ValueError(
                         "CollectionPolicy.allowed_collections must contain non-empty strings"
                     )
-        if self.allowed_query_plan_presets is not None:
-            if not isinstance(self.allowed_query_plan_presets, frozenset):
-                raise ValueError(
-                    "CollectionPolicy.allowed_query_plan_presets must be a frozenset[str]"
-                )
-            for value in self.allowed_query_plan_presets:
-                if not isinstance(value, str) or not value.strip():
-                    raise ValueError(
-                        "CollectionPolicy.allowed_query_plan_presets must contain non-empty strings"
-                    )
+
     def _emit(self, message: str) -> None:
         raise CollectionPolicyViolation(message)
 
@@ -196,25 +152,9 @@ class CollectionPolicy:
         *,
         namespace: str,
         collections: list[str] | None,
-        rerank: bool,
-        use_lexical_search: bool,
-        query_plan_preset: str | None = None,
     ) -> None:
         self.validate_namespace(namespace)
         self.validate_collections(collections)
-        if rerank and not self.allow_rerank:
-            self._emit("CollectionPolicy disallows rerank on this tier")
-        if use_lexical_search and not self.allow_lexical_sidecar:
-            self._emit("CollectionPolicy disallows the lexical sidecar on this tier")
-        if (
-            self.allowed_query_plan_presets is not None
-            and query_plan_preset is not None
-            and query_plan_preset not in self.allowed_query_plan_presets
-        ):
-            self._emit(
-                f"CollectionPolicy refused query_plan_preset={query_plan_preset!r}; "
-                f"allowed={sorted(self.allowed_query_plan_presets)!r}"
-            )
 
     def validate_delete(
         self,
@@ -225,22 +165,6 @@ class CollectionPolicy:
         self.validate_namespace(namespace)
         if collection is not None:
             self.validate_collections([collection])
-
-    @property
-    def store_collection_slug(self) -> str | None:
-        """Return a slug iff this policy binds the process to one collection tier.
-
-        When ``allowed_collections`` is a single-element set, the slug becomes
-        part of the Qdrant collection name so sensitive and public scopes do
-        not share a physical collection. Multi-collection processes
-        intentionally return ``None`` so the legacy single-collection layout
-        still works.
-        """
-
-        if self.allowed_collections is None or len(self.allowed_collections) != 1:
-            return None
-        (only,) = self.allowed_collections
-        return collection_slug_for(only)
 
 
 DEFAULT_COLLECTION_POLICY = CollectionPolicy()

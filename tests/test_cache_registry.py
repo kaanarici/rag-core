@@ -243,7 +243,7 @@ def test_rag_core_resolves_embedding_cache_provider_from_config() -> None:
         embedding_dimensions=4,
     )
     config = type(base)(
-        qdrant=base.qdrant,
+        vector_store=base.vector_store,
         embedding=base.embedding,
         reranker=base.reranker,
         chunking=base.chunking,
@@ -293,7 +293,7 @@ def test_rag_core_resolves_sqlite_embedding_cache_path_from_config(
         embedding_dimensions=4,
     )
     config = type(base)(
-        qdrant=base.qdrant,
+        vector_store=base.vector_store,
         embedding=base.embedding,
         reranker=base.reranker,
         chunking=base.chunking,
@@ -336,7 +336,7 @@ def test_rag_core_rejects_sqlite_embedding_cache_without_path() -> None:
         embedding_dimensions=4,
     )
     config = type(base)(
-        qdrant=base.qdrant,
+        vector_store=base.vector_store,
         embedding=base.embedding,
         reranker=base.reranker,
         chunking=base.chunking,

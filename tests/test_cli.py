@@ -1748,7 +1748,7 @@ def test_doctor_fix_reports_dimension_mismatch_without_mutating(
 ) -> None:
     # Real dimension drift requires a persisted collection across two runs,
     # which in-memory Qdrant does not provide. Simulate the adapter's exact
-    # failure message (owned by qdrant_collection.py) to exercise the CLI's
+    # failure message (owned by qdrant_store.py) to exercise the CLI's
     # structured reaction without forking a second storage adapter.
     from rag_core.core import Engine as _Engine
 

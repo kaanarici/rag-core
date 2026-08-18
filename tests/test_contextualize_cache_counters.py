@@ -14,7 +14,7 @@ import pytest
 
 from rag_core import Config
 from rag_core.core import Engine
-from rag_core.config import EmbeddingConfig, QdrantConfig
+from rag_core.config import EmbeddingConfig, QdrantConfig, VectorStoreConfig
 from rag_core.documents.contextualizer import ChunkContextRequest
 from rag_core.events import EventBuffer
 from rag_core.events.types import ContextualizeCompleted
@@ -55,10 +55,10 @@ def _build_core(
 ) -> Engine:
     return Engine(
         Config(
-            qdrant=QdrantConfig(
+            vector_store=VectorStoreConfig(qdrant=QdrantConfig(
                 location=":memory:",
                 store_collection="contextual_counters",
-            ),
+            )),
             embedding=EmbeddingConfig(dimensions=4),
         ),
         embedding_provider=FakeEmbeddingProvider(),

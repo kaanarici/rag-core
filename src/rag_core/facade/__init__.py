@@ -1,4 +1,4 @@
-"""Engine method-family mixins."""
+"""Ingest helpers used by Engine."""
 
 from __future__ import annotations
 

@@ -55,7 +55,7 @@ class SearchTraceSummary:
     rerank_candidate_count: int = 0
     rerank_timeout_ms: float = 0.0
     rerank_max_output: int = 0
-    rerank_fallback_on_error: bool = True
+    rerank_fallback_on_error: bool = False
     rerank_provider: str = ""
     rerank_model: str = ""
     rerank_input_count: int = 0

@@ -52,7 +52,7 @@ def _custom_policy() -> VectorStorePolicy:
 def _config_with_policy(policy: VectorStorePolicy) -> Config:
     base = make_test_config(embedding_model="text-embedding-3-small", embedding_dimensions=4)
     return type(base)(
-        qdrant=base.qdrant,
+        vector_store=base.vector_store,
         embedding=base.embedding,
         reranker=base.reranker,
         chunking=base.chunking,

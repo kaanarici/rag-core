@@ -9,7 +9,7 @@ from typing import Any, ClassVar, Protocol, cast
 import pytest
 
 import rag_core.cli.doctor_providers as doctor_providers
-from rag_core.config import EmbeddingConfig, QdrantConfig
+from rag_core.config import EmbeddingConfig, QdrantConfig, VectorStoreConfig
 from rag_core.core_models import Config
 from rag_core.demo import DemoEmbeddingProvider
 from rag_core.search.providers.cohere import CohereEmbeddingProvider, CohereReranker
@@ -367,7 +367,7 @@ def test_doctor_provider_health_skips_providers_without_capability(
         lambda **_kwargs: object(),
     )
     config = Config(
-        qdrant=QdrantConfig(location=":memory:"),
+        vector_store=VectorStoreConfig(qdrant=QdrantConfig(location=":memory:")),
         embedding=EmbeddingConfig(
             provider="demo",
             model="demo-dense-v1",

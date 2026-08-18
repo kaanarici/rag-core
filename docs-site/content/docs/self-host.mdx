@@ -1,11 +1,11 @@
 ---
 title: Self-host the HTTP API
-description: Run the optional HTTP runtime with health, ingest jobs, search, context retrieval, and app-owned auth.
+description: Run the optional HTTP runtime with health, ingest, search, context retrieval, and app-owned auth.
 ---
 
 Use `rag-core serve` when you want a thin HTTP layer over the same `Engine` library surface.
 
-The runtime exposes health, runtime description, async ingest jobs, search,
+The runtime exposes health, runtime description, ingest, search,
 context retrieval, and document delete. It does not expose eval HTTP.
 
 For the route-by-route wire reference, see the [HTTP API](/docs/http). The
@@ -33,7 +33,6 @@ uv sync --extra runtime
 uv run rag-core serve \
   --host 127.0.0.1 --port 8787 \
   --ingest-root "$PWD" \
-  --job-db-path .rag-core/runtime/jobs.sqlite3 \
   --qdrant-location :memory: \
   --embedding-provider demo \
   --embedding-model demo-dense-v1 \
@@ -44,18 +43,10 @@ uv run rag-core serve \
 export BASE_URL=http://127.0.0.1:8787
 curl -s "$BASE_URL/health/ready"
 
-JOB=$(curl -s -X POST "$BASE_URL/v1/ingest" \
+curl -s -X POST "$BASE_URL/v1/ingest" \
   -H 'Content-Type: application/json' \
-  -d "{\"path\":\"$PWD/examples/demo_corpus/billing.md\",\"namespace\":\"acme\",\"collection\":\"help\"}" \
-  | python -c 'import sys,json; print(json.load(sys.stdin)["job_id"])')
+  -d "{\"path\":\"$PWD/examples/demo_corpus/billing.md\",\"namespace\":\"acme\",\"collection\":\"help\"}"
 # paths must be absolute and under a configured --ingest-root
-
-# Stream status changes until the terminal status:
-curl -N "$BASE_URL/v1/ingest/$JOB/events" \
-  -H 'Accept: text/event-stream' \
-  | sed -n '/^data: /p'
-
-until curl -s "$BASE_URL/v1/ingest/$JOB" | grep -q '"status": "completed"'; do sleep 0.2; done
 
 curl -s -X POST "$BASE_URL/v1/search" \
   -H 'Content-Type: application/json' \
@@ -103,9 +94,7 @@ the authenticated session before proxying requests.
 | `GET` | `/health` | Liveness |
 | `GET` | `/health/ready` | Readiness (`503` when not ready) |
 | `GET` | `/v1/runtime` | `describe_runtime()` JSON |
-| `POST` | `/v1/ingest` | Start job and return `202` plus `job_id` |
-| `GET` | `/v1/ingest/{job_id}` | Job status |
-| `GET` | `/v1/ingest/{job_id}/events` | Job status changes as `text/event-stream`; closes after terminal status |
+| `POST` | `/v1/ingest` | Ingest a server-local file and return the document result |
 | `POST` | `/v1/search` | Search hits JSON (`SearchResult`) |
 | `POST` | `/v1/search/context` | App-facing `Context` + prompt-safe `context_text` |
 | `DELETE` | `/v1/documents/{document_id}` | Purge one document from index, sidecars, caches, and manifest |
@@ -146,28 +135,13 @@ uses the dense-only default plan. Only
 | `RAG_CORE_RERANKER_PROVIDER` | `--reranker-provider` | optional |
 | `RAG_CORE_RERANKER_MODEL` | `--reranker-model` | optional |
 | `RAG_CORE_PROCESSING_VERSION` | `--pipeline-version` | reindex trigger |
-| `RAG_CORE_RUNTIME_JOB_DB_PATH` | `--job-db-path` | SQLite path for ingest job status persistence |
-| `RAG_CORE_RUNTIME_JOB_RETENTION_SECONDS` | `--job-retention-seconds` | optional completed/failed job retention TTL |
 
-Serve-only flags: `--host`, `--port`, `--ingest-root`, `--job-db-path`,
-`--job-retention-seconds`, `--unix-socket`, `--bind-non-loopback`,
-`--max-body-bytes`, `--ingest-concurrency`, `--limit-concurrency`.
+Serve-only flags: `--host`, `--port`, `--ingest-root`, `--unix-socket`,
+`--bind-non-loopback`, `--max-body-bytes`, `--ingest-concurrency`,
+`--limit-concurrency`.
 
-Ingest jobs persist to `.rag-core/runtime/jobs.sqlite3` under the server working
-directory unless `--job-db-path` or `RAG_CORE_RUNTIME_JOB_DB_PATH` overrides it.
-Mount the parent directory for container restarts. This persists job history and
-terminal statuses only. In-flight `pending` or `running` background jobs are not
-resumed after process restart.
-
-On startup, the runtime sweeps any row left in `pending` or `running` from a
-prior process and flips it to `failed` with `error_type=OrphanedByRestart` and
-`error_code=orphaned_by_restart`. Your gateway sees a terminal status. Retry
-orchestration is the gateway's responsibility. rag-core never resumes
-mid-flight work itself.
-
-Set `--job-retention-seconds` or `RAG_CORE_RUNTIME_JOB_RETENTION_SECONDS` to
-prune old completed and failed rows opportunistically at startup and when a job
-becomes terminal. Pending and running rows are never pruned by retention.
+`503` `busy` and `500` `ingest_failed` are terminal for the request. Retry
+orchestration is the gateway's responsibility.
 
 ## Auth
 

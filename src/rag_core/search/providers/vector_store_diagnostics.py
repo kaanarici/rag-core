@@ -93,7 +93,7 @@ def _qdrant_diagnostics(
 ) -> dict[str, object]:
     qdrant_api_key_configured = api_key_configured(
         QDRANT_API_KEY_ENVS,
-        explicit_key=config.qdrant.api_key,
+        explicit_key=config.vector_store.qdrant.api_key,
         get_env=get_env_stripped,
     )
     return {
@@ -110,10 +110,12 @@ def _qdrant_diagnostics(
             if config.vector_store.provider == QDRANT_VECTOR_STORE_PROVIDER_SPEC.name
             else None
         ),
-        "url": redacted_url(config.qdrant.url),
-        "location": store_location_label(config.qdrant.location),
-        "connection_configured": bool(config.qdrant.url or config.qdrant.location),
-        "dimension_aware_collection": config.qdrant.dimension_aware_collection,
+        "url": redacted_url(config.vector_store.qdrant.url),
+        "location": store_location_label(config.vector_store.qdrant.location),
+        "connection_configured": bool(
+            config.vector_store.qdrant.url or config.vector_store.qdrant.location
+        ),
+        "dimension_aware_collection": config.vector_store.qdrant.dimension_aware_collection,
         "query_plan_scope": VECTOR_STORE_QUERY_PLAN_SCOPE_ADAPTER_MAXIMUM,
         **_capability_payload(QDRANT_VECTOR_STORE_PROVIDER_SPEC.capabilities),
     }

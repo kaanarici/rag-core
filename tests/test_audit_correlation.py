@@ -343,9 +343,6 @@ def test_core_ingest_bytes_threads_audit_context_onto_index_upserted() -> None:
 
 def test_runtime_search_route_threads_x_request_id_header() -> None:
     """X-Request-Id flows through to ``SearchCompleted.request_id``."""
-    from pathlib import Path
-    import tempfile
-
     from starlette.testclient import TestClient
 
     from rag_core.core import Engine
@@ -370,26 +367,24 @@ def test_runtime_search_route_threads_x_request_id_header() -> None:
         )
 
     config = make_test_config(qdrant_collection="rag_core_audit_tests", embedding_dimensions=4)
-    with tempfile.TemporaryDirectory() as job_dir:
-        app = create_app(
-            config=config,
-            core_factory=_core_factory,
-            job_db_path=Path(job_dir) / "jobs.sqlite",
+    app = create_app(
+        config=config,
+        core_factory=_core_factory,
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/search",
+            headers={
+                "X-Request-Id": "req-from-gateway",
+                "X-Actor": "analyst@example.com",
+            },
+            json={
+                "query": "hello",
+                "namespace": "ns",
+                "collections": ["public"],
+            },
         )
-        with TestClient(app) as client:
-            response = client.post(
-                "/v1/search",
-                headers={
-                    "X-Request-Id": "req-from-gateway",
-                    "X-Actor": "analyst@example.com",
-                },
-                json={
-                    "query": "hello",
-                    "namespace": "ns",
-                    "collections": ["public"],
-                },
-            )
-            assert response.status_code == 200, response.text
+        assert response.status_code == 200, response.text
 
     [buffer] = captured_buffer
     [completed] = [e for e in buffer.events if isinstance(e, SearchCompleted)]
@@ -433,7 +428,6 @@ def test_runtime_ingest_route_threads_audit_headers_into_ingest_events() -> None
         app = create_app(
             config=config,
             core_factory=_core_factory,
-            job_db_path=root / "jobs.sqlite",
             ingest_roots=(root,),
         )
         with TestClient(app) as client:
@@ -450,10 +444,8 @@ def test_runtime_ingest_route_threads_audit_headers_into_ingest_events() -> None
                     "collection": "public",
                 },
             )
-            assert response.status_code == 202, response.text
-            status = client.get(f"/v1/ingest/{response.json()['job_id']}")
-            assert status.status_code == 200
-            assert status.json()["status"] == "completed"
+            assert response.status_code == 200, response.text
+            assert response.json()["document_id"]
 
     [buffer] = captured_buffer
     [completed] = [e for e in buffer.events if isinstance(e, IngestCompleted)]

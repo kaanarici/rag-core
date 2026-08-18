@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from rag_core.config.qdrant_config import QdrantConfig
 from rag_core.fetch_security import FetchSecurityPolicy, validate_fetch_url
 
 QDRANT_VECTOR_STORE_PROVIDER = "qdrant"
@@ -140,6 +141,7 @@ class TurboPufferVectorStoreConfig:
 @dataclass(frozen=True)
 class VectorStoreConfig:
     provider: str = DEFAULT_VECTOR_STORE_PROVIDER
+    qdrant: QdrantConfig = field(default_factory=QdrantConfig)
     pgvector: PgVectorStoreConfig = field(default_factory=PgVectorStoreConfig)
     turbopuffer: TurboPufferVectorStoreConfig = field(
         default_factory=TurboPufferVectorStoreConfig

@@ -39,14 +39,11 @@ _MAX_QUERY_FANOUT_VARIANTS = 8
 
 @dataclass(frozen=True)
 class RetrievalPipeline:
-    """Five-stage linear pipeline: QueryTransform[] -> Retrieve -> Fuse -> Rerank -> Postprocess[].
-
-    Frozen on purpose to keep stage composition immutable once constructed.
-    """
+    """Retrieve, then optional fuse / rerank / postprocess."""
 
     retrieve: Retrieve
-    fuse: FuseStage
-    rerank: Rerank
+    fuse: FuseStage | None = None
+    rerank: Rerank | None = None
     query_transforms: tuple[QueryTransform, ...] = ()
     postprocesses: tuple[Postprocess, ...] = ()
 
@@ -96,26 +93,29 @@ class RetrievalPipeline:
                 candidate_lists = [candidates]
                 candidate_count = len(candidates)
             started_ms = now_ms()
-            try:
-                results = await self.fuse.fuse(candidate_lists, query, ctx)
-            except Exception as exc:
-                _emit_stage_error(sink, stage=FUSE_SEARCH_STAGE, exc=exc)
-                raise
-            emit_event(
-                sink,
-                SearchStageCompleted(
-                    stage=FUSE_SEARCH_STAGE,
-                    stage_name=_stage_name(self.fuse),
-                    candidate_count=candidate_count,
-                    result_count=len(results),
-                    duration_ms=now_ms() - started_ms,
-                ),
-            )
-            if (
-                query.query_variants
-                and query.rerank
-                and getattr(self.rerank, "real_rerank", True)
-            ):
+            if self.fuse is None:
+                if len(candidate_lists) != 1:
+                    raise ValueError(
+                        "multi-retrieve pipelines require a FuseStage"
+                    )
+                results = candidate_lists[0]
+            else:
+                try:
+                    results = await self.fuse.fuse(candidate_lists, query, ctx)
+                except Exception as exc:
+                    _emit_stage_error(sink, stage=FUSE_SEARCH_STAGE, exc=exc)
+                    raise
+                emit_event(
+                    sink,
+                    SearchStageCompleted(
+                        stage=FUSE_SEARCH_STAGE,
+                        stage_name=_stage_name(self.fuse),
+                        candidate_count=candidate_count,
+                        result_count=len(results),
+                        duration_ms=now_ms() - started_ms,
+                    ),
+                )
+            if query.query_variants and query.rerank and self.rerank is not None:
                 # Bound the fused multi-query pool to the rerank candidate pool
                 # (not the final limit) so the reranker still sees documents
                 # ranked below it. The rerank stage and the final slice below
@@ -130,7 +130,7 @@ class RetrievalPipeline:
                         ),
                     )
                 ]
-            if query.rerank and getattr(self.rerank, "real_rerank", True):
+            if query.rerank and self.rerank is not None:
                 started_ms = now_ms()
                 candidate_count = len(results)
                 try:

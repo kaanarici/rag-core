@@ -132,8 +132,8 @@ class FuseStage(Protocol):
     """Combine multiple candidate lists into one ranked list.
 
     The default Retrieve already produces one fused list (Qdrant's server-side
-    RRF), so the default FuseStage is identity over `[results]`. Multi-retriever
-    pipelines (RAG-Fusion) supply a real fuser that merges parallel result lists.
+    RRF), so the default pipeline omits FuseStage. Multi-retriever pipelines
+    (RAG-Fusion) must supply a real fuser that merges parallel result lists.
     """
 
     async def fuse(

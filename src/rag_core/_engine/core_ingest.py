@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING, Protocol
 from rag_core._engine.core_builders import build_index_request
 from rag_core._engine.core_ingest_decision import resolve_ingest_decision
 from rag_core._engine.core_ingest_delete import (
+    best_effort_rollback_delete,
     delete_collection_via_indexer,
     delete_ingested_document,
     refuse_namespace_wide_delete,
-    resume_partial_delete,
     rollback_index_and_sidecar,
 )
 from rag_core._engine.core_ingest_fence import DocumentFence
@@ -27,11 +27,6 @@ from rag_core._engine.core_ingest_recovery import (
     refreshed_manifest_entry,
     sync_sidecar_or_emit_error,
     write_final_manifest,
-)
-from rag_core._engine.core_ingest_write_ahead import (
-    best_effort_rollback_delete,
-    resume_pending_write_ahead,
-    write_ahead_journal_for,
 )
 from rag_core._engine.core_ingest_results import (
     build_fast_skipped_ingested_document,
@@ -107,8 +102,8 @@ class CoreIngestor:
         # Right-to-forget seam: optional caches purged scoped per doc on delete.
         self._embedding_cache = embedding_cache
         self._chunk_context_cache = chunk_context_cache
-        # Per-doc fence shared with the delete mixin so concurrent ingest +
-        # delete on the same triple cannot interleave.
+        # Per-doc fence so concurrent ingest + delete on the same triple
+        # cannot interleave.
         self._fence = fence or DocumentFence()
 
     async def delete_document(
@@ -228,27 +223,6 @@ class CoreIngestor:
         # Hoisted out of ``ingest_bytes`` so the fence wrapper above stays
         # readable. The body below is the original ingest flow. Unchanged
         # apart from now running under the per-doc lock.
-        # Replay a pending right-to-forget purge for this triple before writing new content.
-        await resume_partial_delete(
-            indexer=self._indexer, sidecar=self._sidecar, event_sink=sink,
-            manifest_directory=self._manifest_directory, document_id=identity.document_id,
-            namespace=namespace, collection=collection,
-            embedding_cache=self._embedding_cache, chunk_context_cache=self._chunk_context_cache,
-        )
-        # Replay a torn ingest of this triple: if a prior run crashed
-        # between ``indexer.upsert`` and ``manifest.write``, purge the
-        # orphan chunks so the fresh ingest does not pile on top of a
-        # half-committed state.
-        write_ahead = write_ahead_journal_for(self._manifest_directory)
-        await resume_pending_write_ahead(
-            indexer=self._indexer,
-            event_sink=sink,
-            manifest_directory=self._manifest_directory,
-            namespace=namespace,
-            collection=collection,
-            document_id=identity.document_id,
-            journal=write_ahead,
-        )
         with stage_guard(sink, stage="ingest"):
             decision = await resolve_ingest_decision(
                 store=self._store,
@@ -375,19 +349,6 @@ class CoreIngestor:
                         ),
                     )
 
-            # Write-ahead: record the intent to upsert BEFORE touching the
-            # store. A crash between here and ``write_final_manifest`` leaves
-            # an ``upserted_pending_manifest`` row on disk that the next
-            # ingest of the same triple replays via
-            # ``resume_pending_write_ahead`` above.
-            if write_ahead is not None:
-                write_ahead.record_pending(
-                    namespace=namespace,
-                    collection=collection,
-                    document_id=identity.document_id,
-                    content_sha256=identity.content_sha256,
-                    expected_chunk_count=len(prepared.chunks),
-                )
             try:
                 with stage_guard(sink, stage="index"):
                     result = await self._indexer.index_document(
@@ -465,29 +426,8 @@ class CoreIngestor:
                 result=result,
             )
         except Exception as sidecar_exc:
-            if decision.existing is not None and write_ahead is not None:
-                if self._manifest_directory is not None:
-                    try:
-                        write_final_manifest(
-                            event_sink=sink,
-                            manifest_directory=self._manifest_directory,
-                            ingested=ingested,
-                        )
-                    except Exception as repair_exc:
-                        raise ExceptionGroup(
-                            "sidecar sync failed and manifest repair failed",
-                            [sidecar_exc, repair_exc],
-                        ) from None
-                # Leave the write-ahead entry pending. The sidecar is stale, so
-                # the next same-triple ingest must replay: the pending entry
-                # purges the document, resolve_ingest_decision then sees an empty
-                # store and re-indexes from scratch, which repairs the sidecar.
-                # Recording committed here would let the retry skip and strand a
-                # stale lexical sidecar.
-                raise
-            # Without a write-ahead marker, a successful vector upsert plus failed
-            # sidecar sync would make a same-content retry skip indexing forever.
-            # Roll back the canonical index so retry lands through the normal path.
+            # Same-content retry would skip indexing if the store still held
+            # the new vectors. Roll back so retry lands through the normal path.
             try:
                 await rollback_index_and_sidecar(
                     indexer=self._indexer,
@@ -524,22 +464,10 @@ class CoreIngestor:
                             "manifest write failed and index rollback failed",
                             [manifest_exc, rollback_exc],
                         ) from None
-                # An existing document leaves the write-ahead entry pending, so
-                # the next ingest replays (purge + reindex) and self-heals.
-                # Re-running the identical failing manifest write would only
-                # fail again, so surface the original error directly.
+                # Existing document: store already holds the new vectors and a
+                # staged manifest row. Retrying the identical write would fail
+                # again; the next ingest of the same content skips and refreshes.
                 raise
-        # Write-ahead commit: only reached when the upsert and manifest
-        # write both landed. The committed marker turns the prior pending
-        # entry into a no-op for the next ``resume_pending_write_ahead``.
-        if write_ahead is not None:
-            write_ahead.record_committed(
-                namespace=namespace,
-                collection=collection,
-                document_id=identity.document_id,
-                content_sha256=identity.content_sha256,
-                expected_chunk_count=result.chunk_count,
-            )
         emit_ingest_completed(
             sink,
             namespace=namespace,

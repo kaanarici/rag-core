@@ -6,8 +6,6 @@ from typing import TYPE_CHECKING
 
 from rag_core.search.pipeline import (
     HybridRetrieve,
-    IdentityFuse,
-    PassThroughRerank,
     PipelineQuery,
     Postprocess,
     ProviderRerankStage,
@@ -16,6 +14,7 @@ from rag_core.search.pipeline import (
     SidecarPostprocess,
     SidecarPrefetchTransform,
 )
+
 if TYPE_CHECKING:
     from rag_core.search.pipeline_runner import SearchRequest
 
@@ -39,8 +38,8 @@ def default_search_pipeline(
         postprocesses = (SidecarPostprocess(),)
     return RetrievalPipeline(
         retrieve=HybridRetrieve(),
-        fuse=IdentityFuse(),
-        rerank=ProviderRerankStage() if reranker_present else PassThroughRerank(),
+        fuse=None,
+        rerank=ProviderRerankStage() if reranker_present else None,
         query_transforms=transforms,
         postprocesses=postprocesses,
     )

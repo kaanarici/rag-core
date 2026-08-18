@@ -1,9 +1,4 @@
-"""HTTP handler bits for the right-to-forget ``DELETE`` route.
-
-Lives outside ``runtime/app.py`` so the app stays under the architecture-
-pressure size threshold and so the response shape has a single owner module
-that the caller's gateway can import for typed parsing.
-"""
+"""HTTP handler for document delete."""
 
 from __future__ import annotations
 
@@ -33,13 +28,10 @@ def delete_document_payload(result: DeleteDocumentResult) -> dict[str, object]:
         "document_id": result.document_id,
         "namespace": result.namespace,
         "collection": result.collection,
-        "index_deleted": result.index_deleted,
         "vector_store_acked": result.vector_store_acked,
-        "sidecar_deleted": result.sidecar_deleted,
         "lexical_sidecar_purged": result.lexical_sidecar_purged,
         "embedding_cache_purged": result.embedding_cache_purged,
         "chunk_context_cache_purged": result.chunk_context_cache_purged,
-        "manifest_entry_deleted": result.manifest_entry_deleted,
         "manifest_removed": result.manifest_removed,
     }
 

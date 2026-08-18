@@ -94,22 +94,8 @@ def build_core_components(
         ),
         contextualizer_chunk_cap=contextualizer_chunk_cap(resolved_contextualizer),
     )
-    # CollectionPolicy.cache_disabled is the deploy-contract switch for the
-    # restricted tier: when set, neither the injected cache nor an
-    # IngestConfig-named cache reaches the embedding provider. They are
-    # replaced with the no-op ``NoCache``. This stays inside
-    # ``build_core_components`` (not in the policy's __post_init__) so the
-    # facade still surfaces "you asked for sqlite but the tier said no" via
-    # an explicit code path rather than a silent drop.
-    cache_disabled = (
-        config.collection_policy is not None and config.collection_policy.cache_disabled
-    )
     resolved_embedding_cache = embedding_cache
-    if cache_disabled:
-        from rag_core.search.providers.embedding_cache import NoCache
-
-        resolved_embedding_cache = NoCache()
-    elif (
+    if (
         resolved_embedding_cache is None and config.ingest.embedding_cache_provider
     ):
         from rag_core.search.providers.embedding_cache import create_embedding_cache
@@ -184,11 +170,6 @@ def build_core_components(
         event_sink=event_sink,
         collection_policy=config.collection_policy,
     )
-    resolved_chunk_context_cache = chunk_context_cache
-    if cache_disabled and resolved_chunk_context_cache is not None:
-        from rag_core.search.providers.chunk_context_cache import NoChunkContextCache
-
-        resolved_chunk_context_cache = NoChunkContextCache()
     ingest = CoreIngestor(
         collection_name=collection_name,
         source_type=config.ingest.source_type,
@@ -203,7 +184,7 @@ def build_core_components(
         policy=config.policy,
         skip_unchanged=config.ingest.skip_unchanged,
         embedding_cache=resolved_embedding_cache,
-        chunk_context_cache=resolved_chunk_context_cache,
+        chunk_context_cache=chunk_context_cache,
     )
     return CoreComponents(
         embedding=embedding,
@@ -217,6 +198,6 @@ def build_core_components(
         collection_name=collection_name,
         processing_version=processing_version,
         embedding_cache=resolved_embedding_cache,
-        chunk_context_cache=resolved_chunk_context_cache,
+        chunk_context_cache=chunk_context_cache,
         chunk_contextualizer=resolved_contextualizer,
     )

@@ -20,8 +20,6 @@ from rag_core.retrieval_channels import SPARSE_RETRIEVAL_CHANNEL
 from rag_core.events.trace_payload_fields import TRACE_ABSENT_LABEL
 from rag_core.search.pipeline import (
     HybridRetrieve,
-    IdentityFuse,
-    PassThroughRerank,
     PipelineContext,
     PipelineQuery,
     PreferSidecarMerge,
@@ -143,8 +141,6 @@ def test_custom_pipeline_overrides_default() -> None:
 
         custom = RetrievalPipeline(
             retrieve=HybridRetrieve(),
-            fuse=IdentityFuse(),
-            rerank=PassThroughRerank(),
             postprocesses=(Tag(),),
         )
         pipeline_runner = _pipeline_runner(
@@ -357,8 +353,6 @@ def test_custom_pipeline_with_prefer_sidecar_merge_wins_on_duplicate_id() -> Non
         )
         pipeline = RetrievalPipeline(
             retrieve=HybridRetrieve(),
-            fuse=IdentityFuse(),
-            rerank=PassThroughRerank(),
             query_transforms=(SidecarPrefetchTransform(),),
             postprocesses=(SidecarPostprocess(strategy=PreferSidecarMerge()),),
         )
@@ -390,8 +384,6 @@ def test_custom_pipeline_keeps_sidecar_with_explicit_query_plan() -> None:
         )
         pipeline = RetrievalPipeline(
             retrieve=HybridRetrieve(),
-            fuse=IdentityFuse(),
-            rerank=PassThroughRerank(),
             query_transforms=(SidecarPrefetchTransform(),),
             postprocesses=(SidecarPostprocess(strategy=PreferSidecarMerge()),),
         )
@@ -419,8 +411,6 @@ def test_custom_pipeline_search_planned_reflects_transform_injected_plan() -> No
         store = RecordingVectorStore(search_results=[make_search_result(id="hit")])
         pipeline = RetrievalPipeline(
             retrieve=HybridRetrieve(),
-            fuse=IdentityFuse(),
-            rerank=PassThroughRerank(),
             query_transforms=(_InjectDenseOnlyPlanTransform(),),
         )
         pipeline_runner = SearchPipelineRunner(
@@ -455,8 +445,6 @@ def test_non_hybrid_custom_pipeline_search_planned_runs_after_transforms() -> No
 
         pipeline = RetrievalPipeline(
             retrieve=StaticRetrieve(),
-            fuse=IdentityFuse(),
-            rerank=PassThroughRerank(),
             query_transforms=(_InjectDenseOnlyPlanTransform(),),
         )
         pipeline_runner = SearchPipelineRunner(

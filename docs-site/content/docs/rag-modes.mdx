@@ -127,7 +127,6 @@ from rag_core.search.pipeline import (
     AnthropicQueryVariantGenerator,
     HybridRetrieve,
     MultiQueryTransform,
-    PassThroughRerank,
     RetrievalPipeline,
     RrfFuse,
 )
@@ -137,7 +136,6 @@ generator = AnthropicQueryVariantGenerator()
 pipeline = RetrievalPipeline(
     retrieve=HybridRetrieve(),
     fuse=RrfFuse(),
-    rerank=PassThroughRerank(),
     query_transforms=(MultiQueryTransform(generator, variant_count=3),),
 )
 runner = SearchPipelineRunner(
