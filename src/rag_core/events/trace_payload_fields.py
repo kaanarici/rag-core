@@ -5,34 +5,26 @@ import re
 from typing import Final, Literal, Mapping
 
 SearchStageName = Literal[
-    "query_transform",
     "retrieve",
-    "fuse",
     "rerank",
-    "postprocess",
     "context_pack",
 ]
 
-QUERY_TRANSFORM_SEARCH_STAGE: Final[SearchStageName] = "query_transform"
 RETRIEVE_SEARCH_STAGE: Final[SearchStageName] = "retrieve"
-FUSE_SEARCH_STAGE: Final[SearchStageName] = "fuse"
 RERANK_SEARCH_STAGE: Final[SearchStageName] = "rerank"
-POSTPROCESS_SEARCH_STAGE: Final[SearchStageName] = "postprocess"
 CONTEXT_PACK_SEARCH_STAGE: Final[SearchStageName] = "context_pack"
 SEARCH_ERROR_STAGE: Final[str] = "search"
 
 _SEARCH_STAGE_NAMES = frozenset(
     {
-        QUERY_TRANSFORM_SEARCH_STAGE,
         RETRIEVE_SEARCH_STAGE,
-        FUSE_SEARCH_STAGE,
         RERANK_SEARCH_STAGE,
-        POSTPROCESS_SEARCH_STAGE,
         CONTEXT_PACK_SEARCH_STAGE,
     }
 )
 
 _SAFE_TRACE_LABEL_RE = re.compile(r"[A-Za-z0-9_.:,-]{1,80}")
+_SAFE_TRACE_MODEL_LABEL_RE = re.compile(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+")
 _SAFE_TRACE_STAGE_LABEL_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.:]{0,79}")
 # A safe label is at most 80 chars (both regexes cap there). Reject longer
 # values before running the secret regexes so an oversized hostile label cannot
@@ -97,7 +89,7 @@ def safe_optional_label_field(payload: Mapping[str, object], key: str) -> str:
     value = str_field(payload, key)
     if not value:
         return ""
-    return safe_trace_label(value, stage=False)
+    return safe_trace_label(value, stage=False, model=key == "model")
 
 
 def search_id_field(payload: Mapping[str, object], key: str) -> str:
@@ -163,33 +155,11 @@ def str_tuple_field(payload: Mapping[str, object], key: str) -> tuple[str, ...]:
 
 def safe_label_tuple_field(payload: Mapping[str, object], key: str) -> tuple[str, ...]:
     return tuple(
-        safe_trace_label(item, stage=False)
-        for item in str_tuple_field(payload, key)
+        safe_trace_label(item, stage=False) for item in str_tuple_field(payload, key)
     )
 
 
-def safe_stage_label_tuple_field(
-    payload: Mapping[str, object],
-    key: str,
-) -> tuple[str, ...]:
-    return tuple(
-        safe_trace_label(item, stage=True)
-        for item in str_tuple_field(payload, key)
-    )
-
-
-def int_tuple_field(payload: Mapping[str, object], key: str) -> tuple[int, ...]:
-    value = payload.get(key, ())
-    if value is None:
-        return ()
-    if not isinstance(value, (list, tuple)):
-        raise ValueError(f"trace field {key} must be an integer array")
-    if not all(isinstance(item, int) and not isinstance(item, bool) for item in value):
-        raise ValueError(f"trace field {key} must be an integer array")
-    return tuple(value)
-
-
-def safe_trace_label(value: object, *, stage: bool) -> str:
+def safe_trace_label(value: object, *, stage: bool, model: bool = False) -> str:
     if not isinstance(value, str):
         return TRACE_UNKNOWN_LABEL
     if value == TRACE_EMPTY_LABEL:
@@ -197,16 +167,16 @@ def safe_trace_label(value: object, *, stage: bool) -> str:
     if len(value) > _MAX_TRACE_LABEL_LENGTH:
         return TRACE_UNKNOWN_LABEL
     normalized = value.lower()
-    if (
-        any(fragment in normalized for fragment in _SENSITIVE_TRACE_LABEL_FRAGMENTS)
-        or any(
-            pattern.search(value) is not None
-            for pattern in _SENSITIVE_TRACE_LABEL_PATTERNS
-        )
+    if any(
+        fragment in normalized for fragment in _SENSITIVE_TRACE_LABEL_FRAGMENTS
+    ) or any(
+        pattern.search(value) is not None for pattern in _SENSITIVE_TRACE_LABEL_PATTERNS
     ):
         return TRACE_UNKNOWN_LABEL
     pattern = _SAFE_TRACE_STAGE_LABEL_RE if stage else _SAFE_TRACE_LABEL_RE
-    if pattern.fullmatch(value):
+    if pattern.fullmatch(value) or (
+        model and not stage and _SAFE_TRACE_MODEL_LABEL_RE.fullmatch(value)
+    ):
         return value
     return TRACE_UNKNOWN_LABEL
 

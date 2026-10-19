@@ -28,14 +28,14 @@ def test_pdf_text_route_ingest_and_search() -> None:
                 file_bytes=pdf_bytes,
                 filename="billing.pdf",
                 mime_type="application/pdf",
-                namespace="pdf-journey",
+                tenant_id="pdf-journey",
                 collection="docs",
                 document_id="billing-pdf",
                 document_key="billing.pdf",
             )
             hits = await core.search(
                 query="How are invoices paid?",
-                namespace="pdf-journey",
+                tenant_id="pdf-journey",
                 collections=["docs"],
                 limit=3,
                 rerank=False,

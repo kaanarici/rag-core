@@ -91,13 +91,7 @@ def _apply_quality_verdict(
     max_mojibake_ratio: float,
     min_chars_per_page: float,
 ) -> None:
-    if score.char_count < min_chars:
-        score.verdict = QualityVerdict.POOR
-        score.details = "below minimum char count (%d < %d)" % (
-            score.char_count,
-            min_chars,
-        )
-    elif score.meaningful_ratio < min_meaningful_ratio:
+    if score.meaningful_ratio < min_meaningful_ratio:
         score.verdict = QualityVerdict.POOR
         score.details = "low meaningful ratio (%.2f < %.2f)" % (
             score.meaningful_ratio,
@@ -114,6 +108,12 @@ def _apply_quality_verdict(
         score.details = "low chars per page (%.1f < %.1f)" % (
             score.text_to_page_ratio,
             min_chars_per_page,
+        )
+    elif score.char_count < min_chars:
+        score.verdict = QualityVerdict.POOR
+        score.details = "below minimum char count (%d < %d)" % (
+            score.char_count,
+            min_chars,
         )
     else:
         score.verdict = QualityVerdict.GOOD

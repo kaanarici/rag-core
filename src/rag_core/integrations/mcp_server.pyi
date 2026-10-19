@@ -12,7 +12,7 @@ def build_mcp_server(
     *,
     collection: str | None = ...,
     collections: Sequence[str] | None = ...,
-    namespace: str | None = ...,
+    tenant_id: str | None = ...,
     rerank: bool = ...,
     limit_cap: int = ...,
     context_order: ContextOrder = ...,

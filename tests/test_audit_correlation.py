@@ -10,10 +10,8 @@ What this proves:
 - ``SearchCompleted`` surfaces ``collections`` and a capped
   ``returned_document_ids`` for the audit trail.
 - The pipeline runner threads caller-supplied ``AuditContext`` onto every
-  emitted event via ``_SearchCorrelationSink``.
+  emitted event via ``CorrelatedSink``.
 - The ingest correlation sink mirrors the search pattern.
-- The HTTP runtime pulls ``X-Request-Id``/``X-Actor``/``X-Ingest-Id`` off the
-  request headers and threads them into search and ingest events.
 
 Label: contract.
 """
@@ -25,6 +23,7 @@ import dataclasses
 from typing import get_args
 
 from rag_core.events.emit import emit_event
+from rag_core.events.sink import CorrelatedSink
 from rag_core.events.event_types import (
     AUDIT_EVENT_TYPES,
     FETCH_COMPLETED_EVENT,
@@ -48,10 +47,9 @@ from rag_core.events.types import (
     SearchStarted,
 )
 from rag_core._engine.core_ingest_events import (
-    _IngestCorrelationSink,
     maybe_wrap_with_ingest_correlation,
 )
-from rag_core.search.pipeline_runner import SearchPipelineRunner, SearchRequest
+from rag_core.search.runner import SearchRunner, SearchRequest
 from tests.support import (
     FakeEmbeddingProvider,
     FakeSparseEmbedder,
@@ -118,7 +116,7 @@ def test_emit_event_stamps_emitted_at_ns_and_wall_clock_ns() -> None:
     caller cannot accidentally ship an event with a stale timestamp.
     """
     buffer = EventBuffer()
-    emit_event(buffer, IngestStarted(namespace="ns", collection="c", document_id="d"))
+    emit_event(buffer, IngestStarted(tenant_id="ns", collection="c", document_id="d"))
     [event] = buffer.events
     assert isinstance(event, IngestStarted)
     assert event.emitted_at_ns > 0
@@ -131,7 +129,7 @@ def test_emit_event_preserves_caller_supplied_timestamps() -> None:
     emit_event(
         buffer,
         IngestStarted(
-            namespace="ns",
+            tenant_id="ns",
             collection="c",
             document_id="d",
             emitted_at_ns=12345,
@@ -153,7 +151,7 @@ def test_search_completed_carries_collections_and_returned_document_ids() -> Non
                 for i in range(3)
             ]
         )
-        runner = SearchPipelineRunner(
+        runner = SearchRunner(
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(),
             vector_store=store,
@@ -162,7 +160,7 @@ def test_search_completed_carries_collections_and_returned_document_ids() -> Non
         await runner.search(
             SearchRequest(
                 query="hello",
-                namespace="ns",
+                tenant_id="ns",
                 collections=["public", "licensed"],
                 limit=5,
             )
@@ -178,6 +176,7 @@ def test_search_completed_carries_collections_and_returned_document_ids() -> Non
 
 def test_search_completed_returned_document_ids_is_capped() -> None:
     """Audit lines must not be unbounded; ``returned_document_ids`` is capped."""
+
     async def scenario() -> SearchCompleted:
         buffer = EventBuffer()
         store = RecordingVectorStore(
@@ -186,7 +185,7 @@ def test_search_completed_returned_document_ids_is_capped() -> None:
                 for i in range(RETURNED_DOCUMENT_IDS_CAP + 5)
             ]
         )
-        runner = SearchPipelineRunner(
+        runner = SearchRunner(
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(),
             vector_store=store,
@@ -195,7 +194,7 @@ def test_search_completed_returned_document_ids_is_capped() -> None:
         await runner.search(
             SearchRequest(
                 query="hello",
-                namespace="ns",
+                tenant_id="ns",
                 collections=["public"],
                 limit=RETURNED_DOCUMENT_IDS_CAP + 5,
             )
@@ -210,9 +209,10 @@ def test_search_completed_returned_document_ids_is_capped() -> None:
 def test_search_pipeline_threads_audit_context_onto_every_event() -> None:
     """``AuditContext`` on the request stamps actor/request_id/ingest_id on
     every event the runner emits."""
+
     async def scenario() -> list[Event]:
         buffer = EventBuffer()
-        runner = SearchPipelineRunner(
+        runner = SearchRunner(
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(),
             vector_store=RecordingVectorStore(
@@ -223,7 +223,7 @@ def test_search_pipeline_threads_audit_context_onto_every_event() -> None:
         await runner.search(
             SearchRequest(
                 query="hello",
-                namespace="ns",
+                tenant_id="ns",
                 collections=["public"],
                 limit=5,
                 audit_context=AuditContext(
@@ -247,14 +247,14 @@ def test_search_pipeline_threads_audit_context_onto_every_event() -> None:
 
 
 def test_ingest_correlation_sink_stamps_ingest_id_and_audit_context() -> None:
-    """Mirror of ``_SearchCorrelationSink`` for ingest events."""
+    """Mirror of ``CorrelatedSink`` for ingest events."""
     buffer = EventBuffer()
-    sink = _IngestCorrelationSink(
+    sink = CorrelatedSink(
         buffer,
         ingest_id="ing-9001",
         audit_context=AuditContext(actor="svc-loader", request_id="req-abc"),
     )
-    sink.emit(IngestStarted(namespace="ns", collection="public", document_id="d-1"))
+    sink.emit(IngestStarted(tenant_id="ns", collection="public", document_id="d-1"))
     [event] = buffer.events
     assert isinstance(event, IngestStarted)
     assert event.ingest_id == "ing-9001"
@@ -266,14 +266,14 @@ def test_ingest_correlation_sink_does_not_overwrite_existing_values() -> None:
     """A nested wrap must not clobber correlation fields the inner sink already
     set. Supports composing search-within-ingest pipelines later."""
     buffer = EventBuffer()
-    sink = _IngestCorrelationSink(
+    sink = CorrelatedSink(
         buffer,
         ingest_id="ing-OUTER",
         audit_context=AuditContext(actor="outer-actor"),
     )
     sink.emit(
         IngestStarted(
-            namespace="ns",
+            tenant_id="ns",
             collection="public",
             document_id="d-1",
             ingest_id="ing-INNER",
@@ -319,7 +319,7 @@ def test_core_ingest_bytes_threads_audit_context_onto_index_upserted() -> None:
                 file_bytes=b"hello world",
                 filename="a.txt",
                 mime_type="text/plain",
-                namespace="ns",
+                tenant_id="ns",
                 collection="public",
                 ingest_id="batch-42-doc-3",
                 audit_context=AuditContext(
@@ -339,116 +339,3 @@ def test_core_ingest_bytes_threads_audit_context_onto_index_upserted() -> None:
         assert event.ingest_id == "batch-42-doc-3", event
         assert event.actor == "gateway", event
         assert event.request_id == "req-abc", event
-
-
-def test_runtime_search_route_threads_x_request_id_header() -> None:
-    """X-Request-Id flows through to ``SearchCompleted.request_id``."""
-    from starlette.testclient import TestClient
-
-    from rag_core.core import Engine
-    from rag_core.core_models import Config
-    from rag_core.events import EventBuffer
-    from rag_core.runtime.app import create_app
-    from tests.support import make_test_config
-
-    captured_buffer: list[EventBuffer] = []
-
-    def _core_factory(config: Config) -> Engine:
-        buffer = EventBuffer()
-        captured_buffer.append(buffer)
-        return Engine(
-            config,
-            embedding_provider=FakeEmbeddingProvider(),
-            sparse_embedder=FakeSparseEmbedder(),
-            vector_store=RecordingVectorStore(
-                search_results=[make_search_result(id="hit-1", document_id="doc-1")]
-            ),
-            event_sink=buffer,
-        )
-
-    config = make_test_config(qdrant_collection="rag_core_audit_tests", embedding_dimensions=4)
-    app = create_app(
-        config=config,
-        core_factory=_core_factory,
-    )
-    with TestClient(app) as client:
-        response = client.post(
-            "/v1/search",
-            headers={
-                "X-Request-Id": "req-from-gateway",
-                "X-Actor": "analyst@example.com",
-            },
-            json={
-                "query": "hello",
-                "namespace": "ns",
-                "collections": ["public"],
-            },
-        )
-        assert response.status_code == 200, response.text
-
-    [buffer] = captured_buffer
-    [completed] = [e for e in buffer.events if isinstance(e, SearchCompleted)]
-    assert completed.request_id == "req-from-gateway"
-    assert completed.actor == "analyst@example.com"
-
-
-def test_runtime_ingest_route_threads_audit_headers_into_ingest_events() -> None:
-    from pathlib import Path
-    import tempfile
-
-    from starlette.testclient import TestClient
-
-    from rag_core.core import Engine
-    from rag_core.core_models import Config
-    from rag_core.events import EventBuffer
-    from rag_core.runtime.app import create_app
-    from tests.support import make_test_config
-
-    captured_buffer: list[EventBuffer] = []
-
-    def _core_factory(config: Config) -> Engine:
-        buffer = EventBuffer()
-        captured_buffer.append(buffer)
-        return Engine(
-            config,
-            embedding_provider=FakeEmbeddingProvider(),
-            sparse_embedder=FakeSparseEmbedder(),
-            vector_store=RecordingVectorStore(),
-            event_sink=buffer,
-        )
-
-    config = make_test_config(
-        qdrant_collection="rag_core_audit_runtime_ingest_tests",
-        embedding_dimensions=4,
-    )
-    with tempfile.TemporaryDirectory() as job_dir:
-        root = Path(job_dir).resolve()
-        doc = root / "note.md"
-        doc.write_text("hello from runtime ingest\n", encoding="utf-8")
-        app = create_app(
-            config=config,
-            core_factory=_core_factory,
-            ingest_roots=(root,),
-        )
-        with TestClient(app) as client:
-            response = client.post(
-                "/v1/ingest",
-                headers={
-                    "X-Request-Id": "req-ingest-gateway",
-                    "X-Actor": "loader@example.com",
-                    "X-Ingest-Id": "batch-7-doc-1",
-                },
-                json={
-                    "path": str(doc),
-                    "namespace": "ns",
-                    "collection": "public",
-                },
-            )
-            assert response.status_code == 200, response.text
-            assert response.json()["document_id"]
-
-    [buffer] = captured_buffer
-    [completed] = [e for e in buffer.events if isinstance(e, IngestCompleted)]
-    assert completed.request_id == "req-ingest-gateway"
-    assert completed.actor == "loader@example.com"
-    assert completed.ingest_id == "batch-7-doc-1"

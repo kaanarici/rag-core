@@ -1,4 +1,5 @@
 from __future__ import annotations
+from dataclasses import replace
 
 import asyncio
 import json
@@ -16,24 +17,17 @@ from rag_core.config import (
     EmbeddingConfig,
     IngestConfig,
     QdrantConfig,
-    RerankerConfig,
     VectorStoreConfig,
 )
 from rag_core.core_models import DEFAULT_PROCESSING_VERSION, Config
 from rag_core.retrieval_defaults import DEFAULT_SEARCH_LIMIT
-from rag_core.search.sparse_channels import (
-    SECONDARY_SPARSE_CHANNEL,
-    single_sparse_channel,
-)
 from rag_core.search.provider_protocols import (
-    QueryPlanCapabilities,
     StoreCapabilities,
 )
 from rag_core.search.request_models import (
     DeleteFilter,
     RerankResult,
     SearchQuery,
-    SearchSidecarQuery,
     StoredDocumentRecord,
 )
 from rag_core.search.document_records import INGEST_FINGERPRINT_PAYLOAD_KEY
@@ -62,7 +56,6 @@ def make_test_config(
     reranker_api_key: str | None = None,
     processing_version: str = DEFAULT_PROCESSING_VERSION,
     source_type: str = DEFAULT_INGEST_SOURCE_TYPE,
-    enable_lexical_search: bool = False,
     manifest_directory: object | None = None,
 ) -> Config:
     """Build a Config from flat kwargs for tests.
@@ -89,22 +82,18 @@ def make_test_config(
             api_key=embedding_api_key,
             base_url=embedding_base_url,
         ),
-        reranker=RerankerConfig(
-            provider=reranker_provider,
-            model=reranker_model,
-            api_key=reranker_api_key,
-        ),
         ingest=IngestConfig(
             processing_version=processing_version,
             source_type=source_type,
-            enable_lexical_search=enable_lexical_search,
             manifest_directory=manifest_directory,  # type: ignore[arg-type]
         ),
     )
 
 
 class FakeEmbeddingProvider:
-    def __init__(self, vocabulary: tuple[str, ...] = ("original", "context", "fox", "query")) -> None:
+    def __init__(
+        self, vocabulary: tuple[str, ...] = ("original", "context", "fox", "query")
+    ) -> None:
         self._vocabulary = vocabulary
         self.embed_texts_calls: list[list[str]] = []
         self.embed_query_calls: list[str] = []
@@ -131,6 +120,7 @@ class FakeEmbeddingProvider:
 
 
 class FakeSparseEmbedder:
+    model_name = "fake-sparse-v1"
     def __init__(
         self,
         *,
@@ -151,29 +141,9 @@ class FakeSparseEmbedder:
         self.embed_texts_calls.append(list(texts))
         return [self._embed(text) for text in texts]
 
-    def embed_texts_multi(self, texts: list[str]) -> list[dict[str, SparseVector]]:
-        self.embed_texts_multi_calls.append(list(texts))
-        if self.raise_on_multi:
-            raise RuntimeError("multi failed")
-        merged = [single_sparse_channel(self._embed(text)) for text in texts]
-        if not self.include_extra_channel:
-            return merged
-        for item, text in zip(merged, texts, strict=True):
-            item[SECONDARY_SPARSE_CHANNEL] = self._embed(f"context {text}")
-        return merged
-
     def embed_query(self, query: str) -> SparseVector:
         self.embed_query_calls.append(query)
         return self._embed(query)
-
-    def embed_query_multi(self, query: str) -> dict[str, SparseVector]:
-        self.embed_query_multi_calls.append(query)
-        if self.empty_query_multi:
-            return {}
-        merged = single_sparse_channel(self._embed(query))
-        if self.include_extra_channel:
-            merged[SECONDARY_SPARSE_CHANNEL] = self._embed(f"context {query}")
-        return merged
 
     def _embed(self, text: str) -> SparseVector:
         counts: dict[int, float] = {}
@@ -186,6 +156,7 @@ class FakeSparseEmbedder:
 
 
 class FakeSparseEmbedderNoMulti:
+    model_name = "fake-sparse-v1"
     def __init__(self) -> None:
         self._delegate = FakeSparseEmbedder(include_extra_channel=False)
 
@@ -195,25 +166,12 @@ class FakeSparseEmbedderNoMulti:
     def embed_query(self, query: str) -> SparseVector:
         return self._delegate.embed_query(query)
 
-    def embed_query_multi(self, query: str) -> dict[str, SparseVector]:
-        return self._delegate.embed_query_multi(query)
-
 
 class RecordingVectorStore:
     capabilities: StoreCapabilities = StoreCapabilities(
         per_point_delete=True,
-        document_record_lookup=True,
-        chunk_index_lookup=True,
-        query_plan=QueryPlanCapabilities(
-            dense=True,
-            sparse=True,
-            hybrid_rrf=True,
-            hybrid_dbsf=True,
-            hybrid_weighted_rrf=True,
-            mmr=True,
-            boost=True,
-            nested_prefetch=True,
-        ),
+        hybrid=True,
+        lexical=True,
     )
 
     def __init__(
@@ -221,7 +179,8 @@ class RecordingVectorStore:
         *,
         search_results: list[SearchResult] | None = None,
         health: dict[str, object] | None = None,
-        document_records: dict[tuple[str, str, str], StoredDocumentRecord] | None = None,
+        document_records: dict[tuple[str, str, str], StoredDocumentRecord]
+        | None = None,
     ) -> None:
         self.search_results = list(search_results or [])
         self.health = health or {"ok": True}
@@ -231,7 +190,9 @@ class RecordingVectorStore:
         self.search_calls: list[SearchQuery] = []
         self.delete_calls: list[DeleteFilter] = []
         self.delete_point_ids_calls: list[list[str]] = []
-        self.get_document_record_calls: list[tuple[str, str, str | None, str | None]] = []
+        self.get_document_record_calls: list[
+            tuple[str, str, str | None, str | None]
+        ] = []
         self.get_chunks_by_index_calls: list[tuple[str, str, str, tuple[int, ...]]] = []
         self.ensure_collection_calls = 0
         self.close_calls = 0
@@ -240,12 +201,12 @@ class RecordingVectorStore:
         self.operations.append("upsert")
         self.upsert_calls.append(list(points))
         for key, chunk_count in _count_document_chunks(points).items():
-            namespace, collection, document_id = key
+            tenant_id, collection, document_id = key
             sample_point = next(
                 point
                 for point in points
                 if (
-                    str(point.payload.get("namespace") or ""),
+                    str(point.payload.get("tenant_id") or ""),
                     str(point.payload.get("collection") or ""),
                     str(point.payload.get("document_id") or ""),
                 )
@@ -253,7 +214,7 @@ class RecordingVectorStore:
             )
             self.document_records[key] = StoredDocumentRecord(
                 document_id=document_id,
-                namespace=namespace,
+                tenant_id=tenant_id,
                 collection=collection,
                 document_key=(
                     str(sample_point.payload["document_key"])
@@ -279,6 +240,16 @@ class RecordingVectorStore:
                 chunk_count=chunk_count,
             )
 
+    async def replace_document(
+        self, record: StoredDocumentRecord, points: Sequence[VectorPoint]
+    ) -> None:
+        await self.upsert(points)
+        self.document_records[
+            (record.tenant_id, record.collection, record.document_id)
+        ] = replace(
+            record, revision="1" * 32, expected_chunk_count=len(points), committed=True
+        )
+
     async def search(self, query: SearchQuery) -> list[SearchResult]:
         self.operations.append("search")
         self.search_calls.append(query)
@@ -291,15 +262,23 @@ class RecordingVectorStore:
             key: record
             for key, record in self.document_records.items()
             if not (
-                (filter.namespace is None or record.namespace == filter.namespace)
-                and (filter.collection is None or record.collection == filter.collection)
-                and (filter.document_id is None or record.document_id == filter.document_id)
+                (filter.tenant_id is None or record.tenant_id == filter.tenant_id)
+                and (
+                    filter.collection is None or record.collection == filter.collection
+                )
+                and (
+                    filter.document_id is None
+                    or record.document_id == filter.document_id
+                )
             )
         }
 
     async def delete_point_ids(self, point_ids: Sequence[str]) -> None:
         self.operations.append("delete_point_ids")
         self.delete_point_ids_calls.append(list(point_ids))
+
+    def bind_embedding_space(self, model_name: str) -> None:
+        pass
 
     async def ensure_collection(self) -> None:
         self.operations.append("ensure_collection")
@@ -312,49 +291,25 @@ class RecordingVectorStore:
     async def get_document_record(
         self,
         *,
-        namespace: str,
+        tenant_id: str,
         collection: str,
         document_id: str | None = None,
         document_key: str | None = None,
     ) -> StoredDocumentRecord | None:
         self.operations.append("get_document_record")
-        self.get_document_record_calls.append((namespace, collection, document_id, document_key))
+        self.get_document_record_calls.append(
+            (tenant_id, collection, document_id, document_key)
+        )
         if document_id is not None:
-            return self.document_records.get((namespace, collection, document_id))
+            return self.document_records.get((tenant_id, collection, document_id))
         for record in self.document_records.values():
             if (
-                record.namespace == namespace
+                record.tenant_id == tenant_id
                 and record.collection == collection
                 and record.document_key == document_key
             ):
                 return record
         return None
-
-    async def get_chunks_by_index(
-        self,
-        *,
-        namespace: str,
-        collection: str,
-        document_id: str,
-        chunk_indices: Sequence[int],
-    ) -> list[SearchResult]:
-        requested = tuple(chunk_indices)
-        self.operations.append("get_chunks_by_index")
-        self.get_chunks_by_index_calls.append(
-            (namespace, collection, document_id, requested)
-        )
-        wanted = set(requested)
-        return [
-            result
-            for result in sorted(
-                self.search_results,
-                key=lambda item: item.chunk_index or 0,
-            )
-            if result.namespace == namespace
-            and result.collection == collection
-            and result.document_id == document_id
-            and result.chunk_index in wanted
-        ]
 
     async def close(self) -> None:
         self.operations.append("close")
@@ -388,38 +343,6 @@ class FakeReranker:
         return list(self._results)
 
 
-class FakeSearchSidecar:
-    def __init__(
-        self,
-        *,
-        results: list[SearchResult] | None = None,
-        error: Exception | None = None,
-    ) -> None:
-        self._results = list(results or [])
-        self._error = error
-        self.calls: list[SearchSidecarQuery] = []
-        self.upserted: list[object] = []
-        self.deleted: list[tuple[str, str]] = []
-
-    def upsert_records(self, records: Sequence[object]) -> None:
-        self.upserted.extend(records)
-
-    def delete_document(
-        self,
-        *,
-        namespace: str,
-        document_id: str,
-        collection: str | None = None,
-    ) -> None:
-        self.deleted.append((namespace, document_id))
-
-    async def search(self, query: SearchSidecarQuery) -> list[SearchResult]:
-        self.calls.append(query)
-        if self._error is not None:
-            raise self._error
-        return list(self._results)
-
-
 def make_search_result(
     *,
     id: str = "result-1",
@@ -427,7 +350,7 @@ def make_search_result(
     score: float = 0.9,
     content_type: str = "document",
     source_type: str = DEFAULT_INGEST_SOURCE_TYPE,
-    namespace: str | None = "space-1",
+    tenant_id: str | None = "space-1",
     document_id: str | None = "doc-1",
     collection: str | None = "corpus-1",
     document_key: str | None = None,
@@ -438,11 +361,8 @@ def make_search_result(
     section_path: str | None = None,
     document_path: str | None = None,
     chunk_index: int | None = 0,
-    chunk_word_count: int | None = None,
-    chunk_token_estimate: int | None = None,
     start_char: int | None = None,
     end_char: int | None = None,
-    embedding_model: str | None = None,
     chunker_strategy: str | None = None,
     result_type: str | None = None,
     figure_id: str | None = None,
@@ -455,7 +375,7 @@ def make_search_result(
         score=score,
         content_type=content_type,
         source_type=source_type,
-        namespace=namespace,
+        tenant_id=tenant_id,
         document_id=document_id,
         collection=collection,
         document_key=document_key,
@@ -466,11 +386,8 @@ def make_search_result(
         section_path=section_path,
         document_path=document_path,
         chunk_index=chunk_index,
-        chunk_word_count=chunk_word_count,
-        chunk_token_estimate=chunk_token_estimate,
         start_char=start_char,
         end_char=end_char,
-        embedding_model=embedding_model,
         chunker_strategy=chunker_strategy,
         result_type=result_type,
         figure_id=figure_id,
@@ -479,74 +396,78 @@ def make_search_result(
     )
 
 
-BASELINE_VOCABULARY: tuple[str, ...] = tuple(sorted({
-    "billing",
-    "shipping",
-    "returns",
-    "authentication",
-    "auth",
-    "single",
-    "sign",
-    "sso",
-    "inventory",
-    "webhook",
-    "hmac",
-    "rate",
-    "limit",
-    "encryption",
-    "audit",
-    "scim",
-    "search",
-    "filters",
-    "pagination",
-    "cursor",
-    "quota",
-    "quotas",
-    "redaction",
-    "export",
-    "reranker",
-    "chunking",
-    "markdown",
-    "manifest",
-    "tokens",
-    "expiry",
-    "retry",
-    "signature",
-    "header",
-    "aes",
-    "retention",
-    "provider",
-    "tracking",
-    "real",
-    "time",
-    "list",
-    "corpora",
-    "ndjson",
-    "archive",
-    "candidate",
-    "refinement",
-    "next",
-    "page",
-    "workspace",
-    "sensitive",
-    "field",
-    "split",
-    "heading",
-    "international",
-    "customs",
-    "domestic",
-    "refund",
-    "processing",
-    "window",
-    "alerts",
-    "stock",
-    "delivery",
-    "exponential",
-    "backoff",
-    "key",
-    "minute",
-    "exceeding",
-}))
+BASELINE_VOCABULARY: tuple[str, ...] = tuple(
+    sorted(
+        {
+            "billing",
+            "shipping",
+            "returns",
+            "authentication",
+            "auth",
+            "single",
+            "sign",
+            "sso",
+            "inventory",
+            "webhook",
+            "hmac",
+            "rate",
+            "limit",
+            "encryption",
+            "audit",
+            "scim",
+            "search",
+            "filters",
+            "pagination",
+            "cursor",
+            "quota",
+            "quotas",
+            "redaction",
+            "export",
+            "reranker",
+            "chunking",
+            "markdown",
+            "manifest",
+            "tokens",
+            "expiry",
+            "retry",
+            "signature",
+            "header",
+            "aes",
+            "retention",
+            "provider",
+            "tracking",
+            "real",
+            "time",
+            "list",
+            "corpora",
+            "ndjson",
+            "archive",
+            "candidate",
+            "refinement",
+            "next",
+            "page",
+            "workspace",
+            "sensitive",
+            "field",
+            "split",
+            "heading",
+            "international",
+            "customs",
+            "domestic",
+            "refund",
+            "processing",
+            "window",
+            "alerts",
+            "stock",
+            "delivery",
+            "exponential",
+            "backoff",
+            "key",
+            "minute",
+            "exceeding",
+        }
+    )
+)
 """Keyword vocabulary used by the baseline eval corpus.
 
 Drives the keyword-counting embedder/sparse embedder so retrieval over
@@ -633,15 +554,13 @@ class KeywordSparseEmbedder:
 
     def __init__(self, vocabulary: Sequence[str]) -> None:
         self._vocabulary: tuple[str, ...] = tuple(vocabulary)
+        self.model_name = "keyword-sparse:" + json.dumps(self._vocabulary, separators=(",", ":"))
 
     def embed_texts(self, texts: list[str]) -> list[SparseVector]:
         return [self._embed(text) for text in texts]
 
     def embed_query(self, query: str) -> SparseVector:
         return self._embed(query)
-
-    def embed_query_multi(self, query: str) -> dict[str, SparseVector]:
-        return {"bm25": self.embed_query(query)}
 
     def _embed(self, text: str) -> SparseVector:
         lowered = text.lower()
@@ -655,11 +574,13 @@ class KeywordSparseEmbedder:
         return SparseVector(indices=indices, values=values)
 
 
-def _count_document_chunks(points: Sequence[VectorPoint]) -> dict[tuple[str, str, str], int]:
+def _count_document_chunks(
+    points: Sequence[VectorPoint],
+) -> dict[tuple[str, str, str], int]:
     counts: dict[tuple[str, str, str], int] = {}
     for point in points:
         key = (
-            str(point.payload.get("namespace") or ""),
+            str(point.payload.get("tenant_id") or ""),
             str(point.payload.get("collection") or ""),
             str(point.payload.get("document_id") or ""),
         )

@@ -11,7 +11,7 @@ import asyncio
 
 from rag_core.demo import (
     _DEMO_COLLECTION,
-    _DEMO_NAMESPACE,
+    _DEMO_TENANT_ID,
     _DEMO_QUERY,
     build_demo_core,
     ingest_demo_billing_document,
@@ -24,7 +24,7 @@ async def run() -> None:
         ingested = await ingest_demo_billing_document(core)
         context = await core.context(
             query=_DEMO_QUERY,
-            namespace=_DEMO_NAMESPACE,
+            tenant_id=_DEMO_TENANT_ID,
             collections=[_DEMO_COLLECTION],
             limit=3,
             rerank=False,

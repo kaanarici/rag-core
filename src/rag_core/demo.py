@@ -7,11 +7,9 @@ from collections import Counter
 from typing import TYPE_CHECKING, TypedDict
 
 from rag_core.config import (
-    DEFAULT_RERANKER_PROVIDER,
     EmbeddingConfig,
     QdrantConfig,
     VectorStoreConfig,
-    RerankerConfig,
 )
 from rag_core.core import Engine, Config
 from rag_core.core_models import IngestedDocument
@@ -31,7 +29,7 @@ _DEMO_COLLECTION_PREFIX = "rag_core_examples"
 _DEMO_BYTES = b"Billing is due monthly and invoices can be paid by card or ACH."
 _DEMO_FILENAME = "billing.txt"
 _DEMO_MIME_TYPE = "text/plain"
-_DEMO_NAMESPACE = "acme"
+_DEMO_TENANT_ID = "acme"
 _DEMO_COLLECTION = "help-center"
 _DEMO_QUERY = "How can I pay invoices?"
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
@@ -77,6 +75,7 @@ class DemoEmbeddingProvider:
 
 
 class DemoSparseEmbedder:
+    model_name = "demo-sparse-v1"
     def embed_texts(self, texts: list[str]) -> list[SparseVector]:
         return [_sparse_vector(text) for text in texts]
 
@@ -99,17 +98,18 @@ def build_demo_core(
 ) -> Engine:
     return Engine(
         Config(
-            vector_store=VectorStoreConfig(qdrant=QdrantConfig(
-                location=qdrant_location,
-                store_collection=f"{_DEMO_COLLECTION_PREFIX}_{store_collection}",
-                dimension_aware_collection=False,
-            )),
+            vector_store=VectorStoreConfig(
+                qdrant=QdrantConfig(
+                    location=qdrant_location,
+                    store_collection=f"{_DEMO_COLLECTION_PREFIX}_{store_collection}",
+                    dimension_aware_collection=False,
+                )
+            ),
             embedding=EmbeddingConfig(
                 provider="demo",
                 model="demo-dense-v1",
                 dimensions=_DEMO_EMBEDDING_DIMENSIONS,
             ),
-            reranker=RerankerConfig(provider=DEFAULT_RERANKER_PROVIDER),
         ),
         embedding_provider=DemoEmbeddingProvider(),
         sparse_embedder=DemoSparseEmbedder() if sparse else None,
@@ -122,7 +122,7 @@ async def ingest_demo_billing_document(core: Engine) -> IngestedDocument:
         file_bytes=_DEMO_BYTES,
         filename=_DEMO_FILENAME,
         mime_type=_DEMO_MIME_TYPE,
-        namespace=_DEMO_NAMESPACE,
+        tenant_id=_DEMO_TENANT_ID,
         collection=_DEMO_COLLECTION,
     )
 
@@ -134,7 +134,7 @@ async def run_demo_app() -> DemoPayload:
         ingested = await ingest_demo_billing_document(core)
         hits = await core.search(
             query=_DEMO_QUERY,
-            namespace=_DEMO_NAMESPACE,
+            tenant_id=_DEMO_TENANT_ID,
             collections=[_DEMO_COLLECTION],
             limit=3,
             rerank=False,

@@ -16,7 +16,9 @@ async def run_demo_command(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
-    print(f"Indexed document: {payload['document_id']} ({payload['chunk_count']} chunks)")
+    print(
+        f"Indexed document: {payload['document_id']} ({payload['chunk_count']} chunks)"
+    )
     print("Top hits:")
     for raw_hit in payload["hits"]:
         score = raw_hit["score"]

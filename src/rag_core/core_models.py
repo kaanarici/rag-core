@@ -1,30 +1,25 @@
 from __future__ import annotations
 
-import argparse
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, cast
+from typing import Any, Mapping
 
 from rag_core.config import (
     ChunkingConfig,
-    ContextualizerConfig,
-    DEFAULT_EMBEDDING_MODEL,
     DEFAULT_EMBEDDING_PROVIDER,
     DEFAULT_QDRANT_COLLECTION,
     DEFAULT_QDRANT_DIMENSION_AWARE_COLLECTION,
-    DEMO_EMBEDDING_MODEL,
-    DEMO_EMBEDDING_PROVIDER,
     EmbeddingConfig,
     IngestConfig,
     LOCAL_EMBEDDING_MODEL,
     LOCAL_EMBEDDING_PROVIDER,
     MARKDOWN_CHUNKING_STRATEGY,
     QdrantConfig,
-    RerankerConfig,
     VectorStoreConfig,
 )
+from rag_core.config.embedding_config import default_embedding_model
 from rag_core.config.ingest_config import DEFAULT_PROCESSING_VERSION
 from rag_core.search.policy import CollectionPolicy, DEFAULT_POLICY, VectorStorePolicy
 
@@ -32,7 +27,6 @@ _TOKEN_UNIT_RE = re.compile(r"[A-Za-z0-9_]+|[^\s]", re.UNICODE)
 
 __all__ = [
     "Config",
-    "CollectionManifest",
     "CollectionManifestEntry",
     "DEFAULT_PROCESSING_VERSION",
     "DeleteDocumentResult",
@@ -46,9 +40,20 @@ __all__ = [
 ]
 
 
-class _ConfigMeta(type):
+@dataclass(frozen=True, kw_only=True)
+class Config:
+    vector_store: VectorStoreConfig = field(default_factory=VectorStoreConfig)
+    embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
+    chunking: ChunkingConfig = field(default_factory=ChunkingConfig)
+    ingest: IngestConfig = field(default_factory=IngestConfig)
+    hybrid: bool = False
+    policy: VectorStorePolicy = DEFAULT_POLICY
+    # Optional per-process tenant_id/collection fence. ``None`` = unrestricted.
+    collection_policy: CollectionPolicy | None = None
+
+    @classmethod
     def qdrant(
-        cls,
+        cls: type[Config],
         *,
         url: str,
         embedding_provider: str = DEFAULT_EMBEDDING_PROVIDER,
@@ -59,35 +64,31 @@ class _ConfigMeta(type):
         qdrant_api_key: str | None = None,
         store_collection: str = DEFAULT_QDRANT_COLLECTION,
         dimension_aware_collection: bool = DEFAULT_QDRANT_DIMENSION_AWARE_COLLECTION,
-    ) -> "Config":
-        return _config_qdrant(
-            cast("type[Config]", cls),
-            url=url,
-            embedding_provider=embedding_provider,
-            model=model,
-            embedding_dimensions=embedding_dimensions,
-            embedding_api_key=embedding_api_key,
-            embedding_base_url=embedding_base_url,
-            qdrant_api_key=qdrant_api_key,
-            store_collection=store_collection,
-            dimension_aware_collection=dimension_aware_collection,
+        hybrid: bool = False,
+    ) -> Config:
+        return cls(
+            hybrid=hybrid,
+            vector_store=VectorStoreConfig(
+                qdrant=QdrantConfig(
+                    url=url,
+                    api_key=qdrant_api_key,
+                    store_collection=store_collection,
+                    dimension_aware_collection=dimension_aware_collection,
+                ),
+            ),
+            embedding=EmbeddingConfig(
+                provider=embedding_provider,
+                model=model or default_embedding_model(embedding_provider),
+                dimensions=embedding_dimensions,
+                api_key=embedding_api_key,
+                base_url=embedding_base_url,
+            ),
         )
 
-
-@dataclass(frozen=True, kw_only=True)
-class Config(metaclass=_ConfigMeta):
-    vector_store: VectorStoreConfig = field(default_factory=VectorStoreConfig)
-    embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
-    reranker: RerankerConfig = field(default_factory=RerankerConfig)
-    contextualizer: ContextualizerConfig = field(default_factory=ContextualizerConfig)
-    chunking: ChunkingConfig = field(default_factory=ChunkingConfig)
-    ingest: IngestConfig = field(default_factory=IngestConfig)
-    policy: VectorStorePolicy = DEFAULT_POLICY
-    # Optional per-process namespace/collection fence. ``None`` = unrestricted.
-    collection_policy: CollectionPolicy | None = None
-
     @classmethod
-    def local(cls, persist_dir: str | Path | None = None) -> "Config":
+    def local(
+        cls, persist_dir: str | Path | None = None, *, hybrid: bool = False
+    ) -> "Config":
         return cls(
             vector_store=VectorStoreConfig(
                 qdrant=QdrantConfig(
@@ -98,70 +99,12 @@ class Config(metaclass=_ConfigMeta):
                 provider=LOCAL_EMBEDDING_PROVIDER,
                 model=LOCAL_EMBEDDING_MODEL,
             ),
+            hybrid=hybrid,
         )
 
-    @classmethod
-    def from_cli(
-        cls,
-        args: argparse.Namespace,
-        *,
-        manifest_dir: Path | None = None,
-    ) -> "Config":
-        from rag_core._engine.core_config_cli import build_rag_core_config_from_cli_args
-
-        return build_rag_core_config_from_cli_args(
-            cls,
-            args,
-            manifest_dir=manifest_dir,
-        )
-
-
-def _config_qdrant(
-    cls: type[Config],
-    *,
-    url: str,
-    embedding_provider: str = DEFAULT_EMBEDDING_PROVIDER,
-    model: str | None = None,
-    embedding_dimensions: int | None = None,
-    embedding_api_key: str | None = None,
-    embedding_base_url: str | None = None,
-    qdrant_api_key: str | None = None,
-    store_collection: str = DEFAULT_QDRANT_COLLECTION,
-    dimension_aware_collection: bool = DEFAULT_QDRANT_DIMENSION_AWARE_COLLECTION,
-) -> Config:
-    return cls(
-        vector_store=VectorStoreConfig(
-            qdrant=QdrantConfig(
-                url=url,
-                api_key=qdrant_api_key,
-                store_collection=store_collection,
-                dimension_aware_collection=dimension_aware_collection,
-            ),
-        ),
-        embedding=EmbeddingConfig(
-            provider=embedding_provider,
-            model=model or _default_embedding_model(embedding_provider),
-            dimensions=embedding_dimensions,
-            api_key=embedding_api_key,
-            base_url=embedding_base_url,
-        ),
-    )
-
-
-def _default_embedding_model(provider: str) -> str:
-    normalized = provider.strip().lower()
-    if normalized == LOCAL_EMBEDDING_PROVIDER:
-        return LOCAL_EMBEDDING_MODEL
-    if normalized == DEMO_EMBEDDING_PROVIDER:
-        return DEMO_EMBEDDING_MODEL
-    if normalized == DEFAULT_EMBEDDING_PROVIDER:
-        return DEFAULT_EMBEDDING_MODEL
-    raise ValueError(
-        f"Config.qdrant(embedding_provider={provider!r}) needs an explicit "
-        f"model=...; only {DEFAULT_EMBEDDING_PROVIDER!r}, "
-        f"{LOCAL_EMBEDDING_PROVIDER!r}, and {DEMO_EMBEDDING_PROVIDER!r} have "
-        "factory defaults."
-    )
+    def __post_init__(self) -> None:
+        if not isinstance(self.hybrid, bool):
+            raise ValueError("Config.hybrid must be a boolean")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -177,7 +120,7 @@ class ParsedDocument:
 class IngestedDocument:
     document_id: str
     collection: str
-    namespace: str
+    tenant_id: str
     chunk_count: int
     filename: str
     mime_type: str
@@ -194,29 +137,17 @@ class IngestedDocument:
 
 @dataclass(frozen=True, kw_only=True)
 class DeleteDocumentResult:
-    """Honest accounting of which surfaces actually purged the document.
-
-    ``vector_store_acked`` reflects the vector-store ack, not an optimistic
-    "we asked the store" assumption. The cache and sidecar booleans are
-    tri-state so callers can distinguish "purge succeeded" (``True``),
-    "purge failed" (``False``), and "no such surface configured on this
-    Engine" (``None``). Vector-store failure raises before later steps run.
-    """
-
     document_id: str
-    namespace: str
+    tenant_id: str
     collection: str
     vector_store_acked: bool
-    lexical_sidecar_purged: bool | None = None
-    embedding_cache_purged: bool | None = None
-    chunk_context_cache_purged: bool | None = None
     manifest_removed: bool | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
 class CollectionManifestEntry:
     document_id: str
-    namespace: str
+    tenant_id: str
     collection: str
     document_key: str | None
     content_sha256: str | None
@@ -278,23 +209,6 @@ class PreparedDocument:
 
 
 @dataclass(frozen=True, kw_only=True)
-class CollectionManifest:
-    namespace: str
-    collection: str
-    collection_name: str
-    embedding_provider: str
-    embedding_model: str
-    embedding_dimensions: int
-    document_count: int
-    chunk_count: int
-    source_document_ids: tuple[str, ...]
-    ocr_document_count: int
-    ocr_page_count: int
-    documents: tuple[IngestedDocument, ...]
-    entries: tuple[CollectionManifestEntry, ...] = ()
-
-
-@dataclass(frozen=True, kw_only=True)
 class OcrMetadata:
     """Outcome of an OCR step on one document.
 
@@ -322,12 +236,19 @@ class ProcessingFingerprint:
     source_type: str
     contextualizer_id: str | None = None
     contextualizer_chunk_cap: int | None = None
+    chunking: ChunkingConfig = field(default_factory=ChunkingConfig)
+    sparse_index: bool = False
+    sparse_model: str | None = None
 
     def serialize(self) -> str:
         payload: dict[str, object] = {
             "base_version": self.base_version,
             "source_type": self.source_type,
+            "chunking": asdict(self.chunking),
+            "sparse_index": self.sparse_index,
         }
+        if self.sparse_model is not None:
+            payload["sparse_model"] = self.sparse_model
         if self.contextualizer_id is not None:
             payload["contextualizer_id"] = self.contextualizer_id
         if self.contextualizer_chunk_cap is not None:
@@ -345,13 +266,19 @@ class ProcessingFingerprint:
         except json.JSONDecodeError as exc:
             raise ValueError("ProcessingFingerprint expects valid JSON") from exc
         if not isinstance(payload, dict):
-            raise ValueError(f"ProcessingFingerprint expects a JSON object, got: {raw!r}")
+            raise ValueError(
+                f"ProcessingFingerprint expects a JSON object, got: {raw!r}"
+            )
         base_version = payload.get("base_version")
         source_type = payload.get("source_type")
         if not isinstance(base_version, str) or not base_version:
-            raise ValueError("ProcessingFingerprint.base_version must be a non-empty string")
+            raise ValueError(
+                "ProcessingFingerprint.base_version must be a non-empty string"
+            )
         if not isinstance(source_type, str) or not source_type:
-            raise ValueError("ProcessingFingerprint.source_type must be a non-empty string")
+            raise ValueError(
+                "ProcessingFingerprint.source_type must be a non-empty string"
+            )
         contextualizer_id = payload.get("contextualizer_id")
         if contextualizer_id is not None and not isinstance(contextualizer_id, str):
             raise ValueError("ProcessingFingerprint.contextualizer_id must be a string")
@@ -368,9 +295,25 @@ class ProcessingFingerprint:
             )
         else:
             contextualizer_chunk_cap = raw_chunk_cap
+        chunking_data = payload.get("chunking", {})
+        if not isinstance(chunking_data, dict):
+            raise ValueError("ProcessingFingerprint.chunking must be an object")
+        try:
+            chunking = ChunkingConfig(**chunking_data)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("ProcessingFingerprint.chunking is invalid") from exc
+        sparse_index = payload.get("sparse_index", False)
+        if not isinstance(sparse_index, bool):
+            raise ValueError("ProcessingFingerprint.sparse_index must be a boolean")
+        sparse_model = payload.get("sparse_model")
+        if sparse_model is not None and (not isinstance(sparse_model, str) or not sparse_model.strip()):
+            raise ValueError("ProcessingFingerprint.sparse_model must be a non-empty string")
         return cls(
+            sparse_model=sparse_model,
             base_version=base_version,
             source_type=source_type,
             contextualizer_id=contextualizer_id,
             contextualizer_chunk_cap=contextualizer_chunk_cap,
+            chunking=chunking,
+            sparse_index=sparse_index,
         )

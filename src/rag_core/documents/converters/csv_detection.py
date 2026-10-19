@@ -3,29 +3,30 @@
 from __future__ import annotations
 
 import csv
+import io
+from collections import Counter
+from itertools import islice
 
 
 def detect_delimiter(sample: str) -> str:
     candidates = [",", "\t", ";", "|"]
-    lines = sample.strip().split("\n")[:20]
-    if len(lines) < 2:
-        try:
-            dialect = csv.Sniffer().sniff(sample[:4096])
-        except csv.Error:
-            return ","
-        return str(dialect.delimiter)
-
     best_delimiter = ","
-    best_score = -1.0
+    best_score = (0.0, 0.0)
     for delimiter in candidates:
-        column_counts = [len(line.split(delimiter)) for line in lines]
-        average_columns = sum(column_counts) / len(column_counts)
-        if average_columns <= 1:
+        try:
+            rows = csv.reader(io.StringIO(sample, newline=""), delimiter=delimiter)
+            column_counts = [len(row) for row in islice(rows, 20) if row]
+        except csv.Error:
             continue
-        variance = sum(
-            (count - average_columns) ** 2 for count in column_counts
-        ) / len(column_counts)
-        score = average_columns / (1.0 + variance)
+        if not column_counts:
+            continue
+        width, matching_rows = Counter(column_counts).most_common(1)[0]
+        if width <= 1:
+            continue
+        score = (
+            matching_rows / len(column_counts),
+            sum(column_counts) / len(column_counts),
+        )
         if score > best_score:
             best_score = score
             best_delimiter = delimiter
@@ -40,10 +41,7 @@ def detect_header_row(rows: list[list[str]]) -> bool:
     data_rows = rows[1 : min(6, len(rows))]
     first_all_text = all(not _is_numeric(cell) for cell in first_row if cell.strip())
     data_has_numbers = any(
-        _is_numeric(cell)
-        for row in data_rows
-        for cell in row
-        if cell.strip()
+        _is_numeric(cell) for row in data_rows for cell in row if cell.strip()
     )
     if first_all_text and data_has_numbers:
         return True

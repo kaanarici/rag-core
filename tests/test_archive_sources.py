@@ -10,7 +10,7 @@ import pytest
 from rag_core.ingest.sources.archive import (
     ArchiveLimits,
     ZipArchiveReadSession,
-    ZipArchiveSourceReader,
+    read_zip_archive,
     archive_document_key,
     is_supported_archive_member_path,
     read_zip_member_bytes,
@@ -30,7 +30,7 @@ def test_zip_archive_source_reader_plans_supported_members(tmp_path: Path) -> No
         },
     )
 
-    plan = ZipArchiveSourceReader().read(archive_path)
+    plan = read_zip_archive(archive_path)
 
     assert plan.item_count == 2
     assert [item.member_path for item in plan.items] == [
@@ -74,7 +74,7 @@ def test_zip_archive_source_reader_rejects_unsafe_member_paths(
     _write_zip(archive_path, {member_path: b"# Secret"})
 
     with pytest.raises(ValueError, match="unsafe"):
-        ZipArchiveSourceReader().read(archive_path)
+        read_zip_archive(archive_path)
 
 
 def test_zip_archive_source_reader_enforces_limits(tmp_path: Path) -> None:
@@ -88,14 +88,14 @@ def test_zip_archive_source_reader_enforces_limits(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="max_entries"):
-        ZipArchiveSourceReader().read(archive_path, limits=ArchiveLimits(max_entries=1))
+        read_zip_archive(archive_path, limits=ArchiveLimits(max_entries=1))
     with pytest.raises(ValueError, match="max_entry_bytes"):
-        ZipArchiveSourceReader().read(
+        read_zip_archive(
             archive_path,
             limits=ArchiveLimits(max_entry_bytes=1),
         )
     with pytest.raises(ValueError, match="max_total_bytes"):
-        ZipArchiveSourceReader().read(
+        read_zip_archive(
             archive_path,
             limits=ArchiveLimits(max_total_bytes=2),
         )
@@ -110,7 +110,7 @@ def test_zip_archive_source_reader_rejects_symlink_archive_path(tmp_path: Path) 
     alias_path.symlink_to(archive_path)
 
     with pytest.raises(ValueError, match="does not allow symlink paths"):
-        ZipArchiveSourceReader().read(alias_path)
+        read_zip_archive(alias_path)
 
     with pytest.raises(ValueError, match="does not allow symlink paths"):
         read_zip_member_bytes(alias_path, "docs/guide.md")
@@ -128,7 +128,7 @@ def test_archive_entrypoints_reject_hardlinked_archive_path(tmp_path: Path) -> N
         pytest.skip(f"hardlink support unavailable: {exc}")
 
     with pytest.raises(ValueError, match="does not allow multi-link file paths"):
-        ZipArchiveSourceReader().read(alias_path)
+        read_zip_archive(alias_path)
 
     with pytest.raises(ValueError, match="does not allow multi-link file paths"):
         read_zip_member_bytes(alias_path, "docs/guide.md")
@@ -162,7 +162,7 @@ def test_read_zip_member_bytes_rejects_duplicate_member_paths(tmp_path: Path) ->
 def test_planned_archive_item_rejects_changed_member(tmp_path: Path) -> None:
     archive_path = tmp_path / "docs.zip"
     _write_zip(archive_path, {"docs/guide.md": b"first"})
-    item = ZipArchiveSourceReader().read(archive_path).items[0]
+    item = read_zip_archive(archive_path).items[0]
 
     _write_zip(archive_path, {"docs/guide.md": b"other"})
 
@@ -193,7 +193,7 @@ def test_archive_session_revalidates_archive_limits_after_planning(
 ) -> None:
     archive_path = tmp_path / "docs.zip"
     _write_zip(archive_path, {"docs/guide.md": b"first"})
-    item = ZipArchiveSourceReader().read(
+    item = read_zip_archive(
         archive_path,
         limits=limits,
     ).items[0]

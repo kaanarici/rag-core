@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from rag_core._async import run_sync
+
 from collections.abc import Mapping
 from dataclasses import replace
 from typing import Sequence
@@ -43,19 +45,65 @@ async def prepare_text_chunks_async(
     filename: str | None = None,
     embedding_texts: Sequence[str] | None = None,
     chunking_config: ChunkingConfig | None = None,
+    slide_ranges: Sequence[Mapping[str, int]] | None = None,
 ) -> list[PreparedChunk]:
-    return _finalize_text_chunks(
-        text=text,
-        chunks=await chunk_text_async(
+    if slide_ranges is None:
+        chunks = await chunk_text_async(
             text,
             config=_chunk_config(chunking_config),
             mime_type=mime_type,
             filename=filename,
-        ),
+        )
+    else:
+        chunks = await run_sync(
+            _chunk_slides,
+            text,
+            slide_ranges,
+            chunking_config=chunking_config,
+            mime_type=mime_type,
+            filename=filename,
+        )
+    return _finalize_text_chunks(
+        text=text,
+        chunks=chunks,
         mime_type=mime_type,
         filename=filename,
         embedding_texts=embedding_texts,
     )
+
+
+def _chunk_slides(
+    text: str,
+    slide_ranges: Sequence[Mapping[str, int]],
+    *,
+    chunking_config: ChunkingConfig | None,
+    mime_type: str | None,
+    filename: str | None,
+) -> list[PreparedChunk]:
+    """Chunk converter-owned slide slices so source headings cannot move boundaries."""
+    chunks: list[PreparedChunk] = []
+    for slide in slide_ranges:
+        start, end = slide["start_char"], slide["end_char"]
+        for chunk in chunk_text(
+            text[start:end],
+            config=_chunk_config(chunking_config),
+            mime_type=mime_type,
+            filename=filename,
+        ):
+            chunks.append(
+                replace(
+                    chunk,
+                    chunk_index=len(chunks),
+                    start_char=start + chunk.start_char
+                    if chunk.start_char is not None
+                    else None,
+                    end_char=start + chunk.end_char
+                    if chunk.end_char is not None
+                    else None,
+                    metadata={**chunk.metadata, "slide_number": slide["slide_number"]},
+                )
+            )
+    return chunks
 
 
 def prepare_pre_chunked_texts(
@@ -92,7 +140,9 @@ def override_embedding_texts(
     chunks: Sequence[PreparedChunk],
     embedding_texts: Sequence[str],
 ) -> list[PreparedChunk]:
-    resolved = resolve_embedding_texts([chunk.text for chunk in chunks], embedding_texts)
+    resolved = resolve_embedding_texts(
+        [chunk.text for chunk in chunks], embedding_texts
+    )
     return [
         replace(chunk, embedding_text=resolved[index], sparse_text=resolved[index])
         for index, chunk in enumerate(chunks)

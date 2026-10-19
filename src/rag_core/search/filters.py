@@ -101,7 +101,7 @@ class Not:
 Filter: TypeAlias = Union[Term, In, Range, Geo, And, Or, Not]
 """Discriminated union of payload-filter AST nodes.
 
-Lives alongside the first-class ``namespace``/``collections``/``document_ids``/
+Lives alongside the first-class ``tenant_id``/``collections``/``document_ids``/
 ``content_types`` filters on ``SearchQuery``: those stay top-level, this AST
 is for everything else (date ranges, categories, languages, geo, boolean
 composition) without forking a ``VectorStore``.
@@ -118,3 +118,7 @@ __all__ = [
     "Range",
     "Term",
 ]
+
+
+class UnsupportedFilter(ValueError):
+    """The store cannot faithfully execute this metadata filter."""

@@ -1,6 +1,7 @@
 """Semantic retrieval eval: real local embeddings on a small fixed corpus."""
 
 from __future__ import annotations
+from rag_core.search.request_models import SearchMode
 
 import asyncio
 import json
@@ -35,7 +36,6 @@ from rag_core.retrieval_defaults import (
 )
 from rag_core.search import (
     Filter,
-    QueryPlan,
     RerankBudget,
     SearchResult,
 )
@@ -47,7 +47,7 @@ pytestmark = [pytest.mark.eval]
 _FIXTURE_DIR = Path(__file__).resolve().parent / "semantic_corpus"
 _CORPUS_PATH = _FIXTURE_DIR / "corpus.jsonl"
 _CASES_PATH = _FIXTURE_DIR / "cases.jsonl"
-_NAMESPACE = "semantic_eval"
+_TENANT_ID = "semantic_eval"
 _COLLECTION = "docs"
 _MAX_SECONDS = 120.0
 _HEALTHY_RECALL_AT_5_CEILING = 0.97
@@ -156,7 +156,7 @@ def test_semantic_corpus_fixture_shape() -> None:
     assert 24 <= len(corpus) <= 40
     assert 12 <= len(cases) <= 28
     assert len(document_keys) == len(corpus)
-    assert all(case.namespace == _NAMESPACE for case in cases)
+    assert all(case.tenant_id == _TENANT_ID for case in cases)
     assert all(
         set(case.collections) <= {_COLLECTION, "restricted", "empty"} for case in cases
     )
@@ -280,7 +280,7 @@ async def _run_semantic_eval(
 ) -> SemanticRun:
     config = _semantic_config()
     corpus = _load_corpus(_CORPUS_PATH)
-    sparse = FastEmbedSparseEmbedder(enable_splade=False)
+    sparse = FastEmbedSparseEmbedder()
     async with Engine(config, sparse_embedder=sparse) as core:
         _assert_local_embedding_runtime(core)
         xlsx_prepared: PreparedDocument | None = None
@@ -291,7 +291,7 @@ async def _run_semantic_eval(
                     file_bytes=doc.file_bytes,
                     filename=doc.filename,
                     mime_type=doc.mime_type,
-                    namespace=_NAMESPACE,
+                    tenant_id=_TENANT_ID,
                     collection=doc.collection,
                     document_id=f"semantic-document:{doc.document_id}",
                 )
@@ -299,7 +299,7 @@ async def _run_semantic_eval(
                 file_bytes=doc.file_bytes,
                 filename=doc.filename,
                 mime_type=doc.mime_type,
-                namespace=_NAMESPACE,
+                tenant_id=_TENANT_ID,
                 collection=doc.collection,
                 document_id=f"semantic-document:{doc.document_id}",
                 document_key=doc.document_id,
@@ -362,14 +362,14 @@ class _DegradedSearchCore:
         self,
         *,
         query: str,
-        namespace: str,
+        tenant_id: str,
         collections: list[str],
         limit: int = DEFAULT_SEARCH_LIMIT,
         content_types: list[str] | None = None,
         document_ids: list[str] | None = None,
         rerank: bool = DEFAULT_RERANK,
         use_lexical_search: bool = DEFAULT_USE_LEXICAL_SEARCH,
-        query_plan: QueryPlan | None = None,
+        mode: SearchMode | None = None,
         metadata_filter: Filter | None = None,
         rerank_budget: RerankBudget | None = None,
         audit_context: AuditContext | None = None,
@@ -385,14 +385,13 @@ class _DegradedSearchCore:
         )
         hits = await self._core.search(
             query=search_query,
-            namespace=namespace,
+            tenant_id=tenant_id,
             collections=resolved_collections,
             limit=limit,
             content_types=content_types,
             document_ids=resolved_document_ids,
             rerank=rerank,
-            use_lexical_search=use_lexical_search,
-            query_plan=query_plan,
+            mode=mode,
             metadata_filter=metadata_filter,
             rerank_budget=rerank_budget,
             audit_context=audit_context,
@@ -591,7 +590,7 @@ async def _collect_semantic_controls(
 ) -> SemanticControls:
     xlsx_hits = await eval_core.search(
         query=("late inventory exception requiring supplier chromatic inspection"),
-        namespace=_NAMESPACE,
+        tenant_id=_TENANT_ID,
         collections=[_COLLECTION],
         limit=10,
         rerank=False,
@@ -619,7 +618,7 @@ async def _collect_semantic_controls(
         query=(
             "where alternate creator spellings become one preferred catalog identity"
         ),
-        namespace=_NAMESPACE,
+        tenant_id=_TENANT_ID,
         collections=[_COLLECTION],
         limit=10,
         rerank=False,
@@ -648,7 +647,7 @@ async def _collect_semantic_controls(
         query=(
             "illustrated process for flattening curled acetate before overhead imaging"
         ),
-        namespace=_NAMESPACE,
+        tenant_id=_TENANT_ID,
         collections=[_COLLECTION],
         limit=10,
         rerank=False,
@@ -812,7 +811,7 @@ async def _format_retrieval_metric(
 ) -> FormatRetrievalMetric:
     hits = await core.search(
         query=query,
-        namespace=_NAMESPACE,
+        tenant_id=_TENANT_ID,
         collections=[_COLLECTION],
         limit=10,
         rerank=False,
@@ -858,7 +857,7 @@ async def _run_bounded_multi_search(
             raise ValueError("bounded multi-search call budget exceeded")
         hits = await core.search(
             query=query,
-            namespace=_NAMESPACE,
+            tenant_id=_TENANT_ID,
             collections=[_COLLECTION],
             document_ids=list(case.document_ids) or None,
             limit=5,
@@ -997,8 +996,6 @@ def _assert_semantic_controls(controls: SemanticControls) -> None:
         "provider": "fastembed",
         "bm25_enabled": True,
         "bm25_load_status": "loaded",
-        "splade_enabled": False,
-        "splade_load_status": "disabled",
     }
 
     assert 2 <= controls.xlsx_chunk_count <= 12

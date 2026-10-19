@@ -7,6 +7,7 @@ and feed the metric functions.
 """
 
 from __future__ import annotations
+from rag_core.search.request_models import SearchMode
 
 import asyncio
 from collections.abc import Mapping, Sequence
@@ -22,7 +23,10 @@ from rag_core.search.context_pack import build_context_pack
 
 if TYPE_CHECKING:
     from rag_core.core import Engine
-    from rag_core.search import QueryPlan, RerankBudget, SearchResult
+    from rag_core.search import (
+        RerankBudget,
+        SearchResult,
+    )
 
 
 @dataclass(frozen=True)
@@ -149,7 +153,7 @@ async def run_eval(
     *,
     rerank: bool = DEFAULT_RERANK,
     rerank_budget: RerankBudget | None = None,
-    query_plan: QueryPlan | None = None,
+    mode: SearchMode | None = None,
     max_concurrency: int = 1,
 ) -> list[EvalResult]:
     """Run each case through ``core.search`` and compute metrics.
@@ -173,7 +177,7 @@ async def run_eval(
                 limit=limit,
                 rerank=rerank,
                 rerank_budget=rerank_budget,
-                query_plan=query_plan,
+                mode=mode,
             )
             for case in cases
         ]
@@ -188,7 +192,7 @@ async def run_eval(
                 limit=limit,
                 rerank=rerank,
                 rerank_budget=rerank_budget,
-                query_plan=query_plan,
+                mode=mode,
             )
 
     return list(await asyncio.gather(*(run_bounded(case) for case in cases)))
@@ -201,19 +205,19 @@ async def _run_eval_case(
     limit: int,
     rerank: bool,
     rerank_budget: RerankBudget | None,
-    query_plan: QueryPlan | None,
+    mode: SearchMode | None,
 ) -> EvalResult:
     started = perf_counter()
     try:
         hits = await core.search(
             query=case.query,
-            namespace=case.namespace,
+            tenant_id=case.tenant_id,
             collections=list(case.collections),
             document_ids=list(case.document_ids) or None,
             limit=limit,
             rerank=rerank,
             rerank_budget=rerank_budget,
-            query_plan=query_plan,
+            mode=mode,
         )
     except Exception as exc:  # noqa: BLE001 - eval reports failure per case.
         latency_ms = (perf_counter() - started) * 1000.0
@@ -226,7 +230,9 @@ async def _run_eval_case(
             ndcg_at_10=0.0,
             latency_ms=latency_ms,
             error_type=_safe_error_type(exc),
-            no_result_pass=not case.expect_no_results,
+            context_contains_pass=False,
+            prompt_safety_pass=False,
+            no_result_pass=False,
         )
     latency_ms = (perf_counter() - started) * 1000.0
     expected_ids = set(case.expected_ids)
@@ -242,7 +248,11 @@ async def _run_eval_case(
         for hit in hits
     )
     forbidden_id_count = sum(
-        1 for result_id in retrieved_ids if result_id in forbidden_ids
+        any(
+            identity in forbidden_ids
+            for identity in (hit.id, hit.document_id, hit.document_key)
+        )
+        for hit in hits
     )
     no_result_pass = not hits if case.expect_no_results else True
     relevant = case.expected_ids

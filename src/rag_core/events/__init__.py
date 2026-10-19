@@ -1,9 +1,55 @@
-"""Engine lifecycle events and sinks."""
+"""Engine lifecycle events, optional sinks, and trace summaries."""
 
-from __future__ import annotations
-
-from importlib import import_module
-from typing import Any
+from .embedding_trace_summary import EmbeddingTraceSummary as EmbeddingTraceSummary
+from .embedding_trace_summary import (
+    summarize_embedding_trace as summarize_embedding_trace,
+)
+from .embedding_trace_summary import (
+    summarize_embedding_trace_payloads as summarize_embedding_trace_payloads,
+)
+from .sink import EventSink as EventSink
+from .sinks import EventBuffer as EventBuffer
+from .sinks import JsonlSink as JsonlSink
+from .sinks import LoggingSink as LoggingSink
+from .sinks import MultiSink as MultiSink
+from .sinks import NoOpSink as NoOpSink
+from .sinks import OpenTelemetrySink as OpenTelemetrySink
+from .traces import SearchStageTraceSummary as SearchStageTraceSummary
+from .traces import SearchTraceSummary as SearchTraceSummary
+from .traces import summarize_search_trace as summarize_search_trace
+from .traces import (
+    summarize_search_trace_payload_runs as summarize_search_trace_payload_runs,
+)
+from .traces import summarize_search_trace_payloads as summarize_search_trace_payloads
+from .traces import summarize_search_trace_runs as summarize_search_trace_runs
+from .types import AUDIT_EVENT_TYPES as AUDIT_EVENT_TYPES
+from .types import AuditContext as AuditContext
+from .types import ChunkProduced as ChunkProduced
+from .types import ContextualizeCompleted as ContextualizeCompleted
+from .types import ContextualizeStarted as ContextualizeStarted
+from .types import EmbedCompleted as EmbedCompleted
+from .types import EmbedRequested as EmbedRequested
+from .types import Event as Event
+from .types import FetchCompleted as FetchCompleted
+from .types import FetchFailed as FetchFailed
+from .types import FetchStarted as FetchStarted
+from .types import IndexDeleted as IndexDeleted
+from .types import IndexUpserted as IndexUpserted
+from .types import IngestBatchCompleted as IngestBatchCompleted
+from .types import IngestBatchFailed as IngestBatchFailed
+from .types import IngestBatchProgress as IngestBatchProgress
+from .types import IngestBatchStarted as IngestBatchStarted
+from .types import IngestCompleted as IngestCompleted
+from .types import IngestSkipped as IngestSkipped
+from .types import IngestStarted as IngestStarted
+from .types import OcrApplied as OcrApplied
+from .types import ParseCompleted as ParseCompleted
+from .types import RerankApplied as RerankApplied
+from .types import SearchCompleted as SearchCompleted
+from .types import SearchPlanned as SearchPlanned
+from .types import SearchStarted as SearchStarted
+from .types import SearchStageCompleted as SearchStageCompleted
+from .types import StageError as StageError
 
 __all__ = (
     "AUDIT_EVENT_TYPES",
@@ -30,10 +76,8 @@ __all__ = (
     "IngestSkipped",
     "IngestStarted",
     "JsonlSink",
-    "LexicalSidecarBoundExceeded",
     "LoggingSink",
     "MultiSink",
-    "NeighborExpandSkipped",
     "NoOpSink",
     "OcrApplied",
     "OpenTelemetrySink",
@@ -45,7 +89,6 @@ __all__ = (
     "SearchStageCompleted",
     "SearchStageTraceSummary",
     "SearchTraceSummary",
-    "SidecarApplied",
     "StageError",
     "summarize_embedding_trace",
     "summarize_embedding_trace_payloads",
@@ -54,86 +97,3 @@ __all__ = (
     "summarize_search_trace_payload_runs",
     "summarize_search_trace_runs",
 )
-
-_LAZY_EXPORTS: dict[str, tuple[str, str]] = {
-    "AUDIT_EVENT_TYPES": ("rag_core.events.types", "AUDIT_EVENT_TYPES"),
-    "AuditContext": ("rag_core.events.types", "AuditContext"),
-    "ChunkProduced": ("rag_core.events.types", "ChunkProduced"),
-    "ContextualizeCompleted": ("rag_core.events.types", "ContextualizeCompleted"),
-    "ContextualizeStarted": ("rag_core.events.types", "ContextualizeStarted"),
-    "EmbedCompleted": ("rag_core.events.types", "EmbedCompleted"),
-    "EmbedRequested": ("rag_core.events.types", "EmbedRequested"),
-    "EmbeddingTraceSummary": (
-        "rag_core.events.embedding_trace_summary",
-        "EmbeddingTraceSummary",
-    ),
-    "Event": ("rag_core.events.types", "Event"),
-    "FetchCompleted": ("rag_core.events.types", "FetchCompleted"),
-    "FetchFailed": ("rag_core.events.types", "FetchFailed"),
-    "FetchStarted": ("rag_core.events.types", "FetchStarted"),
-    "IndexDeleted": ("rag_core.events.types", "IndexDeleted"),
-    "IndexUpserted": ("rag_core.events.types", "IndexUpserted"),
-    "IngestBatchCompleted": ("rag_core.events.types", "IngestBatchCompleted"),
-    "IngestBatchFailed": ("rag_core.events.types", "IngestBatchFailed"),
-    "IngestBatchProgress": ("rag_core.events.types", "IngestBatchProgress"),
-    "IngestBatchStarted": ("rag_core.events.types", "IngestBatchStarted"),
-    "IngestCompleted": ("rag_core.events.types", "IngestCompleted"),
-    "IngestSkipped": ("rag_core.events.types", "IngestSkipped"),
-    "IngestStarted": ("rag_core.events.types", "IngestStarted"),
-    "LexicalSidecarBoundExceeded": (
-        "rag_core.events.types",
-        "LexicalSidecarBoundExceeded",
-    ),
-    "NeighborExpandSkipped": ("rag_core.events.types", "NeighborExpandSkipped"),
-    "OcrApplied": ("rag_core.events.types", "OcrApplied"),
-    "ParseCompleted": ("rag_core.events.types", "ParseCompleted"),
-    "RerankApplied": ("rag_core.events.types", "RerankApplied"),
-    "SearchCompleted": ("rag_core.events.types", "SearchCompleted"),
-    "SearchPlanned": ("rag_core.events.types", "SearchPlanned"),
-    "SearchStarted": ("rag_core.events.types", "SearchStarted"),
-    "SearchStageCompleted": ("rag_core.events.types", "SearchStageCompleted"),
-    "SearchStageTraceSummary": ("rag_core.events.traces", "SearchStageTraceSummary"),
-    "SearchTraceSummary": ("rag_core.events.traces", "SearchTraceSummary"),
-    "SidecarApplied": ("rag_core.events.types", "SidecarApplied"),
-    "StageError": ("rag_core.events.types", "StageError"),
-    "summarize_embedding_trace": (
-        "rag_core.events.embedding_trace_summary",
-        "summarize_embedding_trace",
-    ),
-    "summarize_embedding_trace_payloads": (
-        "rag_core.events.embedding_trace_summary",
-        "summarize_embedding_trace_payloads",
-    ),
-    "summarize_search_trace": ("rag_core.events.traces", "summarize_search_trace"),
-    "summarize_search_trace_payloads": (
-        "rag_core.events.traces",
-        "summarize_search_trace_payloads",
-    ),
-    "summarize_search_trace_payload_runs": (
-        "rag_core.events.traces",
-        "summarize_search_trace_payload_runs",
-    ),
-    "summarize_search_trace_runs": (
-        "rag_core.events.traces",
-        "summarize_search_trace_runs",
-    ),
-    "EventSink": ("rag_core.events.sink", "EventSink"),
-    "EventBuffer": ("rag_core.events.sinks", "EventBuffer"),
-    "JsonlSink": ("rag_core.events.sinks", "JsonlSink"),
-    "LoggingSink": ("rag_core.events.sinks", "LoggingSink"),
-    "MultiSink": ("rag_core.events.sinks", "MultiSink"),
-    "NoOpSink": ("rag_core.events.sinks", "NoOpSink"),
-    "OpenTelemetrySink": ("rag_core.events.sinks", "OpenTelemetrySink"),
-}
-
-
-def __getattr__(name: str) -> Any:
-    target = _LAZY_EXPORTS.get(name)
-    if target is None:
-        raise AttributeError(name)
-    module_name, symbol = target
-    return getattr(import_module(module_name), symbol)
-
-
-def __dir__() -> list[str]:
-    return list(__all__)

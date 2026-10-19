@@ -78,7 +78,7 @@ def build_fetch_response(
         limits=limits,
         redacted_url=validated.redacted_url,
     )
-    return FetchResponse(
+    response = FetchResponse(
         url=validated,
         status_code=status,
         content_type=_media_type(content_type),
@@ -87,6 +87,8 @@ def build_fetch_response(
         body=body,
         redirect_chain=chain,
     )
+    validate_fetch_response(response, limits=limits)
+    return response
 
 def validate_fetch_response(
     response: FetchResponse,
@@ -115,6 +117,9 @@ def validate_fetch_response(
     )
     if len(response.body) > limits.max_bytes:
         raise FetchError(f"fetch body exceeds max_bytes for {response.url.redacted_url}")
+    _validate_body_length(
+        len(response.body), response.content_length, response.url.redacted_url
+    )
     expected_sha256 = hashlib.sha256(response.body).hexdigest()
     if response.content_sha256 != expected_sha256:
         raise FetchError(f"fetch body checksum mismatch for {response.url.redacted_url}")
@@ -161,6 +166,8 @@ def read_success_fetch_body(
         _set_fetch_response_timeout(response, timeout_seconds=remaining_seconds)
         try:
             chunk = response.read(min(chunk_size, max_allowed - total_bytes))
+        except http.client.IncompleteRead as exc:
+            raise FetchError(f"fetch body incomplete for {redacted_url}") from exc
         except TimeoutError as exc:
             raise FetchError(
                 "fetch body read exceeded timeout_seconds for "
@@ -182,7 +189,16 @@ def read_success_fetch_body(
     body = b"".join(chunks)
     if len(body) > limits.max_bytes:
         raise FetchError(f"fetch body exceeds max_bytes for {redacted_url}")
+    _validate_body_length(
+        len(body), _parse_content_length(headers.get("content-length")), redacted_url
+    )
     return body
+
+
+def _validate_body_length(actual: int, declared: int | None, redacted_url: str) -> None:
+    if declared is not None and actual != declared:
+        raise FetchError(f"fetch body length mismatch for {redacted_url}")
+
 
 def is_fetch_redirect(status: int) -> bool:
     return 300 <= status < 400

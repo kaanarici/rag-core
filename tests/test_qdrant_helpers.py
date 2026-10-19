@@ -17,9 +17,6 @@ import pytest
 from qdrant_client import AsyncQdrantClient
 from qdrant_client import models as rest
 
-from rag_core.search.pipeline import HybridRetrieve, PipelineContext, PipelineQuery
-from rag_core.search.planning import default_query_plan, query_plan_preset
-from rag_core.search.query_plan import UnsupportedQueryStage
 from rag_core.search.providers.qdrant_store import (
     CollectionConfig,
     assert_collection_compatible,
@@ -35,10 +32,8 @@ from rag_core.search.providers.qdrant_store import (
     QdrantVectorStore,
     _build_base_health,
     _build_healthy_health,
-    _collection_query_plan_capabilities,
     _build_unhealthy_health,
     _extract_optimizer_ok,
-    create_qdrant_client,
 )
 from rag_core.search.providers.qdrant_write import upsert_qdrant_point_batches
 from rag_core.search.request_models import (
@@ -49,7 +44,6 @@ from rag_core.search.vector_models import (
     SparseVector,
     VectorPoint,
 )
-from tests.support import FakeEmbeddingProvider, FakeSparseEmbedder
 
 _POINT_1 = "00000000-0000-4000-8000-000000000001"
 _POINT_2 = "00000000-0000-4000-8000-000000000002"
@@ -90,20 +84,8 @@ def _store(
         sparse_enabled=sparse_enabled,
     )
     store._client = cast(Any, client)
-    object.__setattr__(
-        store,
-        "_config",
-        type(store._config)(
-            collection_name=store._config.collection_name,
-            dimensions=store._config.dimensions,
-            quantization_enabled=store._config.quantization_enabled,
-            is_local=store._config.is_local,
-            max_concurrent=1,
-            max_batch_size=2,
-            sparse_enabled=sparse_enabled,
-            policy=store._config.policy,
-        ),
-    )
+    store._max_concurrent, store._max_batch_size = 1, 2
+    store._write_sem = asyncio.Semaphore(1)
     return store
 
 
@@ -135,6 +117,9 @@ class _FakeQdrantClient:
         self.upsert_calls: list[dict[str, Any]] = []
         self.get_collections_calls = 0
         self.close_calls = 0
+
+    async def retrieve(self, **kwargs: Any) -> list[object]:
+        return []
 
     async def get_collections(self) -> object:
         self.get_collections_calls += 1
@@ -169,6 +154,8 @@ class _FakeQdrantClient:
 
     async def scroll(self, **kwargs: Any) -> tuple[list[object], None]:
         self.scroll_calls.append(kwargs)
+        if "_rag_kind" in repr(kwargs.get("scroll_filter")):
+            return [], None
         return (
             [
                 SimpleNamespace(
@@ -209,16 +196,15 @@ def test_qdrant_local_location_uses_memory_location(
         FakeAsyncQdrantClient,
     )
 
-    state = create_qdrant_client(
+    store = QdrantVectorStore(collection_name="docs",
         url=None,
         api_key=None,
         location=":memory:",
-        timeout=42,
     )
 
-    assert state.is_local is True
+    assert store._config.is_local is True
     assert calls == [
-        {"location": ":memory:", "timeout": 42, "check_compatibility": False}
+        {"location": ":memory:", "timeout": 120, "check_compatibility": False}
     ]
 
 
@@ -237,16 +223,15 @@ def test_qdrant_local_location_uses_persistent_path(
         FakeAsyncQdrantClient,
     )
 
-    state = create_qdrant_client(
+    store = QdrantVectorStore(collection_name="docs",
         url=None,
         api_key=None,
         location=str(tmp_path / "qdrant"),
-        timeout=42,
     )
 
-    assert state.is_local is True
+    assert store._config.is_local is True
     assert calls == [
-        {"path": str(tmp_path / "qdrant"), "timeout": 42, "check_compatibility": False}
+        {"path": str(tmp_path / "qdrant"), "timeout": 120, "check_compatibility": False}
     ]
 
 
@@ -264,15 +249,14 @@ def test_qdrant_remote_blank_api_key_is_not_forwarded(
         FakeAsyncQdrantClient,
     )
 
-    state = create_qdrant_client(
+    store = QdrantVectorStore(collection_name="docs",
         url="https://qdrant.example.test",
         api_key="   ",
         location=None,
-        timeout=42,
     )
 
-    assert state.is_local is False
-    assert calls == [{"url": "https://qdrant.example.test", "timeout": 42}]
+    assert store._config.is_local is False
+    assert calls == [{"url": "https://qdrant.example.test", "timeout": 120}]
 
 
 def test_store_search_includes_scoped_filter_with_dense_default() -> None:
@@ -283,9 +267,11 @@ def test_store_search_includes_scoped_filter_with_dense_default() -> None:
     )
     query = SearchQuery(
         dense_vector=[0.1, 0.2],
-        sparse_vector=SparseVector(indices=[1], values=[1.0]),
-        sparse_vectors={"splade": SparseVector(indices=[2], values=[2.0])},
-        namespace=" team-space ",
+        sparse_vectors={
+            "bm25": SparseVector(indices=[1], values=[1.0]),
+            "splade": SparseVector(indices=[2], values=[2.0]),
+        },
+        tenant_id=" team-space ",
         collections=["corpus-a", "corpus-b"],
         content_types=["document"],
         document_ids=["doc-1"],
@@ -299,7 +285,7 @@ def test_store_search_includes_scoped_filter_with_dense_default() -> None:
     assert call["using"] == ""
     conditions = _field_conditions(call["query_filter"])
     assert [condition.key for condition in conditions] == [
-        "namespace",
+        "tenant_id",
         "collection",
         "content_type",
         "document_id",
@@ -313,7 +299,7 @@ def test_store_search_includes_scoped_filter_with_dense_default() -> None:
     assert results[0].score == 0.75
 
 
-@pytest.mark.parametrize("sparse_names", [["bm25"], ["splade"], ["custom_sparse"]])
+@pytest.mark.parametrize("sparse_names", [["splade"], ["custom_sparse"]])
 def test_partial_sparse_collection_fails_before_first_upsert(
     sparse_names: list[str],
 ) -> None:
@@ -336,7 +322,7 @@ def test_qdrant_write_rejects_non_uuid_point_ids_before_client_call() -> None:
     point = VectorPoint(
         id="custom-doc-1-chunk-0",
         dense_vector=[0.1, 0.2],
-        sparse_vector=SparseVector(indices=[1], values=[1.0]),
+        sparse_vectors={"bm25": SparseVector(indices=[1], values=[1.0])},
         payload={
             "text": "hello",
             "content_type": "document",
@@ -361,115 +347,12 @@ def test_qdrant_write_rejects_non_uuid_point_ids_before_client_call() -> None:
     assert client.upsert_calls == []
 
 
-def test_store_search_uses_explicit_query_plan() -> None:
-    client = _FakeQdrantClient(
-        existing_names=["docs"],
-        sparse_names=["bm25", "splade"],
-        dense_dimensions=2,
-    )
-    query = SearchQuery(
-        dense_vector=[0.1, 0.2],
-        sparse_vector=SparseVector(indices=[1], values=[1.0]),
-        namespace="team-space",
-        collections=["corpus-a"],
-        limit=5,
-        query_plan=default_query_plan(result_limit=5, fusion="dbsf", prefetch_limit=30),
-    )
-
-    asyncio.run(_store(client, dense_dimensions=2).search(query))
-
-    call = client.query_points_calls[0]
-    assert call["query"].fusion == rest.Fusion.DBSF
-    assert [prefetch.limit for prefetch in call["prefetch"]] == [30, 30]
 
 
-def test_qdrant_sparse_channel_preflight_runs_before_embedding() -> None:
-    async def _run() -> tuple[FakeEmbeddingProvider, FakeSparseEmbedder]:
-        client = _FakeQdrantClient(
-            existing_names=["docs"],
-            sparse_names=["bm25", "splade"],
-            dense_dimensions=2,
-        )
-        embedding = FakeEmbeddingProvider()
-        sparse = FakeSparseEmbedder()
-        plan = default_query_plan(
-            result_limit=5,
-            sparse_channels=("bm25", "custom_sparse"),
-        )
-
-        with pytest.raises(UnsupportedQueryStage, match="custom_sparse"):
-            await HybridRetrieve().retrieve(
-                PipelineQuery(
-                    query="billing",
-                    namespace="team-space",
-                    collections=["corpus-a"],
-                    query_plan=plan,
-                ),
-                PipelineContext(
-                    embedding_provider=embedding,
-                    sparse_embedder=sparse,
-                    vector_store=_store(client, dense_dimensions=2),
-                ),
-            )
-        return embedding, sparse
-
-    embedding, sparse = asyncio.run(_run())
-    assert embedding.embed_query_calls == []
-    assert sparse.embed_query_multi_calls == []
 
 
-def test_qdrant_implicit_plan_falls_back_to_dense_for_sparse_less_collection() -> None:
-    async def _run() -> tuple[FakeEmbeddingProvider, FakeSparseEmbedder, _FakeQdrantClient]:
-        client = _FakeQdrantClient(
-            existing_names=["docs"],
-            sparse_names=[],
-            dense_dimensions=4,
-        )
-        embedding = FakeEmbeddingProvider()
-        sparse = FakeSparseEmbedder()
-
-        await HybridRetrieve().retrieve(
-            PipelineQuery(
-                query="billing",
-                namespace="team-space",
-                collections=["corpus-a"],
-                limit=5,
-            ),
-            PipelineContext(
-                embedding_provider=embedding,
-                sparse_embedder=sparse,
-                vector_store=_store(
-                    client,
-                    dense_dimensions=4,
-                    sparse_enabled=False,
-                ),
-            ),
-        )
-        return embedding, sparse, client
-
-    embedding, sparse, client = asyncio.run(_run())
-    assert embedding.embed_query_calls == ["billing"]
-    assert sparse.embed_query_multi_calls == []
-    assert len(client.query_points_calls) == 1
 
 
-def test_store_search_allows_empty_dense_vector_for_sparse_only_plan() -> None:
-    client = _FakeQdrantClient(
-        existing_names=["docs"],
-        sparse_names=["bm25", "splade"],
-    )
-    query = SearchQuery(
-        dense_vector=[],
-        sparse_vector=SparseVector(indices=[1], values=[1.0]),
-        namespace="team-space",
-        collections=["corpus-a"],
-        limit=5,
-        query_plan=query_plan_preset("sparse_only", limit=5),
-    )
-
-    asyncio.run(_store(client).search(query))
-
-    assert len(client.query_points_calls) == 1
 
 
 def test_store_search_implicit_plan_falls_back_to_dense_for_sparse_less_collection() -> None:
@@ -480,8 +363,7 @@ def test_store_search_implicit_plan_falls_back_to_dense_for_sparse_less_collecti
     )
     query = SearchQuery(
         dense_vector=[0.1, 0.2],
-        sparse_vector=SparseVector(indices=[], values=[]),
-        namespace="team-space",
+        tenant_id="team-space",
         collections=["corpus-a"],
         limit=5,
     )
@@ -495,46 +377,8 @@ def test_store_search_implicit_plan_falls_back_to_dense_for_sparse_less_collecti
     assert call["using"] == ""
 
 
-def test_store_search_rejects_empty_dense_vector_for_hybrid_plan_before_provider() -> (
-    None
-):
-    client = _FakeQdrantClient(existing_names=["docs"], sparse_names=["bm25"])
-    query = SearchQuery(
-        dense_vector=[],
-        sparse_vector=SparseVector(indices=[1], values=[1.0]),
-        namespace="team-space",
-        collections=["corpus-a"],
-        limit=5,
-        query_plan=query_plan_preset("hybrid_dbsf", limit=5),
-    )
-
-    with pytest.raises(ValueError, match="dense query vector is required"):
-        asyncio.run(_store(client).search(query))
-
-    assert client.get_collections_calls == 0
-    assert client.query_points_calls == []
 
 
-def test_store_search_rejects_invalid_weighted_rrf_before_collection() -> None:
-    client = _FakeQdrantClient(existing_names=["docs"], sparse_names=["bm25"])
-    query = SearchQuery(
-        dense_vector=[0.1, 0.2],
-        sparse_vector=SparseVector(indices=[1], values=[1.0]),
-        namespace="team-space",
-        collections=["corpus-a"],
-        limit=5,
-        query_plan=default_query_plan(
-            result_limit=5,
-            fusion="weighted_rrf",
-            fusion_weights=(1.0,),
-        ),
-    )
-
-    with pytest.raises(UnsupportedQueryStage, match="one weight per prefetch"):
-        asyncio.run(_store(client, dense_dimensions=2).search(query))
-
-    assert client.get_collections_calls == 0
-    assert client.query_points_calls == []
 
 
 def test_store_delete_and_delete_point_ids_use_qdrant_selectors() -> None:
@@ -542,26 +386,26 @@ def test_store_delete_and_delete_point_ids_use_qdrant_selectors() -> None:
     store = _store(client)
 
     asyncio.run(
-        store.delete(DeleteFilter(namespace=" team-space ", collection="corpus-1"))
+        store.delete(DeleteFilter(tenant_id=" team-space ", collection="corpus-1"))
     )
     asyncio.run(store.delete_point_ids([_POINT_1, _POINT_2]))
 
     filter_selector = client.delete_calls[0]["points_selector"]
     conditions = _field_conditions(filter_selector.filter)
-    assert [condition.key for condition in conditions] == ["namespace", "collection"]
+    assert [condition.key for condition in conditions] == ["tenant_id", "collection"]
     assert getattr(conditions[0].match, "value", None) == "team-space"
     assert getattr(conditions[1].match, "value", None) == "corpus-1"
     assert client.delete_calls[1]["points_selector"].points == [_POINT_1, _POINT_2]
 
 
-def test_store_delete_rejects_missing_namespace_before_collection() -> None:
+def test_store_delete_rejects_missing_tenant_id_before_collection() -> None:
     client = _FakeQdrantClient(existing_names=["docs"])
 
-    # DeleteFilter.__post_init__ now refuses empty namespace at construction
+    # DeleteFilter.__post_init__ now refuses empty tenant_id at construction
     # time (it also refuses bare DeleteFilter() with no collection/document_id);
     # the qdrant store never sees the request, which is the stronger guarantee.
-    with pytest.raises(ValueError, match="DeleteFilter.namespace must be a non-empty string"):
-        DeleteFilter(namespace="", collection="corpus-1")
+    with pytest.raises(ValueError, match="DeleteFilter.tenant_id must be a non-empty string"):
+        DeleteFilter(tenant_id="", collection="corpus-1")
 
     assert client.get_collections_calls == 0
     assert client.delete_calls == []
@@ -571,21 +415,21 @@ def test_store_document_record_uses_lookup_and_count_scope() -> None:
     client = _FakeQdrantClient(existing_names=["docs"])
     record = asyncio.run(
         _store(client).get_document_record(
-            namespace=" team-space ",
+            tenant_id=" team-space ",
             collection=" corpus-1 ",
             document_key="/docs/guide.txt",
         )
     )
 
-    lookup_filter = client.scroll_calls[0]["scroll_filter"]
+    lookup_filter = client.scroll_calls[-1]["scroll_filter"]
     count_filter = client.count_calls[0]["count_filter"]
     lookup_keys = [condition.key for condition in _field_conditions(lookup_filter)]
     count_keys = [condition.key for condition in _field_conditions(count_filter)]
-    assert lookup_keys == ["namespace", "collection", "document_key"]
-    assert count_keys == ["namespace", "collection", "document_id"]
+    assert lookup_keys == ["tenant_id", "collection", "document_key"]
+    assert count_keys == ["tenant_id", "collection", "document_id"]
     assert record is not None
     assert record.document_id == "doc-from-payload"
-    assert record.namespace == "team-space"
+    assert record.tenant_id == "team-space"
     assert record.collection == "corpus-1"
     assert record.document_key == "/docs/guide.txt"
     assert record.content_sha256 == "sha"
@@ -602,7 +446,7 @@ def test_store_document_record_rejects_malformed_count_response() -> None:
     with pytest.raises(ValueError, match="document count response"):
         asyncio.run(
             _store(client).get_document_record(
-                namespace="team-space",
+                tenant_id="team-space",
                 collection="corpus-1",
                 document_key="/docs/guide.txt",
             )
@@ -644,7 +488,7 @@ def test_store_document_record_rejects_malformed_payload_fields(
     with pytest.raises(ValueError, match=message):
         asyncio.run(
             _store(client).get_document_record(
-                namespace="team-space",
+                tenant_id="team-space",
                 collection="corpus-1",
                 document_key="/docs/guide.txt",
             )
@@ -659,20 +503,22 @@ def test_store_upsert_batches_points_and_uses_available_sparse_channels() -> Non
         VectorPoint(
             id=_POINT_1,
             dense_vector=[0.1, 0.2],
-            sparse_vector=SparseVector(indices=[1], values=[1.0]),
-            sparse_vectors={"splade": SparseVector(indices=[2], values=[2.0])},
+            sparse_vectors={
+                "bm25": SparseVector(indices=[1], values=[1.0]),
+                "splade": SparseVector(indices=[2], values=[2.0]),
+            },
             payload={"text": "hello"},
         ),
         VectorPoint(
             id=_POINT_2,
             dense_vector=[0.3, 0.4],
-            sparse_vector=SparseVector(indices=[3], values=[3.0]),
+            sparse_vectors={"bm25": SparseVector(indices=[3], values=[3.0])},
             payload={"text": "world"},
         ),
         VectorPoint(
             id=_POINT_3,
             dense_vector=[0.5, 0.6],
-            sparse_vector=SparseVector(indices=[4], values=[4.0]),
+            sparse_vectors={"bm25": SparseVector(indices=[4], values=[4.0])},
             payload={"text": "again"},
         ),
     ]
@@ -691,8 +537,10 @@ def test_store_upsert_rejects_partial_sparse_collection_before_provider_call() -
     point = VectorPoint(
         id=_POINT_1,
         dense_vector=[0.1, 0.2],
-        sparse_vector=SparseVector(indices=[1], values=[1.0]),
-        sparse_vectors={"splade": SparseVector(indices=[2], values=[2.0])},
+        sparse_vectors={
+            "bm25": SparseVector(indices=[1], values=[1.0]),
+            "splade": SparseVector(indices=[2], values=[2.0]),
+        },
         payload={"text": "hello"},
     )
 
@@ -717,7 +565,6 @@ def test_qdrant_store_rejects_wrong_dense_dimensions_before_provider_upsert() ->
     point = VectorPoint(
         id=_POINT_1,
         dense_vector=[0.1, 0.2],
-        sparse_vector=SparseVector(indices=[], values=[]),
         payload={"text": "hello"},
     )
 
@@ -736,7 +583,6 @@ def test_qdrant_store_rejects_unsupported_payload_object_before_provider_upsert(
     point = VectorPoint(
         id=_POINT_1,
         dense_vector=[0.1, 0.2],
-        sparse_vector=SparseVector(indices=[], values=[]),
         payload={"text": _SecretPayload()},
     )
 
@@ -754,8 +600,7 @@ def test_qdrant_store_rejects_wrong_query_dimensions_before_provider_search() ->
     store = _store(client, dense_dimensions=3)
     query = SearchQuery(
         dense_vector=[0.1, 0.2],
-        sparse_vector=SparseVector(indices=[], values=[]),
-        namespace="team-space",
+        tenant_id="team-space",
         collections=["corpus-a"],
     )
 
@@ -771,16 +616,16 @@ def test_qdrant_store_rejects_wrong_query_dimensions_before_provider_search() ->
     [
         (
             {
-                "namespace": "",
+                "tenant_id": "",
                 "collection": "corpus-1",
                 "document_id": "doc-1",
                 "document_key": None,
             },
-            "namespace is required for get_document_record",
+            "tenant_id is required for get_document_record",
         ),
         (
             {
-                "namespace": "team-space",
+                "tenant_id": "team-space",
                 "collection": "",
                 "document_id": "doc-1",
                 "document_key": None,
@@ -789,7 +634,7 @@ def test_qdrant_store_rejects_wrong_query_dimensions_before_provider_search() ->
         ),
         (
             {
-                "namespace": "team-space",
+                "tenant_id": "team-space",
                 "collection": "corpus-1",
                 "document_id": None,
                 "document_key": None,
@@ -797,7 +642,7 @@ def test_qdrant_store_rejects_wrong_query_dimensions_before_provider_search() ->
             "document_id or document_key is required for get_document_record",
         ),
     ],
-    ids=["missing_namespace", "missing_collection", "missing_both_identifiers"],
+    ids=["missing_tenant_id", "missing_collection", "missing_both_identifiers"],
 )
 def test_store_document_record_rejects_missing_lookup_fields(
     kwargs: dict[str, object], message: str
@@ -821,9 +666,12 @@ class _FakeClient:
         collection_name: str,
         field_name: str,
         field_schema: rest.PayloadSchemaType,
-    ) -> None:
+        wait: bool = True,
+    ) -> rest.UpdateResult:
         assert collection_name == "docs"
+        assert wait is True
         self.create_payload_index_calls.append((field_name, field_schema))
+        return rest.UpdateResult(status=rest.UpdateStatus.COMPLETED)
 
 
 class _FakeConfigParams:
@@ -945,7 +793,7 @@ def test_upsert_qdrant_point_batches_runs_batches_concurrently() -> None:
             VectorPoint(
                 id=f"00000000-0000-4000-8000-{index:012d}",
                 dense_vector=[0.1, 0.2],
-                sparse_vector=SparseVector(indices=[index], values=[1.0]),
+                sparse_vectors={"bm25": SparseVector(indices=[index], values=[1.0])},
                 payload={"text": f"point-{index}"},
             )
             for index in range(3)
@@ -1048,58 +896,10 @@ def test_build_healthy_health_includes_latency_and_optimizer_fields() -> None:
     assert health["write_latency_samples"] == 2
 
 
-def test_qdrant_health_reports_dense_only_query_plan_for_dense_only_collection() -> None:
-    collection = _FakeCollectionInfo(size=3072, sparse_names=[])
-
-    capabilities = _collection_query_plan_capabilities(collection)
-    health = _build_healthy_health(
-        base_health=_build_base_health(collection_name="docs", dimensions=3072),
-        collection_info=collection,
-        latency=WriteLatencyTracker(),
-    )
-
-    assert capabilities.dense is True
-    assert capabilities.sparse is False
-    query_plan = cast(dict[str, object], health["query_plan"])
-    assert query_plan["dense"] is True
-    assert query_plan["sparse"] is False
-    assert query_plan["hybrid"] is False
 
 
-def test_qdrant_health_treats_missing_sparse_metadata_as_dense_only() -> None:
-    collection = _FakeCollectionInfo(size=3072, sparse_names=None)
-
-    capabilities = _collection_query_plan_capabilities(collection)
-    health = _build_healthy_health(
-        base_health=_build_base_health(collection_name="docs", dimensions=3072),
-        collection_info=collection,
-        latency=WriteLatencyTracker(),
-    )
-
-    assert capabilities.dense is True
-    assert capabilities.sparse is False
-    query_plan = cast(dict[str, object], health["query_plan"])
-    assert query_plan["dense"] is True
-    assert query_plan["sparse"] is False
-    assert query_plan["hybrid"] is False
 
 
-def test_qdrant_health_treats_unknown_sparse_metadata_as_dense_only() -> None:
-    collection = _FakeCollectionInfo(size=3072, sparse_names=["custom_sparse"])
-
-    capabilities = _collection_query_plan_capabilities(collection)
-    health = _build_healthy_health(
-        base_health=_build_base_health(collection_name="docs", dimensions=3072),
-        collection_info=collection,
-        latency=WriteLatencyTracker(),
-    )
-
-    assert capabilities.dense is True
-    assert capabilities.sparse is False
-    query_plan = cast(dict[str, object], health["query_plan"])
-    assert query_plan["dense"] is True
-    assert query_plan["sparse"] is False
-    assert query_plan["hybrid"] is False
 
 
 def test_build_unhealthy_health_omits_exception_message() -> None:
@@ -1117,7 +917,7 @@ def test_build_unhealthy_health_omits_exception_message() -> None:
 
 @pytest.mark.parametrize(
     "is_local,expected_payload_index_calls",
-    [(True, 0), (False, 8)],
+    [(True, 0), (False, 10)],
     ids=["local_skips_payload_indexes", "remote_writes_payload_indexes"],
 )
 def test_create_collection_payload_indexes_depend_on_deployment(

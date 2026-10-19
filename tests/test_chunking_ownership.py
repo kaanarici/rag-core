@@ -1,6 +1,6 @@
 import pytest
 
-from rag_core.config import CODE_CHUNKING_STRATEGY, MARKDOWN_CHUNKING_STRATEGY
+from rag_core.config import MARKDOWN_CHUNKING_STRATEGY
 from rag_core._engine.core_prepare import prepare_text_chunks
 from rag_core.core_models import estimate_token_count
 from rag_core.documents.chunking.router import chunk_text, is_code_content
@@ -18,7 +18,11 @@ from rag_core.documents.chunking.router import chunk_text, is_code_content
             id="python-by-content",
         ),
         pytest.param(
-            {"mime_type": "text/x-custom", "filename": "notes.txt", "allow_text_x_prefix": True},
+            {
+                "mime_type": "text/x-custom",
+                "filename": "notes.txt",
+                "allow_text_x_prefix": True,
+            },
             True,
             id="text-x-prefix-when-allowed",
         ),
@@ -33,13 +37,6 @@ def test_is_code_content_router_classification(
     kwargs: dict[str, object], expected: bool
 ) -> None:
     assert is_code_content(**kwargs) is expected  # type: ignore[arg-type]
-
-
-def test_router_picks_code_strategy_for_source_files() -> None:
-    chunks = chunk_text("def run():\n    return True\n", filename="script.py")
-
-    assert chunks
-    assert chunks[0].metadata.get("chunking_strategy") == CODE_CHUNKING_STRATEGY
 
 
 def test_html_document_auto_chunks_as_markdown_after_conversion() -> None:

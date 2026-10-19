@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-import math
 from pathlib import Path
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Literal
@@ -10,25 +9,27 @@ from typing import TYPE_CHECKING, Any, Literal
 from rag_core.contracts import (
     normalize_static_retrieval_scope,
     scope_document_ids,
-    validate_bound_namespace,
+    validate_bound_tenant_id,
 )
 from rag_core.core import Engine
 from rag_core.core_models import Config
-from rag_core.scope import normalize_collection, normalize_namespace
+from rag_core.scope import normalize_collection, normalize_tenant_id
 from rag_core.search.context_pack_sources import (
     source_locator_from_result,
     source_reference_from_result,
 )
 from rag_core.search.policy import CollectionPolicy
-from rag_core.search.query_plan_presets import resolve_prefetch_limit
-from rag_core.search.vector_models import SEARCH_RESULT_TYPE_TEXT
+from rag_core.search.result_collapse import (
+    CollapsedSearchResult as _CollapsedSearchResult,
+    collapse_search_results as _collapse_search_results,
+)
 
 TENANT_ID_ENV = "RAG_CORE_TENANT_ID"
 
 if TYPE_CHECKING:
     from rag_core.core_models import DeleteDocumentResult
     from rag_core.events.types import AuditContext
-    from rag_core.search import Context, QueryPlan
+    from rag_core.search import Context
     from rag_core.search.context_pack_models import SourceLocator
     from rag_core.search.vector_models import SearchResult
 
@@ -101,12 +102,6 @@ class RetrievalResult:
     evidence: tuple[Evidence, ...]
 
 
-@dataclass(frozen=True)
-class _CollapsedSearchResult:
-    primary: SearchResult
-    equivalents: tuple[SearchResult, ...]
-
-
 class RAGCore:
     """Scoped application facade over the retrieval engine."""
 
@@ -118,7 +113,7 @@ class RAGCore:
         collection: str,
         document_ids: Sequence[str] | None = None,
     ) -> None:
-        self._tenant_id = validate_bound_namespace(normalize_namespace(tenant_id))
+        self._tenant_id = validate_bound_tenant_id(normalize_tenant_id(tenant_id))
         self._collection = normalize_collection(collection)
         _, self._document_ids = normalize_static_retrieval_scope(
             collection=self._collection,
@@ -159,9 +154,7 @@ class RAGCore:
         if resolved_tenant is None:
             resolved_tenant = get_env_optional(TENANT_ID_ENV)
         if resolved_tenant is None or not resolved_tenant.strip():
-            raise ValueError(
-                f"RAGCore.from_env requires tenant_id or {TENANT_ID_ENV}"
-            )
+            raise ValueError(f"RAGCore.from_env requires tenant_id or {TENANT_ID_ENV}")
         return cls(
             build_config_from_env(),
             tenant_id=resolved_tenant,
@@ -178,7 +171,7 @@ class RAGCore:
         return self._collection
 
     async def __aenter__(self) -> RAGCore:
-        await self.ensure_ready()
+        await self._engine.__aenter__()
         return self
 
     async def __aexit__(
@@ -206,7 +199,7 @@ class RAGCore:
             file_bytes=document.content,
             filename=Path(document.key).name or document.key,
             mime_type=document.content_type,
-            namespace=self._tenant_id,
+            tenant_id=self._tenant_id,
             collection=self._collection,
             document_id=document.id,
             document_key=document.key,
@@ -235,15 +228,50 @@ class RAGCore:
         *,
         limit: int = 10,
         document_ids: Sequence[str] | None = None,
+        rerank: bool = False,
     ) -> RetrievalResult:
         collapsed = await self._search_collapsed(
             query,
             limit=limit,
             document_ids=document_ids,
+            rerank=rerank,
         )
         return RetrievalResult(
             evidence=tuple(_evidence_from_collapsed(item) for item in collapsed)
         )
+
+    async def context(
+        self,
+        query: str,
+        *,
+        limit: int = 5,
+        document_ids: Sequence[str] | None = None,
+        max_chars: int | None = None,
+        max_tokens: int | None = None,
+        rerank: bool = False,
+        audit_context: AuditContext | None = None,
+    ) -> Context:
+        """Return prompt-ready context through the same search and scope rules."""
+        return await self._engine.context(
+            query=query,
+            tenant_id=self._tenant_id,
+            collection=self._collection,
+            limit=limit,
+            document_ids=self._scoped_document_ids(document_ids, limit),
+            rerank=rerank,
+            deduplicate=True,
+            max_chars=max_chars,
+            max_tokens=max_tokens,
+            audit_context=audit_context,
+        )
+
+    def _scoped_document_ids(
+        self, document_ids: Sequence[str] | None, limit: int
+    ) -> list[str] | None:
+        _, requested = normalize_static_retrieval_scope(
+            collection=self._collection, document_ids=document_ids, limit=limit
+        )
+        return scope_document_ids(requested=requested, configured=self._document_ids)
 
     async def _search_collapsed(
         self,
@@ -252,28 +280,20 @@ class RAGCore:
         limit: int,
         document_ids: Sequence[str] | None,
         audit_context: AuditContext | None = None,
+        rerank: bool = False,
     ) -> tuple[_CollapsedSearchResult, ...]:
-        _, requested_document_ids = normalize_static_retrieval_scope(
-            collection=self._collection,
-            document_ids=document_ids,
-            limit=limit,
-        )
-        scoped_document_ids = scope_document_ids(
-            requested=requested_document_ids,
-            configured=self._document_ids,
-        )
+        scoped_document_ids = self._scoped_document_ids(document_ids, limit)
         retrieval_limit = max(
             limit,
-            resolve_prefetch_limit(result_limit=limit),
+            max(20, limit * 4),
         )
         hits = await self._engine.search(
             query=query,
-            namespace=self._tenant_id,
+            tenant_id=self._tenant_id,
             collection=self._collection,
             limit=retrieval_limit,
             document_ids=scoped_document_ids,
-            rerank=False,
-            use_lexical_search=False,
+            rerank=rerank,
             audit_context=audit_context,
         )
         return _collapse_search_results(hits, limit=limit)
@@ -282,23 +302,25 @@ class RAGCore:
         self._validate_document_id(document_id)
         return await self._engine.delete_document(
             document_id=document_id,
-            namespace=self._tenant_id,
+            tenant_id=self._tenant_id,
             collection=self._collection,
         )
 
     def tool(self) -> Any:
-        """Return an OpenAI Agents SDK tool bound to this facade's scope."""
-        from rag_core.integrations.openai_agents import build_retrieve_context_tool
+        """Return a scope-bound async Python function for any agent framework."""
 
-        return build_retrieve_context_tool(
-            _RAGCoreContextAdapter(self),
-            namespace=self._tenant_id,
-            collection=self._collection,
-            document_ids=self._document_ids,
-            default_rerank=False,
-            default_use_lexical_search=False,
-            expose_strategy_options=False,
-        )
+        async def search_user_documents(
+            query: str, limit: int = 5
+        ) -> dict[str, object]:
+            """Search app-owned documents and return context with citations."""
+            pack = await self.context(query, limit=limit)
+            return {
+                **pack.to_prompt_payload(),
+                "ok": True,
+                "context_text": pack.as_prompt_text(),
+            }
+
+        return search_user_documents
 
     def _validate_document_id(self, document_id: str) -> None:
         if not isinstance(document_id, str) or not document_id.strip():
@@ -307,61 +329,15 @@ class RAGCore:
             raise ValueError("document_id is outside the configured document scope")
 
 
-class _RAGCoreContextAdapter:
-    """Prompt-context projection over the facade's canonical retrieval path."""
-
-    def __init__(self, rag: RAGCore) -> None:
-        self._rag = rag
-
-    async def context(
-        self,
-        *,
-        query: str,
-        namespace: str,
-        collections: list[str],
-        limit: int,
-        content_types: list[str] | None,
-        document_ids: list[str] | None,
-        rerank: bool,
-        use_lexical_search: bool,
-        query_plan: QueryPlan | None,
-        max_chars: int | None,
-        max_tokens: int | None,
-        audit_context: AuditContext | None,
-    ) -> Context:
-        if namespace != self._rag.tenant_id or collections != [self._rag.collection]:
-            raise ValueError("tool retrieval scope does not match its RAGCore facade")
-        if content_types is not None:
-            raise ValueError("RAGCore.tool does not expose content-type strategy")
-        if rerank or use_lexical_search or query_plan is not None:
-            raise ValueError("RAGCore.tool does not expose retrieval strategy")
-
-        from rag_core.search.context_pack import build_context_pack
-
-        collapsed = await self._rag._search_collapsed(
-            query,
-            limit=limit,
-            document_ids=document_ids,
-            audit_context=audit_context,
-        )
-        return build_context_pack(
-            (item.primary for item in collapsed),
-            query=query,
-            max_snippets=limit,
-            max_chars=max_chars,
-            max_tokens=max_tokens,
-        )
-
-
 def _bind_scope(config: Config, *, tenant_id: str, collection: str) -> Config:
     policy = config.collection_policy or CollectionPolicy()
-    policy.validate_namespace(tenant_id)
+    policy.validate_tenant_id(tenant_id)
     policy.validate_collections([collection])
     return replace(
         config,
         collection_policy=replace(
             policy,
-            bound_namespace=tenant_id,
+            bound_tenant_id=tenant_id,
         ),
     )
 
@@ -370,7 +346,7 @@ def _validate_engine_scope(engine: Engine, *, tenant_id: str, collection: str) -
     policy = engine._config.collection_policy
     if policy is None:
         return
-    policy.validate_namespace(tenant_id)
+    policy.validate_tenant_id(tenant_id)
     policy.validate_collections([collection])
 
 
@@ -395,56 +371,6 @@ def _evidence_from_collapsed(item: _CollapsedSearchResult) -> Evidence:
     representative = _evidence_from_hit(item.primary)
     equivalents = tuple(_evidence_from_hit(hit) for hit in item.equivalents)
     return replace(representative, equivalent_sources=equivalents)
-
-
-def _collapse_search_results(
-    hits: Sequence[SearchResult],
-    *,
-    limit: int,
-) -> tuple[_CollapsedSearchResult, ...]:
-    groups: dict[tuple[str, str], list[tuple[int, SearchResult]]] = {}
-    for rank, hit in enumerate(hits):
-        result_type = hit.result_type or SEARCH_RESULT_TYPE_TEXT
-        groups.setdefault((result_type, hit.text), []).append((rank, hit))
-
-    collapsed: list[tuple[int, tuple[str, ...], _CollapsedSearchResult]] = []
-    for members in groups.values():
-        ordered_hits = sorted(
-            (hit for _, hit in members),
-            key=_representative_sort_key,
-        )
-        collapsed.append(
-            (
-                min(rank for rank, _ in members),
-                _stable_source_key(ordered_hits[0]),
-                _CollapsedSearchResult(
-                    primary=ordered_hits[0],
-                    equivalents=tuple(ordered_hits[1:]),
-                ),
-            )
-        )
-    collapsed.sort(key=lambda item: (item[0], item[1]))
-    return tuple(item[2] for item in collapsed[:limit])
-
-
-def _representative_sort_key(hit: SearchResult) -> tuple[float, tuple[str, ...]]:
-    score = hit.score if math.isfinite(hit.score) else float("-inf")
-    return (-score, _stable_source_key(hit))
-
-
-def _stable_source_key(hit: SearchResult) -> tuple[str, ...]:
-    source = source_reference_from_result(hit)
-    locator = source_locator_from_result(hit)
-    return (
-        source.source_id,
-        hit.document_id or "",
-        hit.document_key or "",
-        str(locator.chunk_index if locator.chunk_index is not None else ""),
-        str(locator.page_number if locator.page_number is not None else ""),
-        str(locator.line_start if locator.line_start is not None else ""),
-        str(locator.start_offset if locator.start_offset is not None else ""),
-        hit.id,
-    )
 
 
 __all__ = [

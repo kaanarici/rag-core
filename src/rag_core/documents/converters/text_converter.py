@@ -5,7 +5,8 @@ Handles TXT, MD, YAML, TOML, and other plain text formats.
 
 from __future__ import annotations
 
-import asyncio
+from rag_core._async import run_sync
+
 import logging
 
 from .base import (
@@ -61,4 +62,4 @@ class TextConverter(BaseConverter):
                 quality=quality,
             )
 
-        return await asyncio.to_thread(_convert)
+        return await run_sync(_convert)

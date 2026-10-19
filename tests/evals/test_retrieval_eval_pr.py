@@ -69,8 +69,8 @@ async def _run_pr_eval() -> list[EvalResult]:
     rag = RAGCore(core, tenant_id="pr_eval", collection="docs")
     async with rag:
         assert core._sparse is None
-        assert core._store.capabilities.query_plan.dense is True
-        assert core._store.capabilities.query_plan.sparse is False
+        assert core._store.capabilities.dense_vector_dimensions == core._embedding.dimensions
+        assert core._store.capabilities.lexical is False
         for doc in corpus:
             await rag.ingest(
                 Document(

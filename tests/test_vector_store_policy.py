@@ -9,6 +9,7 @@ fields.
 from __future__ import annotations
 
 import uuid
+import json
 from collections.abc import Callable
 
 import pytest
@@ -30,17 +31,20 @@ from rag_core.search.vector_models import SparseVector
 
 
 def _expected_point_id(
-    namespace: str,
+    tenant_id: str,
     collection: str,
     document_id: str,
     chunk_index: int,
 ) -> str:
-    raw = f"{namespace.strip()}::{collection.strip()}::{document_id}:chunk:{chunk_index}"
+    raw = json.dumps(
+        ["point-v2", tenant_id.strip(), collection.strip(), document_id, chunk_index],
+        separators=(",", ":"),
+    )
     return str(uuid.uuid5(uuid.NAMESPACE_URL, raw))
 
 
 @pytest.mark.parametrize(
-    "namespace,collection,document_id,chunk_index",
+    "tenant_id,collection,document_id,chunk_index",
     [
         ("team-space", "corpus-1", "doc-a", 0),
         (" team-space ", "corpus-1", "doc-a", 0),
@@ -49,17 +53,17 @@ def _expected_point_id(
     ],
 )
 def test_default_policy_make_point_id_matches_canonical_format(
-    namespace: str, collection: str, document_id: str, chunk_index: int
+    tenant_id: str, collection: str, document_id: str, chunk_index: int
 ) -> None:
-    expected = _expected_point_id(namespace, collection, document_id, chunk_index)
+    expected = _expected_point_id(tenant_id, collection, document_id, chunk_index)
     direct = make_point_id(
-        namespace=namespace,
+        tenant_id=tenant_id,
         collection=collection,
         document_id=document_id,
         chunk_index=chunk_index,
     )
     via_policy = DEFAULT_POLICY.make_point_id(
-        namespace=namespace,
+        tenant_id=tenant_id,
         collection=collection,
         document_id=document_id,
         chunk_index=chunk_index,
@@ -73,7 +77,7 @@ def test_policy_make_point_id_honors_custom_format() -> None:
         point_id_format=lambda ns, corpus, doc, idx: f"{ns}/{corpus}/{doc}/{idx}"
     )
     point_id = custom.make_point_id(
-        namespace="ns",
+        tenant_id="ns",
         collection="corpus",
         document_id="doc",
         chunk_index=3,
@@ -91,7 +95,7 @@ def _field_keys(qdrant_filter: rest.Filter) -> list[str]:
 
 def _renamed_policy() -> VectorStorePolicy:
     return VectorStorePolicy(
-        namespace_field="ns",
+        tenant_id_field="ns",
         collection_field="cid",
         document_id_field="did",
         document_key_field="dkey",
@@ -102,22 +106,24 @@ def _renamed_policy() -> VectorStorePolicy:
 def _search_filter_keys(policy: VectorStorePolicy) -> list[str]:
     query = SearchQuery(
         dense_vector=[0.1],
-        sparse_vector=SparseVector(indices=[1], values=[1.0]),
-        namespace="ns-1",
+        sparse_vectors={"bm25": SparseVector(indices=[1], values=[1.0])},
+        tenant_id="ns-1",
         collections=["c-1"],
         content_types=["document"],
         document_ids=["d-1"],
     )
-    return _field_keys(build_search_filter(query=query, namespace="ns-1", policy=policy))
+    return _field_keys(
+        build_search_filter(query=query, tenant_id="ns-1", policy=policy)
+    )
 
 
 def _delete_filter_keys(policy: VectorStorePolicy) -> list[str]:
     return _field_keys(
         build_delete_filter(
             filter_values=DeleteFilter(
-                namespace="ns-1", collection="c-1", document_id="d-1"
+                tenant_id="ns-1", collection="c-1", document_id="d-1"
             ),
-            namespace="ns-1",
+            tenant_id="ns-1",
             policy=policy,
         )
     )
@@ -126,7 +132,7 @@ def _delete_filter_keys(policy: VectorStorePolicy) -> list[str]:
 def _document_lookup_filter_keys(policy: VectorStorePolicy) -> list[str]:
     return _field_keys(
         build_document_lookup_filter(
-            namespace="ns-1",
+            tenant_id="ns-1",
             collection="c-1",
             document_id="d-1",
             document_key="/path/x",
@@ -138,7 +144,7 @@ def _document_lookup_filter_keys(policy: VectorStorePolicy) -> list[str]:
 def _document_count_filter_keys(policy: VectorStorePolicy) -> list[str]:
     return _field_keys(
         build_document_count_filter(
-            namespace="ns-1",
+            tenant_id="ns-1",
             collection="c-1",
             document_id="d-1",
             policy=policy,
@@ -161,3 +167,11 @@ def test_qdrant_filter_builders_use_policy_field_names(
     expected_keys: list[str],
 ) -> None:
     assert builder(_renamed_policy()) == expected_keys
+
+
+@pytest.mark.parametrize(
+    "field", ["", " tenant ", "_rag_revision", "ingest_fingerprint", "collection"]
+)
+def test_policy_rejects_ambiguous_or_reserved_scope_fields(field: str) -> None:
+    with pytest.raises(ValueError, match="distinct non-empty"):
+        VectorStorePolicy(tenant_id_field=field)

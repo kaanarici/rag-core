@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from rag_core.search.provider_protocols import EmbeddingProvider, VectorStore
 import logging
 from typing import TYPE_CHECKING
@@ -9,30 +11,33 @@ from rag_core.config.embedding_config import DEFAULT_EMBEDDING_BATCH_SIZE
 from rag_core.events.emit import emit_event, now_ms
 from rag_core.events.types import IndexUpserted
 from rag_core.search.policy import CollectionPolicy, DEFAULT_POLICY, VectorStorePolicy
-from .indexer_prepare import prepare_index_data
+from .indexer_prepare import prepare_index_data, resolve_chunks
 from .indexer_prepare import validate_embedding_batch_size
 from .indexer_models import DeleteAck, IndexRequest, IndexResult
-from .indexer_points import build_points, build_stale_point_ids
+from .indexer_points import build_points
 from rag_core.search.provider_protocols import (
     SparseEmbedder,
 )
-from rag_core.search.request_models import DeleteFilter
+from rag_core.search.request_models import DeleteFilter, StoredDocumentRecord
+from rag_core.search.policy import validate_ingest_scope
 
 
-def validate_index_namespace(namespace: str) -> str:
-    namespace_scoped = namespace.strip()
-    if not namespace_scoped:
-        raise ValueError("namespace is required for indexing")
-    return namespace_scoped
+def validate_index_tenant_id(tenant_id: str) -> str:
+    tenant_id_scoped = tenant_id.strip()
+    if not tenant_id_scoped:
+        raise ValueError("tenant_id is required for indexing")
+    return tenant_id_scoped
 
-def validate_delete_scope(namespace: str, collection: str) -> tuple[str, str]:
-    namespace_scoped = namespace.strip()
-    if not namespace_scoped:
-        raise ValueError("namespace is required for delete_document")
+
+def validate_delete_scope(tenant_id: str, collection: str) -> tuple[str, str]:
+    tenant_id_scoped = tenant_id.strip()
+    if not tenant_id_scoped:
+        raise ValueError("tenant_id is required for delete_document")
     collection_scoped = collection.strip()
     if not collection_scoped:
         raise ValueError("collection is required for delete_document")
-    return namespace_scoped, collection_scoped
+    return tenant_id_scoped, collection_scoped
+
 
 def validate_embedding_store_dimensions(
     embedding_provider: EmbeddingProvider,
@@ -51,6 +56,7 @@ def validate_embedding_store_dimensions(
         % (embedding_dimensions, store_dimensions)
     )
 
+
 def _store_dense_dimensions(vector_store: VectorStore) -> int | None:
     value = vector_store.capabilities.dense_vector_dimensions
     if value is None:
@@ -67,6 +73,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
 class DocumentIndexer:
     def __init__(
         self,
@@ -82,12 +89,11 @@ class DocumentIndexer:
         self._embedding = embedding_provider
         self._sparse = sparse_embedder
         self._store = vector_store
+        self._store.bind_embedding_space(embedding_provider.model_name)
         self._event_sink = event_sink
         self._policy = policy
         self._collection_policy = collection_policy
-        self._embedding_batch_size = validate_embedding_batch_size(
-            embedding_batch_size
-        )
+        self._embedding_batch_size = validate_embedding_batch_size(embedding_batch_size)
 
     async def index_document(
         self,
@@ -96,62 +102,56 @@ class DocumentIndexer:
         event_sink: "EventSink | None" = None,
     ) -> IndexResult:
         # Per-call ``event_sink`` overrides the constructor-bound sink so a
-        # caller-supplied audit-correlation wrapper (``_IngestCorrelationSink``)
+        # caller-supplied audit-correlation wrapper (``CorrelatedSink``)
         # is propagated through the prepare → upsert → emit chain without
         # mutating the long-lived indexer instance.
         active_sink = event_sink if event_sink is not None else self._event_sink
-        namespace = validate_index_namespace(req.namespace)
+        tenant_id, collection = validate_ingest_scope(
+            req.tenant_id, req.collection, self._collection_policy
+        )
+        if not req.document_id or not req.document_id.strip():
+            raise ValueError("document_id is required for indexing")
+        req = replace(
+            req,
+            tenant_id=tenant_id,
+            collection=collection,
+            document_id=req.document_id.strip(),
+        )
         upsert_started_ms = now_ms()
+        chunks = resolve_chunks(req)
+        validate_embedding_store_dimensions(self._embedding, self._store)
         prepared = await prepare_index_data(
             req=req,
+            chunks=chunks,
             embedding_provider=self._embedding,
             sparse_embedder=self._sparse,
             event_sink=active_sink,
             embedding_batch_size=self._embedding_batch_size,
         )
-        if not prepared.chunks:
-            if req.document_id:
-                await self._store.delete(
-                    DeleteFilter(
-                        namespace=namespace,
-                        collection=req.collection,
-                        document_id=req.document_id,
-                    )
-                )
-            return IndexResult(
-                document_id=req.document_id,
-                chunk_count=0,
-                point_ids=[],
-                point_payloads=[],
-                document_key=req.document_key,
-                content_sha256=req.content_sha256,
-            )
-
-        validate_embedding_store_dimensions(self._embedding, self._store)
-        points, point_ids = build_points(
+        points = build_points(
             req=req,
-            namespace=namespace,
+            tenant_id=tenant_id,
             prepared=prepared,
             policy=self._policy,
         )
-        stale_point_ids = build_stale_point_ids(
-            req, new_chunk_count=len(points), policy=self._policy
+        await self._store.replace_document(
+            StoredDocumentRecord(
+                document_id=req.document_id,
+                tenant_id=tenant_id,
+                collection=collection,
+                document_key=req.document_key,
+                content_sha256=req.content_sha256,
+                ingest_fingerprint=req.ingest_fingerprint,
+                processing_version=req.processing_version,
+                chunk_count=len(points),
+            ),
+            points,
         )
-        store = self._store
-        per_point_delete = store.capabilities.per_point_delete
-        if stale_point_ids and not per_point_delete:
-            raise RuntimeError(
-                "Vector store cannot safely replace a document with fewer chunks "
-                "because it does not support per-point deletes"
-            )
-        if stale_point_ids and per_point_delete:
-            await store.delete_point_ids(stale_point_ids)
-        await store.upsert(points)
 
         emit_event(
             active_sink,
             IndexUpserted(
-                namespace=namespace,
+                tenant_id=tenant_id,
                 collection=req.collection,
                 document_id=req.document_id,
                 point_count=len(points),
@@ -162,8 +162,6 @@ class DocumentIndexer:
         return IndexResult(
             document_id=req.document_id,
             chunk_count=len(points),
-            point_ids=point_ids,
-            point_payloads=[dict(point.payload) for point in points],
             document_key=req.document_key,
             content_sha256=req.content_sha256,
         )
@@ -171,7 +169,7 @@ class DocumentIndexer:
     async def delete_document(
         self,
         document_id: str,
-        namespace: str,
+        tenant_id: str,
         *,
         collection: str,
     ) -> DeleteAck:
@@ -186,21 +184,23 @@ class DocumentIndexer:
         ``DeleteDocumentResult.vector_store_acked`` from the store's actual ack
         rather than the engine's optimism. Raises propagate.
         """
-        namespace_scoped, collection_scoped = validate_delete_scope(namespace, collection)
+        tenant_id_scoped, collection_scoped = validate_delete_scope(
+            tenant_id, collection
+        )
         if not isinstance(document_id, str) or not document_id.strip():
             raise ValueError(
                 "document_id is required for delete_document; pass a non-empty "
-                "string. For collection-wide or namespace-wide deletes use the "
-                "explicit delete_collection / delete_namespace facade helpers."
+                "string. For collection-wide or tenant-wide deletes use the "
+                "explicit delete_collection / delete_tenant facade helpers."
             )
         if self._collection_policy is not None:
             self._collection_policy.validate_delete(
-                namespace=namespace_scoped,
+                tenant_id=tenant_id_scoped,
                 collection=collection_scoped,
             )
         await self._store.delete(
             DeleteFilter(
-                namespace=namespace_scoped,
+                tenant_id=tenant_id_scoped,
                 collection=collection_scoped,
                 document_id=document_id.strip(),
             ),
@@ -214,7 +214,7 @@ class DocumentIndexer:
     async def delete_collection(
         self,
         *,
-        namespace: str,
+        tenant_id: str,
         collection: str,
     ) -> DeleteAck:
         """Explicit collection-wide delete.
@@ -223,15 +223,17 @@ class DocumentIndexer:
         ``DeleteFilter`` with no ``document_id`` (the former silent path) is
         forbidden at the engine seam by ``DeleteFilter.__post_init__``.
         """
-        namespace_scoped, collection_scoped = validate_delete_scope(namespace, collection)
+        tenant_id_scoped, collection_scoped = validate_delete_scope(
+            tenant_id, collection
+        )
         if self._collection_policy is not None:
             self._collection_policy.validate_delete(
-                namespace=namespace_scoped,
+                tenant_id=tenant_id_scoped,
                 collection=collection_scoped,
             )
         await self._store.delete(
             DeleteFilter(
-                namespace=namespace_scoped,
+                tenant_id=tenant_id_scoped,
                 collection=collection_scoped,
                 document_id=None,
             ),

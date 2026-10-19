@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
-from typing import Final, Iterable
+from typing import Iterable
 
 from rag_core.retrieval_defaults import DEFAULT_CONTEXT_LIMIT
 from rag_core.search.context_pack_helpers import (
@@ -31,10 +31,6 @@ from rag_core.search.context_pack_sources import (
 )
 from rag_core.search.result_scores import finite_score_or_zero
 from rag_core.search.vector_models import SearchResult
-
-CONTEXT_EXPANSION_BEFORE_METADATA_KEY: Final[str] = "context_expansion_before"
-CONTEXT_EXPANSION_AFTER_METADATA_KEY: Final[str] = "context_expansion_after"
-_CONTEXT_EXPANSION_SEPARATOR: Final[str] = "\n\n"
 
 
 @dataclass(frozen=True)
@@ -126,8 +122,15 @@ def build_context_pack(
     if chars_per_token <= 0:
         raise ValueError("chars_per_token must be positive")
 
-    all_results = list(results)
-    colliding_source_ids = _colliding_source_ids(_deduped_results(all_results))
+    all_results = [(result, _source_dedupe_key(result)) for result in results]
+    source_ids: dict[str, int] = {}
+    distinct_keys: set[_SourceDedupeKey] = set()
+    for result, key in all_results:
+        if key not in distinct_keys:
+            distinct_keys.add(key)
+            source_id = _base_source_id(result)
+            source_ids[source_id] = source_ids.get(source_id, 0) + 1
+    colliding_source_ids = {key for key, count in source_ids.items() if count > 1}
     char_budget = _resolve_char_budget(
         max_chars=max_chars,
         max_tokens=max_tokens,
@@ -140,12 +143,11 @@ def build_context_pack(
     dropped_count = 0
     truncated = False
 
-    for index, result in enumerate(all_results):
+    for index, (result, source_key) in enumerate(all_results):
         if len(snippets) >= max_snippets:
             dropped_count += len(all_results) - index
             truncated = True
             break
-        source_key = _source_dedupe_key(result)
         if source_key in used_source_keys:
             dropped_count += 1
             continue
@@ -167,16 +169,19 @@ def build_context_pack(
         )
         locator = source_locator_from_result(result)
         header = format_snippet_header(source.source_id, source, locator)
+        prompt_header = format_snippet_header(
+            f"S{len(snippets) + 1}", source, locator, prompt_safe=True
+        )
+        header_chars = max(len(header), len(prompt_header))
         text_budget = (
-            None if remaining_chars is None else remaining_chars - len(header) - 1
+            None if remaining_chars is None else remaining_chars - header_chars - 1
         )
         if text_budget is not None and text_budget <= 0:
             dropped_count += len(all_results) - index
             truncated = True
             break
-        text, snippet_truncated, locator_tracks_text = _context_text_for_result(
-            result,
-            text_budget,
+        text, snippet_truncated, locator_tracks_text = _fit_plain_text(
+            result.text, text_budget
         )
         if snippet_truncated:
             truncated = True
@@ -193,7 +198,7 @@ def build_context_pack(
                 locator = replace(locator, end_offset=adjusted_end)
         rendered_char_count = len(header) + 1 + len(text)
         token_estimate = _estimate_tokens(
-            f"{header}\n{text}",
+            f"{max((header, prompt_header), key=len)}\n{text}",
             chars_per_token=chars_per_token,
         )
         used_source_keys.add(source_key)
@@ -212,8 +217,10 @@ def build_context_pack(
             )
         )
         if remaining_chars is not None:
-            remaining_chars -= rendered_char_count
+            remaining_chars -= header_chars + 1 + len(text)
 
+    app_text = render_context_snippets(snippets)
+    prompt_text = "\n\n".join(snippet.as_prompt_text() for snippet in snippets)
     return Context(
         query=query,
         snippets=tuple(snippets),
@@ -221,55 +228,11 @@ def build_context_pack(
         max_snippets=max_snippets,
         max_chars=char_budget,
         max_tokens=max_tokens,
-        token_estimate=sum(snippet.token_estimate for snippet in snippets),
-        char_count=len(render_context_snippets(snippets, max_chars=char_budget)),
+        token_estimate=_estimate_tokens(
+            max((app_text, prompt_text), key=len), chars_per_token=chars_per_token
+        ),
+        char_count=len(app_text),
         truncated=truncated,
-    )
-
-
-def _colliding_source_ids(results: list[SearchResult]) -> set[str]:
-    counts: dict[str, int] = {}
-    for result in results:
-        source_id = _base_source_id(result)
-        counts[source_id] = counts.get(source_id, 0) + 1
-    return {source_id for source_id, count in counts.items() if count > 1}
-
-
-def _deduped_results(results: list[SearchResult]) -> list[SearchResult]:
-    deduped: list[SearchResult] = []
-    used_source_keys: set[_SourceDedupeKey] = set()
-    for result in results:
-        source_key = _source_dedupe_key(result)
-        if source_key in used_source_keys:
-            continue
-        used_source_keys.add(source_key)
-        deduped.append(result)
-    return deduped
-
-
-def _context_text_for_result(
-    result: SearchResult,
-    max_chars: int | None,
-) -> tuple[str, bool, bool]:
-    before = _metadata_text_parts(
-        result.metadata.get(CONTEXT_EXPANSION_BEFORE_METADATA_KEY)
-    )
-    after = _metadata_text_parts(
-        result.metadata.get(CONTEXT_EXPANSION_AFTER_METADATA_KEY)
-    )
-    if not before and not after:
-        return _fit_plain_text(result.text, max_chars)
-
-    before_text = _CONTEXT_EXPANSION_SEPARATOR.join(before)
-    after_text = _CONTEXT_EXPANSION_SEPARATOR.join(after)
-    full_text = _join_context_parts((before_text, result.text, after_text))
-    if max_chars is None or len(full_text) <= max_chars:
-        return full_text, False, False
-    return _fit_expanded_text(
-        before_text=before_text,
-        body_text=result.text,
-        after_text=after_text,
-        max_chars=max_chars,
     )
 
 
@@ -279,87 +242,12 @@ def _fit_plain_text(text: str, max_chars: int | None) -> tuple[str, bool, bool]:
     return text[:max_chars].rstrip(), True, True
 
 
-def _fit_expanded_text(
-    *,
-    before_text: str,
-    body_text: str,
-    after_text: str,
-    max_chars: int,
-) -> tuple[str, bool, bool]:
-    body, body_truncated, locator_tracks_text = _fit_plain_text(body_text, max_chars)
-    if body_truncated or len(body) >= max_chars:
-        return body, True, locator_tracks_text
-
-    remaining = max_chars - len(body)
-    before_segment = ""
-    after_segment = ""
-    if before_text and after_text:
-        neighbor_budget = max(0, remaining - (2 * len(_CONTEXT_EXPANSION_SEPARATOR)))
-        before_keep = min(len(before_text), neighbor_budget // 2)
-        after_keep = min(len(after_text), neighbor_budget - before_keep)
-        extra = neighbor_budget - before_keep - after_keep
-        if extra and before_keep < len(before_text):
-            added = min(extra, len(before_text) - before_keep)
-            before_keep += added
-            extra -= added
-        if extra and after_keep < len(after_text):
-            after_keep += min(extra, len(after_text) - after_keep)
-        before_segment = _tail_text(before_text, before_keep)
-        after_segment = _head_text(after_text, after_keep)
-    elif before_text:
-        before_segment = _tail_text(
-            before_text,
-            max(0, remaining - len(_CONTEXT_EXPANSION_SEPARATOR)),
-        )
-    elif after_text:
-        after_segment = _head_text(
-            after_text,
-            max(0, remaining - len(_CONTEXT_EXPANSION_SEPARATOR)),
-        )
-
-    expanded = _join_context_parts((before_segment, body, after_segment))
-    if expanded == body:
-        return body, True, True
-    return expanded, True, False
-
-
-def _metadata_text_parts(value: object) -> tuple[str, ...]:
-    if not isinstance(value, (list, tuple)):
-        return ()
-    parts: list[str] = []
-    for item in value:
-        if not isinstance(item, str):
-            continue
-        text = item.strip()
-        if text:
-            parts.append(text)
-    return tuple(parts)
-
-
-def _join_context_parts(parts: Iterable[str]) -> str:
-    return _CONTEXT_EXPANSION_SEPARATOR.join(part for part in parts if part)
-
-
-def _tail_text(text: str, max_chars: int) -> str:
-    if max_chars <= 0:
-        return ""
-    return text[-max_chars:].lstrip()
-
-
-def _head_text(text: str, max_chars: int) -> str:
-    if max_chars <= 0:
-        return ""
-    return text[:max_chars].rstrip()
-
-
 __all__ = [
     "CONTEXT_ORDER_VALUES",
     "Citation",
     "Context",
     "ContextSnippet",
     "ContextOrder",
-    "CONTEXT_EXPANSION_AFTER_METADATA_KEY",
-    "CONTEXT_EXPANSION_BEFORE_METADATA_KEY",
     "EvidenceSpan",
     "SourceLocator",
     "SourcePreview",

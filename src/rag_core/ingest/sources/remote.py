@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import posixpath
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from urllib.parse import unquote
 
 from rag_core.config import INGEST_SOURCE_TYPE_URL
-from rag_core.documents.converters.format_support import (
+from rag_core.documents.formats import (
     format_support_for_extension,
     format_support_for_mime_type,
 )
@@ -26,7 +26,7 @@ from rag_core.fetching import (
     HttpFetchClient,
 )
 from rag_core.fetching import validate_fetch_response
-from rag_core.ingest.urls.document_keys import (
+from rag_core.ingest.remote_keys import (
     has_private_query_identity,
     private_remote_document_key,
     public_remote_document_key,
@@ -122,14 +122,19 @@ class RemoteUrlSourceReader:
         fetch_client: _FetchClient | None = None,
         policy: FetchSecurityPolicy | None = None,
         limits: FetchLimits | None = None,
+        max_document_bytes: int | None = None,
     ) -> None:
         if fetch_client is not None and limits is not None:
             raise ValueError("fetch_client cannot be combined with limits")
         if fetch_client is not None and policy is not None:
             raise ValueError("fetch_client cannot be combined with policy")
         self._limits = limits or FetchLimits()
+        if max_document_bytes is not None:
+            self._limits = replace(
+                self._limits, max_bytes=min(self._limits.max_bytes, max_document_bytes)
+            )
         self._fetch_client = fetch_client or HttpFetchClient(
-            policy=policy, limits=limits
+            policy=policy, limits=self._limits
         )
         self._policy = policy
 

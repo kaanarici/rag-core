@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import json
 from collections.abc import Iterable, Mapping, Sequence
 from typing import NoReturn, Protocol, cast
 
@@ -15,7 +16,7 @@ from rag_core.search.filters import (
     Term,
 )
 from rag_core.search.policy import VectorStorePolicy
-from rag_core.search.query_plan import UnsupportedQueryStage
+from rag_core.search.filters import UnsupportedFilter
 from rag_core.search.request_models import DeleteFilter, SearchQuery
 from rag_core.search.stored_payload import (
     json_payload_value,
@@ -29,18 +30,27 @@ TURBOPUFFER_BM25_TEXT_FIELD = "bm25_text"
 _MISSING = object()
 
 
-def _point_to_row(point: VectorPoint, *, policy: VectorStorePolicy) -> dict[str, object]:
+def _point_to_row(
+    point: VectorPoint, *, policy: VectorStorePolicy
+) -> dict[str, object]:
     row: dict[str, object] = {
         "id": _validate_point_id(point.id),
         "vector": point.dense_vector,
     }
-    payload = _validate_json_payload(point.payload)
-    if TURBOPUFFER_BM25_TEXT_FIELD in payload:
-        raise ValueError(
-            f"payload field {TURBOPUFFER_BM25_TEXT_FIELD!r} is reserved by the "
-            "TurboPuffer adapter for rank-only BM25 text; rename the metadata field"
-        )
-    row.update(payload)
+    payload = _validated_point_payload(point)
+    row.update(
+        {
+            key: value
+            for key, value in payload.items()
+            if value is None
+            or isinstance(value, (str, int, float, bool))
+            or isinstance(value, list)
+            and all(isinstance(v, (str, int, float, bool)) for v in value)
+        }
+    )
+    row["rag_core_payload"] = json.dumps(
+        payload, allow_nan=False, separators=(",", ":")
+    )
     row[TURBOPUFFER_BM25_TEXT_FIELD] = point.sparse_text or str(
         row.get(policy.text_field) or ""
     )
@@ -54,7 +64,13 @@ def _schema(
 ) -> dict[str, dict[str, object]]:
     return {
         "vector": {"type": f"[{dense_dimensions}]f32", "ann": True},
-        policy.namespace_field: {"type": "string", "filterable": True},
+        "_rag_kind": {"type": "string", "filterable": True},
+        "_rag_revision": {"type": "string", "filterable": True},
+        "_rag_retired": {"type": "[]string", "filterable": False},
+        "_rag_deleted": {"type": "bool", "filterable": False},
+        "_rag_chunks": {"type": "int", "filterable": False},
+        "rag_core_payload": {"type": "string", "filterable": False},
+        policy.tenant_id_field: {"type": "string", "filterable": True},
         policy.collection_field: {"type": "string", "filterable": True},
         policy.document_id_field: {"type": "string", "filterable": True},
         policy.document_key_field: {"type": "string", "filterable": True},
@@ -115,7 +131,9 @@ def _required_response_rows(response: object, *, operation: str) -> list[object]
     try:
         return list(cast(Iterable[object], rows))
     except TypeError:
-        raise ValueError("turbopuffer %s response returned invalid rows" % operation) from None
+        raise ValueError(
+            "turbopuffer %s response returned invalid rows" % operation
+        ) from None
 
 
 def _row_payload(row: object) -> dict[str, object]:
@@ -129,6 +147,11 @@ def _row_payload(row: object) -> dict[str, object]:
     else:
         raw = dict(getattr(row, "__dict__", {}))
 
+    encoded = raw.get("rag_core_payload")
+    if encoded is not None:
+        if not isinstance(encoded, str):
+            raise ValueError("turbopuffer result payload must be JSON text")
+        return _validate_json_payload(json.loads(encoded))
     return {
         str(key): value
         for key, value in raw.items()
@@ -203,11 +226,11 @@ def _distance_to_score(
 def _search_filter(
     *,
     query: SearchQuery,
-    namespace: str,
+    tenant_id: str,
     policy: VectorStorePolicy,
 ) -> object:
     filters: list[object] = [
-        (policy.namespace_field, "Eq", namespace),
+        (policy.tenant_id_field, "Eq", tenant_id),
     ]
     if query.collections:
         filters.append((policy.collection_field, "In", tuple(query.collections)))
@@ -215,6 +238,10 @@ def _search_filter(
         filters.append((policy.content_type_field, "In", tuple(query.content_types)))
     if query.document_ids:
         filters.append((policy.document_id_field, "In", tuple(query.document_ids)))
+    if query.excluded_revisions:
+        filters.append(
+            ("Not", ("_rag_revision", "In", tuple(query.excluded_revisions)))
+        )
     if query.metadata_filter is not None:
         filters.append(_metadata_filter(query.metadata_filter))
     return _combine_filters(filters)
@@ -223,10 +250,10 @@ def _search_filter(
 def _delete_filter(
     *,
     filter_values: DeleteFilter,
-    namespace: str,
+    tenant_id: str,
     policy: VectorStorePolicy,
 ) -> object:
-    filters: list[object] = [(policy.namespace_field, "Eq", namespace)]
+    filters: list[object] = [(policy.tenant_id_field, "Eq", tenant_id)]
     if filter_values.collection:
         filters.append((policy.collection_field, "Eq", filter_values.collection))
     if filter_values.document_id:
@@ -236,14 +263,14 @@ def _delete_filter(
 
 def _document_lookup_filter(
     *,
-    namespace: str,
+    tenant_id: str,
     collection: str,
     document_id: str | None,
     document_key: str | None,
     policy: VectorStorePolicy,
 ) -> object:
     filters: list[object] = [
-        (policy.namespace_field, "Eq", namespace),
+        (policy.tenant_id_field, "Eq", tenant_id),
         (policy.collection_field, "Eq", collection),
     ]
     if document_id is not None:
@@ -281,7 +308,7 @@ class _TurbopufferFilterTranslator(FilterTranslator[object]):
         return _combine_filters(filters)
 
     def geo(self, node: Geo) -> object:
-        raise UnsupportedQueryStage("turbopuffer adapter cannot translate Geo filters")
+        raise UnsupportedFilter("turbopuffer adapter cannot translate Geo filters")
 
     def and_(self, children: list[object]) -> object:
         return ("And", tuple(children))
@@ -293,7 +320,7 @@ class _TurbopufferFilterTranslator(FilterTranslator[object]):
         return ("Not", child)
 
     def unsupported(self, node: Filter) -> NoReturn:
-        raise UnsupportedQueryStage(
+        raise UnsupportedFilter(
             f"turbopuffer adapter cannot translate Filter node {type(node).__name__}"
         )
 
@@ -302,3 +329,17 @@ def _combine_filters(filters: Sequence[object]) -> object:
     if len(filters) == 1:
         return filters[0]
     return ("And", tuple(filters))
+
+
+def _validated_point_payload(point: VectorPoint) -> dict[str, object]:
+    _validate_point_id(point.id)
+    payload = _validate_json_payload(point.payload)
+    if TURBOPUFFER_BM25_TEXT_FIELD in payload:
+        raise ValueError(
+            f"payload field {TURBOPUFFER_BM25_TEXT_FIELD!r} is reserved by the "
+            "TurboPuffer adapter for rank-only BM25 text; rename the metadata field"
+        )
+    reserved = {"id", "vector", "rag_core_payload"}
+    if reserved & payload.keys():
+        raise ValueError("payload uses a reserved TurboPuffer attribute")
+    return payload

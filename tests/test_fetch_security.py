@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from rag_core.documents.converters.format_support import FORMAT_SUPPORT_MATRIX
+from rag_core.documents.formats import FORMAT_SUPPORT_MATRIX
 from rag_core.fetch_security import (
     FetchLimits,
     FetchSecurityPolicy,
@@ -246,7 +246,7 @@ def test_default_fetch_content_types_cover_registered_non_ocr_mime_types() -> No
 
 
 def test_remote_fetch_docs_name_svg_text_converter_exception() -> None:
-    docs = Path("docs-site/content/docs/formats.mdx").read_text(encoding="utf-8")
+    docs = Path("docs/formats.md").read_text(encoding="utf-8")
 
     assert is_allowed_fetch_content_type("image/svg+xml") is True
     assert is_allowed_fetch_content_type("image/png") is False

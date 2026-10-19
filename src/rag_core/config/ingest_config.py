@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-DEFAULT_PROCESSING_VERSION = "rag_core_processing_v4"
+DEFAULT_PROCESSING_VERSION = "rag_core_processing_v9"
 INGEST_SOURCE_TYPE_FILE = "file"
 INGEST_SOURCE_TYPE_URL = "url"
 INGEST_SOURCE_TYPE_ARCHIVE = "archive"
@@ -27,30 +27,11 @@ SKIP_UNCHANGED_MATERIALIZE: SkipUnchangedMode = "materialize"
 class IngestConfig:
     processing_version: str = DEFAULT_PROCESSING_VERSION
     source_type: str = DEFAULT_INGEST_SOURCE_TYPE
+    max_document_bytes: int = 64 * 1024 * 1024
+    """Maximum source size before parsing; local reads allocate at most limit + 1."""
     build_sparse_index: bool = False
     """Build sparse vectors for explicit lexical or hybrid retrieval."""
-    enable_lexical_search: bool = False
     manifest_directory: Path | None = None
-    """Directory under which manifest JSONL files are written, one per collection.
-
-    When unset, the engine does not persist a manifest. The CLI defaults to
-    ``DEFAULT_CLI_MANIFEST_DIRECTORY`` so manifest inspection commands have data.
-    """
-    lexical_search_provider: str | None = None
-    """Name of a lexical search provider registered in ``SEARCH_SIDECARS``.
-
-    ``None`` keeps the default of no lexical index unless
-    ``enable_lexical_search`` is True. Constructor injection
-    (``Engine(search_sidecar=...)``) takes precedence.
-    """
-    embedding_cache_provider: str | None = None
-    """Name of an EmbeddingCache registered in ``EMBEDDING_CACHES``.
-
-    ``None`` means no cache wrapping is applied to the embedding provider.
-    Constructor injection (``Engine(embedding_cache=...)``) takes precedence.
-    """
-    embedding_cache_path: Path | None = None
-    """SQLite embedding-cache path when ``embedding_cache_provider="sqlite"``."""
     skip_unchanged: SkipUnchangedMode = SKIP_UNCHANGED_FAST
     """How unchanged documents are handled during skip-by-hash reingest.
 
@@ -60,10 +41,18 @@ class IngestConfig:
     """
 
     def __post_init__(self) -> None:
+        if (
+            isinstance(self.max_document_bytes, bool)
+            or not isinstance(self.max_document_bytes, int)
+            or self.max_document_bytes <= 0
+        ):
+            raise ValueError("IngestConfig.max_document_bytes must be a positive integer")
         if not isinstance(self.build_sparse_index, bool):
             raise ValueError("IngestConfig.build_sparse_index must be a boolean")
         if self.skip_unchanged not in {
             SKIP_UNCHANGED_FAST,
             SKIP_UNCHANGED_MATERIALIZE,
         }:
-            raise ValueError("IngestConfig.skip_unchanged must be 'fast' or 'materialize'")
+            raise ValueError(
+                "IngestConfig.skip_unchanged must be 'fast' or 'materialize'"
+            )

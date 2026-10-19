@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
+from rag_core._async import run_sync
+
 from bisect import bisect_right
 import logging
 from dataclasses import dataclass, field
@@ -326,4 +327,4 @@ async def extract_pdf(file_bytes: bytes) -> PdfExtraction:
 
         return result
 
-    return await asyncio.to_thread(_extract)
+    return await run_sync(_extract)

@@ -22,9 +22,3 @@ class ChunkingStrategy(Protocol):
     """Protocol for chunking strategies."""
 
     def chunk(self, text: str, config: ChunkConfig) -> List[PreparedChunk]: ...
-
-
-class AsyncChunkingStrategy(Protocol):
-    """Protocol for async chunking strategies."""
-
-    async def chunk_async(self, text: str, config: ChunkConfig) -> List[PreparedChunk]: ...

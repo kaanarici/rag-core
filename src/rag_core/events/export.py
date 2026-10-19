@@ -19,7 +19,7 @@ RETRIEVAL_HIT_DOCUMENT_KEY_FIELD: Final[str] = "document_key"
 
 RETRIEVAL_HIT_COLLECTION_FIELD: Final[str] = "collection"
 
-RETRIEVAL_HIT_NAMESPACE_FIELD: Final[str] = "namespace"
+RETRIEVAL_HIT_TENANT_ID_FIELD: Final[str] = "tenant_id"
 
 RETRIEVAL_HIT_TITLE_FIELD: Final[str] = "title"
 
@@ -39,7 +39,7 @@ RETRIEVAL_HIT_OPTIONAL_FIELDS: Final[tuple[str, ...]] = (
     RETRIEVAL_HIT_DOCUMENT_ID_FIELD,
     RETRIEVAL_HIT_DOCUMENT_KEY_FIELD,
     RETRIEVAL_HIT_COLLECTION_FIELD,
-    RETRIEVAL_HIT_NAMESPACE_FIELD,
+    RETRIEVAL_HIT_TENANT_ID_FIELD,
     RETRIEVAL_HIT_TITLE_FIELD,
     RETRIEVAL_HIT_CHUNK_INDEX_FIELD,
     RETRIEVAL_HIT_SECTION_PATH_FIELD,
@@ -49,6 +49,7 @@ RETRIEVAL_HIT_OPTIONAL_FIELDS: Final[tuple[str, ...]] = (
 
 if TYPE_CHECKING:
     from rag_core.search import SearchResult
+
 
 def to_retrieval_hits(results: Sequence[SearchResult]) -> list[dict[str, object]]:
     """Map ``SearchResult`` rows to a stable JSON shape for tracing SDKs.
@@ -71,8 +72,8 @@ def to_retrieval_hits(results: Sequence[SearchResult]) -> list[dict[str, object]
             document[RETRIEVAL_HIT_DOCUMENT_KEY_FIELD] = result.document_key
         if result.collection is not None:
             document[RETRIEVAL_HIT_COLLECTION_FIELD] = result.collection
-        if result.namespace is not None:
-            document[RETRIEVAL_HIT_NAMESPACE_FIELD] = result.namespace
+        if result.tenant_id is not None:
+            document[RETRIEVAL_HIT_TENANT_ID_FIELD] = result.tenant_id
         if result.title is not None:
             document[RETRIEVAL_HIT_TITLE_FIELD] = result.title
         if result.chunk_index is not None:

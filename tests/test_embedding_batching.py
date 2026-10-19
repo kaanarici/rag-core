@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+from rag_core.documents.prepare_chunks import prepare_pre_chunked_texts
 import asyncio
 from argparse import Namespace
+from rag_core.cli.config import config_from_args
 
 import pytest
 
-from rag_core.cli import _build_parser
-from rag_core.cli.commands.doctor import _planned_core_payload
 from rag_core.config import EmbeddingConfig, QdrantConfig, VectorStoreConfig
 from rag_core.core_models import Config
 from rag_core.search.indexer import DocumentIndexer, IndexRequest
@@ -21,14 +21,16 @@ from tests.support import (
 
 def _index_request(*, chunk_count: int = 5) -> IndexRequest:
     return IndexRequest(
+        prepared_chunks=prepare_pre_chunked_texts(
+            [f"fox query {index}" for index in range(chunk_count)]
+        ),
         document_id="doc-1",
         collection="help",
-        namespace="acme",
+        tenant_id="acme",
         text="unused",
         filename="guide.txt",
         mime_type="text/plain",
         source_type="file",
-        pre_chunked_texts=[f"fox query {index}" for index in range(chunk_count)],
     )
 
 
@@ -52,7 +54,7 @@ def test_embedding_config_defaults_and_validates_batch_size() -> None:
 
 
 def test_rag_core_config_from_cli_carries_embedding_batch_size() -> None:
-    config = Config.from_cli(
+    config = config_from_args(
         Namespace(
             qdrant_url=None,
             qdrant_location=":memory:",
@@ -71,47 +73,6 @@ def test_rag_core_config_from_cli_carries_embedding_batch_size() -> None:
     )
 
     assert config.embedding.batch_size == 7
-
-
-def test_config_flags_accept_embedding_batch_size() -> None:
-    parser = _build_parser()
-    args = parser.parse_args(
-        [
-            "doctor",
-            "--embedding-model",
-            "text-embedding-3-small",
-            "--embedding-dimensions",
-            "1536",
-            "--embedding-batch-size",
-            "8",
-            "--json",
-        ]
-    )
-
-    config = Config.from_cli(args)
-    payload = _planned_core_payload(config)
-
-    assert config.embedding.batch_size == 8
-    assert payload["embedding"] == {
-        "provider": "openai",
-        "model": "text-embedding-3-small",
-        "dimensions": 1536,
-        "batch_size": 8,
-    }
-
-
-def test_config_flags_reject_non_positive_embedding_batch_size() -> None:
-    parser = _build_parser()
-    args = parser.parse_args(
-        [
-            "doctor",
-            "--embedding-batch-size",
-            "0",
-        ]
-    )
-
-    with pytest.raises(ValueError, match="batch_size"):
-        Config.from_cli(args)
 
 
 def test_prepare_index_data_batches_dense_embeddings() -> None:
@@ -162,6 +123,8 @@ def test_indexer_rejects_invalid_embedding_batch_size() -> None:
 def test_rag_core_config_still_propagates_qdrant_validation() -> None:
     with pytest.raises(ValueError, match="got both"):
         Config(
-            vector_store=VectorStoreConfig(qdrant=QdrantConfig(url="http://localhost:6333", location=":memory:")),
+            vector_store=VectorStoreConfig(
+                qdrant=QdrantConfig(url="http://localhost:6333", location=":memory:")
+            ),
             embedding=EmbeddingConfig(batch_size=2),
         )

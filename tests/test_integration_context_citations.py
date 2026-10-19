@@ -21,13 +21,6 @@ from rag_core.config import EmbeddingConfig, QdrantConfig, VectorStoreConfig
 from rag_core.demo import build_demo_core
 from rag_core.demo import DemoEmbeddingProvider, DemoSparseEmbedder
 from rag_core.documents.contextualizer import ChunkContextRequest
-from rag_core.search import search_profile
-from rag_core.search.pipeline import (
-    HybridRetrieve,
-    RetrievalPipeline,
-)
-from rag_core.search.pipeline.stages.neighbor_expand import NeighborExpandPostprocess
-from rag_core.search.pipeline_runner import SearchPipelineRunner
 
 pytestmark = [pytest.mark.integration]
 
@@ -106,7 +99,7 @@ async def _ingest(core: object, *, filename: str, mime_type: str, body: str) -> 
         file_bytes=body.encode("utf-8"),
         filename=filename,
         mime_type=mime_type,
-        namespace="citations",
+        tenant_id="citations",
         collection="docs",
         document_key=filename,
     )
@@ -152,7 +145,7 @@ def test_citations_survive_real_round_trip() -> None:
 
             pack = await core.context(
                 query="gnarlwick reimbursement fortnight expense forms",
-                namespace="citations",
+                tenant_id="citations",
                 collections=["docs"],
                 limit=5,
                 rerank=False,
@@ -245,21 +238,21 @@ def test_qdrant_contextualized_retrieval_keeps_clean_citation_text() -> None:
                 file_bytes=clean_document.encode("utf-8"),
                 filename="clean.md",
                 mime_type="text/markdown",
-                namespace="citations",
+                tenant_id="citations",
                 collection="docs",
                 document_key="clean.md",
             )
 
             hits = await core.search(
                 query=marker,
-                namespace="citations",
+                tenant_id="citations",
                 collections=["docs"],
                 limit=3,
                 rerank=False,
             )
             pack = await core.context(
                 query=marker,
-                namespace="citations",
+                tenant_id="citations",
                 collections=["docs"],
                 limit=3,
                 rerank=False,
@@ -283,38 +276,6 @@ def test_qdrant_contextualized_retrieval_keeps_clean_citation_text() -> None:
     asyncio.run(go())
 
 
-def test_retrieve_context_extrema_order_keeps_real_round_trip_citation_spans() -> None:
-    import asyncio
-
-    async def go() -> None:
-        async with build_demo_core(
-            store_collection=f"citations_extrema_{uuid.uuid4().hex}",
-            sparse=True,
-        ) as core:
-            await _ingest_fixture(core)
-
-            pack = await core.context(
-                query="gnarlwick reimbursement fortnight expense forms",
-                namespace="citations",
-                collections=["docs"],
-                limit=5,
-                rerank=False,
-                query_plan=search_profile("balanced", limit=5),
-            )
-
-            assert len(pack.snippets) >= 3
-            assert [snippet.rank for snippet in pack.snippets] == list(
-                range(1, len(pack.snippets) + 1)
-            )
-            prompt_text = pack.as_prompt_text(context_order="extrema")
-            assert prompt_text.startswith("[S1]")
-            for snippet in pack.snippets:
-                assert f"[S{snippet.rank}]" in prompt_text
-                original = _GUIDE_MD if snippet.source.document_key == "guide.md" else _TOOL_PY
-                assert snippet.text in original
-                _assert_span_sanity(snippet, original)
-
-    asyncio.run(go())
 
 
 def test_code_chunk_locators_match_source_lines() -> None:
@@ -328,7 +289,7 @@ def test_code_chunk_locators_match_source_lines() -> None:
 
             pack = await core.context(
                 query="quibblesplat average amounts",
-                namespace="citations",
+                tenant_id="citations",
                 collections=["docs"],
                 limit=5,
                 rerank=False,
@@ -361,59 +322,5 @@ def test_code_chunk_locators_match_source_lines() -> None:
             )
 
             _assert_span_sanity(target, _TOOL_PY)
-
-    asyncio.run(go())
-
-
-def test_neighbor_expansion_keeps_original_citation_span() -> None:
-    import asyncio
-
-    async def go() -> None:
-        async with build_demo_core(
-            store_collection=f"neighbor_{uuid.uuid4().hex}"
-        ) as core:
-            core._search = SearchPipelineRunner(
-                embedding_provider=core._embedding,
-                sparse_embedder=core._sparse,
-                vector_store=core._store,
-                event_sink=core._event_sink,
-                pipeline=RetrievalPipeline(
-                    retrieve=HybridRetrieve(),
-                    postprocesses=(NeighborExpandPostprocess(window=1),),
-                ),
-            )
-            ingested = await _ingest(
-                core,
-                filename="neighbor.md",
-                mime_type="text/markdown",
-                body=_NEIGHBOR_GUIDE_MD,
-            )
-            assert getattr(ingested, "chunk_count") >= 4
-
-            pack = await core.context(
-                query="amberglint retrieval sentence",
-                namespace="citations",
-                collections=["docs"],
-                limit=1,
-                rerank=False,
-            )
-
-            assert len(pack.snippets) == 1
-            snippet = pack.snippets[0]
-            assert "prelude orbit sentence" in snippet.text
-            assert "amberglint retrieval sentence" in snippet.text
-            assert "followup lattice sentence" in snippet.text
-            assert snippet.locator.start_offset is not None
-            assert snippet.locator.end_offset is not None
-            original_slice = _NEIGHBOR_GUIDE_MD[
-                snippet.locator.start_offset : snippet.locator.end_offset
-            ]
-            assert "amberglint retrieval sentence" in original_slice
-            assert "prelude orbit sentence" not in original_slice
-            assert "followup lattice sentence" not in original_slice
-            assert pack.source_previews[0].locator_label is not None
-            assert pack.source_previews[0].locator_label.endswith(
-                f"chunk {snippet.source.chunk_index}"
-            )
 
     asyncio.run(go())

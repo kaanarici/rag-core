@@ -19,7 +19,7 @@ from rag_core.search.filters import (
     Term,
 )
 from rag_core.search.policy import DEFAULT_POLICY, VectorStorePolicy
-from rag_core.search.query_plan import UnsupportedQueryStage
+from rag_core.search.filters import UnsupportedFilter
 from rag_core.search.request_models import (
     DeleteFilter,
     SearchQuery,
@@ -34,12 +34,19 @@ def metadata_filter_to_qdrant(filter: Filter) -> rest.Filter:
 
 class _QdrantFilterTranslator(FilterTranslator[object]):
     def term(self, node: Term) -> object:
+        if isinstance(node.value, float):
+            return self.range_(Range(node.field, gte=node.value, lte=node.value))
         return rest.FieldCondition(
             key=node.field,
             match=rest.MatchValue(value=cast(Any, node.value)),
         )
 
     def in_(self, node: In) -> object:
+        if not (
+            all(type(value) is str for value in node.values)
+            or all(type(value) is int for value in node.values)
+        ):
+            return self.or_([self.term(Term(node.field, value)) for value in node.values])
         return rest.FieldCondition(
             key=node.field,
             match=rest.MatchAny(any=cast(Any, list(node.values))),
@@ -75,7 +82,7 @@ class _QdrantFilterTranslator(FilterTranslator[object]):
         return rest.Filter(must_not=cast(Any, [child]))
 
     def unsupported(self, node: Filter) -> NoReturn:
-        raise UnsupportedQueryStage(
+        raise UnsupportedFilter(
             f"qdrant adapter cannot translate Filter node {type(node).__name__}"
         )
 
@@ -84,9 +91,7 @@ def _qdrant_range_bound(bound: float | str | None) -> float | None:
     if bound is None:
         return None
     if isinstance(bound, str):
-        raise UnsupportedQueryStage(
-            "qdrant adapter cannot translate string Range filters"
-        )
+        raise UnsupportedFilter("qdrant adapter cannot translate string Range filters")
     return bound
 
 
@@ -97,13 +102,13 @@ def build_filter(must_conditions: Sequence[object]) -> rest.Filter:
 def build_search_filter(
     *,
     query: SearchQuery,
-    namespace: str,
+    tenant_id: str,
     policy: VectorStorePolicy = DEFAULT_POLICY,
 ) -> rest.Filter:
     must_conditions: list[object] = [
         rest.FieldCondition(
-            key=policy.namespace_field,
-            match=rest.MatchValue(value=namespace),
+            key=policy.tenant_id_field,
+            match=rest.MatchValue(value=tenant_id),
         ),
     ]
 
@@ -131,126 +136,75 @@ def build_search_filter(
     if query.metadata_filter is not None:
         must_conditions.append(metadata_filter_to_qdrant(query.metadata_filter))
 
-    return build_filter(must_conditions)
+    return rest.Filter(
+        must=cast(Any, must_conditions),
+        must_not=[
+            rest.FieldCondition(
+                key="_rag_kind", match=rest.MatchValue(value="head_v2")
+            ),
+            *(
+                [
+                    rest.FieldCondition(
+                        key="_rag_revision",
+                        match=rest.MatchAny(any=list(query.excluded_revisions)),
+                    )
+                ]
+                if query.excluded_revisions
+                else []
+            ),
+        ],
+    )
 
 
 def build_delete_filter(
     *,
     filter_values: DeleteFilter,
-    namespace: str,
+    tenant_id: str,
     policy: VectorStorePolicy = DEFAULT_POLICY,
 ) -> rest.Filter:
-    must_conditions: list[object] = [
-        rest.FieldCondition(
-            key=policy.namespace_field,
-            match=rest.MatchValue(value=namespace),
-        ),
-    ]
-
-    if filter_values.collection:
-        must_conditions.append(
-            rest.FieldCondition(
-                key=policy.collection_field,
-                match=rest.MatchValue(value=filter_values.collection),
-            )
-        )
-    if filter_values.document_id:
-        must_conditions.append(
-            rest.FieldCondition(
-                key=policy.document_id_field,
-                match=rest.MatchValue(value=filter_values.document_id),
-            )
-        )
-
-    return build_filter(must_conditions)
+    return build_document_lookup_filter(
+        tenant_id=tenant_id,
+        collection=filter_values.collection,
+        document_id=filter_values.document_id,
+        document_key=None,
+        policy=policy,
+    )
 
 
 def build_document_lookup_filter(
     *,
-    namespace: str,
-    collection: str,
+    tenant_id: str,
+    collection: str | None,
     document_id: str | None,
     document_key: str | None,
     policy: VectorStorePolicy = DEFAULT_POLICY,
 ) -> rest.Filter:
-    must_conditions: list[object] = [
-        rest.FieldCondition(
-            key=policy.namespace_field,
-            match=rest.MatchValue(value=namespace),
-        ),
-        rest.FieldCondition(
-            key=policy.collection_field,
-            match=rest.MatchValue(value=collection),
-        ),
-    ]
-
-    if document_id is not None:
-        must_conditions.append(
-            rest.FieldCondition(
-                key=policy.document_id_field,
-                match=rest.MatchValue(value=document_id),
-            )
-        )
-    if document_key is not None:
-        must_conditions.append(
-            rest.FieldCondition(
-                key=policy.document_key_field,
-                match=rest.MatchValue(value=document_key),
-            )
-        )
-    return build_filter(must_conditions)
-
-
-def build_document_count_filter(
-    *,
-    namespace: str,
-    collection: str,
-    document_id: str,
-    policy: VectorStorePolicy = DEFAULT_POLICY,
-) -> rest.Filter:
+    fields = (
+        (policy.tenant_id_field, tenant_id),
+        (policy.collection_field, collection),
+        (policy.document_id_field, document_id),
+        (policy.document_key_field, document_key),
+    )
     return build_filter(
         [
-            rest.FieldCondition(
-                key=policy.namespace_field,
-                match=rest.MatchValue(value=namespace),
-            ),
-            rest.FieldCondition(
-                key=policy.collection_field,
-                match=rest.MatchValue(value=collection),
-            ),
-            rest.FieldCondition(
-                key=policy.document_id_field,
-                match=rest.MatchValue(value=document_id),
-            ),
+            rest.FieldCondition(key=key, match=rest.MatchValue(value=value))
+            for key, value in fields
+            if value is not None
         ]
     )
 
 
-def build_chunk_index_lookup_filter(
+def build_document_count_filter(
     *,
-    namespace: str,
+    tenant_id: str,
     collection: str,
     document_id: str,
-    chunk_indices: Sequence[int],
     policy: VectorStorePolicy = DEFAULT_POLICY,
 ) -> rest.Filter:
-    return build_filter(
-        [
-            rest.FieldCondition(
-                key=policy.namespace_field,
-                match=rest.MatchValue(value=namespace),
-            ),
-            rest.FieldCondition(
-                key=policy.collection_field,
-                match=rest.MatchValue(value=collection),
-            ),
-            rest.FieldCondition(
-                key=policy.document_id_field,
-                match=rest.MatchValue(value=document_id),
-            ),
-            rest.FieldCondition(
-                key=policy.chunk_index_field,
-                match=rest.MatchAny(any=list(chunk_indices)),
-            ),
-        ]
+    return build_document_lookup_filter(
+        tenant_id=tenant_id,
+        collection=collection,
+        document_id=document_id,
+        document_key=None,
+        policy=policy,
     )

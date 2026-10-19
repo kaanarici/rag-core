@@ -55,9 +55,9 @@ def test_engine_public_scope_uses_collection_and_collections() -> None:
 
     store = asyncio.run(scenario())
 
-    assert store.upsert_calls[0][0].payload["namespace"] == "default"
+    assert store.upsert_calls[0][0].payload["tenant_id"] == "default"
     assert store.upsert_calls[0][0].payload["collection"] == "docs"
-    assert store.search_calls[-2].namespace == "default"
+    assert store.search_calls[-2].tenant_id == "default"
     assert store.search_calls[-2].collections == ["docs"]
-    assert store.search_calls[-1].namespace == "default"
+    assert store.search_calls[-1].tenant_id == "default"
     assert store.search_calls[-1].collections == ["docs"]

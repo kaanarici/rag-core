@@ -40,7 +40,7 @@ class EvalCase:
     """
 
     query: str
-    namespace: str
+    tenant_id: str
     collections: tuple[str, ...]
     expected_ids: tuple[str, ...]
     expected_grades: Mapping[str, int] | None = None
@@ -59,7 +59,7 @@ class EvalCase:
     def __init__(
         self,
         query: str,
-        namespace: str,
+        tenant_id: str,
         collections: Sequence[str],
         expected_ids: Sequence[str],
         expected_grades: Mapping[str, int] | None = None,
@@ -84,7 +84,7 @@ class EvalCase:
                 "expected_ids must not be empty unless expect_no_results is true"
             )
         object.__setattr__(self, "query", query)
-        object.__setattr__(self, "namespace", namespace)
+        object.__setattr__(self, "tenant_id", tenant_id)
         object.__setattr__(self, "collections", tuple(collections))
         object.__setattr__(self, "expected_ids", tuple(expected_ids))
         object.__setattr__(self, "expected_grades", expected_grades)
@@ -218,7 +218,7 @@ def _load_case_row(row: object, *, path: Path, line_number: int) -> EvalCase:
     )
     return EvalCase(
         query=required_string(row, "query", path=path, line_number=line_number),
-        namespace=required_string(row, "namespace", path=path, line_number=line_number),
+        tenant_id=required_string(row, "tenant_id", path=path, line_number=line_number),
         collections=required_string_tuple(
             row,
             "collections",

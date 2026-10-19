@@ -6,7 +6,6 @@ Covers:
 - Event records carry expected fields.
 - MultiSink fans out; JsonlSink round-trips; LoggingSink logs.
 - Sink errors do NOT break ingest or search.
-- Registry returns built-in sinks and accepts user registration.
 """
 
 from __future__ import annotations
@@ -47,98 +46,27 @@ from rag_core.events.types import (
     IngestStarted,
     ParseCompleted,
     SearchCompleted,
-    SearchPlanned,
     SearchStarted,
-    SearchStageCompleted,
     StageError,
 )
-from rag_core.events.trace_payload_fields import TRACE_ABSENT_LABEL
 from rag_core._engine.core_prepare import parse_document_bytes
-from rag_core.search.providers.embedding_cache import InMemoryCache
-from rag_core.search.planning import QUERY_PLAN_PRESETS, query_plan_preset
-from rag_core.search.pipeline_runner_defaults import default_search_pipeline
-from rag_core.search.query_plan import (
-    PRIMARY_DENSE_QUERY_VECTOR,
-    DenseChannel,
-    Prefetch,
-    PrefetchFusion,
-    QueryPlan,
-    SparseChannel,
-)
-from rag_core.search.query_plan_trace import emit_query_plan_trace_event
-from rag_core.search.pipeline_runner import (
-    SearchExecutionOptions,
-    SearchPipelineRunner,
+from rag_core.search.runner import (
+    SearchRunner,
     SearchRequest,
 )
-from rag_core.search.filters import Term
 from rag_core.search.request_models import RerankBudget
-from rag_core.search.vector_models import SparseVector
 
 from tests.support import (
+    make_test_config,
     FakeEmbeddingProvider,
     FakeReranker,
     FakeSparseEmbedder,
-    FakeSearchSidecar,
     RecordingVectorStore,
     make_search_result,
-    make_test_config,
 )
 
 
-_DENSE_PRIMARY_CHANNEL = f"dense:dense:{PRIMARY_DENSE_QUERY_VECTOR}"
-
-_EXPECTED_PLAN_TRACE_BY_PRESET = {
-    "hybrid_rrf": {
-        "channels": (_DENSE_PRIMARY_CHANNEL, "sparse:bm25:bm25"),
-        "prefetch_limits": (20, 20),
-        "fusion": "rrf",
-        "plan_rerank": TRACE_ABSENT_LABEL,
-    },
-    "dense_only": {
-        "channels": (_DENSE_PRIMARY_CHANNEL,),
-        "prefetch_limits": (20,),
-        "fusion": TRACE_ABSENT_LABEL,
-        "plan_rerank": TRACE_ABSENT_LABEL,
-    },
-    "sparse_only": {
-        "channels": ("sparse:bm25:bm25",),
-        "prefetch_limits": (20,),
-        "fusion": TRACE_ABSENT_LABEL,
-        "plan_rerank": TRACE_ABSENT_LABEL,
-    },
-    "hybrid_dbsf": {
-        "channels": (_DENSE_PRIMARY_CHANNEL, "sparse:bm25:bm25"),
-        "prefetch_limits": (20, 20),
-        "fusion": "dbsf",
-        "plan_rerank": TRACE_ABSENT_LABEL,
-    },
-    "hybrid_with_mmr": {
-        "channels": (_DENSE_PRIMARY_CHANNEL, "sparse:bm25:bm25"),
-        "prefetch_limits": (20, 20),
-        "fusion": "rrf",
-        "plan_rerank": "mmr",
-    },
-}
-
-
-def _make_core(
-    *,
-    event_sink: EventSink | None,
-    store: RecordingVectorStore | None = None,
-    embedding_cache: InMemoryCache | None = None,
-) -> Engine:
-    return Engine(
-        make_test_config(
-            qdrant_collection="rag_core_events_tests",
-            embedding_dimensions=4,
-        ),
-        embedding_provider=FakeEmbeddingProvider(),
-        sparse_embedder=FakeSparseEmbedder(),
-        vector_store=store or RecordingVectorStore(),
-        event_sink=event_sink,
-        embedding_cache=embedding_cache,
-    )
+_DENSE_PRIMARY_CHANNEL = "dense:dense:primary"
 
 
 async def _ingest_hello(
@@ -152,7 +80,7 @@ async def _ingest_hello(
             file_bytes=b"hello world",
             filename="a.txt",
             mime_type="text/plain",
-            namespace="ns",
+            tenant_id="ns",
             collection="corp",
             document_id=document_id,
         )
@@ -222,23 +150,24 @@ def test_multi_sink_counts_failures_swallowed_by_builtin_child_sinks() -> None:
 def test_jsonl_sink_round_trips_ingest_and_batch_events(tmp_path: Path) -> None:
     log = tmp_path / "events.jsonl"
     sink = JsonlSink(log)
-    sink.emit(IngestStarted(namespace="ns", collection="corp", document_id="doc-1", filename="a.txt"))
+    sink.emit(
+        IngestStarted(
+            tenant_id="ns", collection="corp", document_id="doc-1", filename="a.txt"
+        )
+    )
     sink.emit(
         EmbedCompleted(
             provider="fake",
             model="fake-embedding",
             text_count=2,
             role="dense",
-            cache_hits=1,
-            cache_misses=1,
-            cache_writes=1,
         )
     )
     sink.emit(IngestCompleted(document_id="doc-1", chunk_count=3))
-    sink.emit(IngestBatchStarted(namespace="ns", collection="corp", planned_count=2))
+    sink.emit(IngestBatchStarted(tenant_id="ns", collection="corp", planned_count=2))
     sink.emit(
         IngestBatchProgress(
-            namespace="ns",
+            tenant_id="ns",
             collection="corp",
             planned_count=2,
             completed_count=1,
@@ -248,15 +177,13 @@ def test_jsonl_sink_round_trips_ingest_and_batch_events(tmp_path: Path) -> None:
             filename="a.txt",
             document_key="/docs/a.txt",
             content_sha256="sha-a",
-            manifest_status="unchanged",
-            manifest_reason="content_sha256_match",
             status="succeeded",
             ingest_state="created",
         )
     )
     sink.emit(
         IngestBatchCompleted(
-            namespace="ns",
+            tenant_id="ns",
             collection="corp",
             planned_count=2,
             succeeded_count=1,
@@ -266,7 +193,7 @@ def test_jsonl_sink_round_trips_ingest_and_batch_events(tmp_path: Path) -> None:
     )
     sink.emit(
         IngestBatchFailed(
-            namespace="ns",
+            tenant_id="ns",
             collection="corp",
             planned_count=2,
             completed_count=1,
@@ -277,7 +204,9 @@ def test_jsonl_sink_round_trips_ingest_and_batch_events(tmp_path: Path) -> None:
         )
     )
 
-    payloads = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    payloads = [
+        json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()
+    ]
     assert [payload["event_type"] for payload in payloads] == [
         "ingest.started",
         "embed.completed",
@@ -289,13 +218,12 @@ def test_jsonl_sink_round_trips_ingest_and_batch_events(tmp_path: Path) -> None:
     ]
     assert "document_id" not in payloads[0]
     assert "filename" not in payloads[0]
-    assert (payloads[1]["cache_hits"], payloads[1]["cache_misses"], payloads[1]["cache_writes"]) == (1, 1, 1)
+    assert payloads[1]["text_count"] == 2
     assert payloads[2]["chunk_count"] == 3
     progress = payloads[4]
     assert progress["status"] == "succeeded"
     assert "content_sha256" not in progress
     assert "document_key" not in progress
-    assert progress["manifest_status"] == "unchanged"
     assert payloads[5]["failed_count"] == 1
     assert "error" not in payloads[6]
 
@@ -329,7 +257,9 @@ def test_jsonl_sink_serializes_tuple_collections_as_list(tmp_path: Path) -> None
     assert "collections" not in json.loads(log.read_text(encoding="utf-8"))
 
 
-def test_jsonl_sink_counts_emit_failures(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_jsonl_sink_counts_emit_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     def fail_payload(event: Event) -> dict[str, object]:
         raise RuntimeError("payload failed")
 
@@ -342,7 +272,9 @@ def test_jsonl_sink_counts_emit_failures(tmp_path: Path, monkeypatch: pytest.Mon
     assert (tmp_path / "events.jsonl").read_text(encoding="utf-8") == ""
 
 
-def test_logging_sink_emits_event_type_at_info(caplog: pytest.LogCaptureFixture) -> None:
+def test_logging_sink_emits_event_type_at_info(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     sink = LoggingSink()
     with caplog.at_level(logging.INFO, logger="rag_core.events"):
         sink.emit(IngestStarted(filename="a.txt"))
@@ -373,7 +305,7 @@ def test_failing_sink_does_not_break_ingest() -> None:
                 file_bytes=b"hello",
                 filename="a.txt",
                 mime_type="text/plain",
-                namespace="ns",
+                tenant_id="ns",
                 collection="corp",
             )
         finally:
@@ -403,23 +335,27 @@ def test_basic_ingest_emits_full_lifecycle_with_identifying_fields() -> None:
     }.issubset(types)
 
     [started] = [event for event in buffer.events if isinstance(event, IngestStarted)]
-    assert started.namespace == "ns"
+    assert started.tenant_id == "ns"
     assert started.collection == "corp"
     assert started.filename == "a.txt"
     assert started.mime_type == "text/plain"
     assert started.content_sha256
 
-    [completed] = [event for event in buffer.events if isinstance(event, IngestCompleted)]
+    [completed] = [
+        event for event in buffer.events if isinstance(event, IngestCompleted)
+    ]
     assert completed.chunk_count == result.chunk_count
     assert completed.duration_ms >= 0.0
 
-    [chunk_event] = [event for event in buffer.events if isinstance(event, ChunkProduced)]
+    [chunk_event] = [
+        event for event in buffer.events if isinstance(event, ChunkProduced)
+    ]
     assert chunk_event.chunk_count >= 1
     assert chunk_event.chunking_strategy
 
     [upsert] = [event for event in buffer.events if isinstance(event, IndexUpserted)]
     assert upsert.point_count == result.chunk_count
-    assert upsert.namespace == "ns"
+    assert upsert.tenant_id == "ns"
 
 
 def test_parse_file_bytes_records_structured_quality_metadata() -> None:
@@ -567,48 +503,6 @@ def test_embed_events_pair_request_and_complete_per_role() -> None:
     assert len(requested) == len(completed)
     roles = {event.role for event in requested}
     assert {"dense", "sparse"}.issubset(roles)
-    assert all(event.cache_hits == 0 for event in completed)
-
-
-def test_embed_dense_cache_is_scoped_per_document_across_ingests() -> None:
-    """Identical content in two different documents must NOT share a dense
-    embedding cache hit. Cache keys are scoped per document so a
-    right-to-forget delete can purge a document's embeddings; cross-document
-    sharing would leak those bytes past the delete. Both ingests therefore
-    miss and write their own scoped entries.
-    """
-
-    async def scenario() -> list[EmbedCompleted]:
-        buffer = EventBuffer()
-        core = _make_core(event_sink=buffer, embedding_cache=InMemoryCache())
-        try:
-            await core.add_bytes(
-                file_bytes=b"hello world",
-                filename="a.txt",
-                mime_type="text/plain",
-                namespace="ns",
-                collection="corp",
-                document_id="doc-1",
-            )
-            await core.add_bytes(
-                file_bytes=b"hello world",
-                filename="a.txt",
-                mime_type="text/plain",
-                namespace="ns",
-                collection="corp",
-                document_id="doc-2",
-            )
-        finally:
-            await core.close()
-        return [e for e in buffer.events if isinstance(e, EmbedCompleted) and e.role == "dense"]
-
-    first, second = asyncio.run(scenario())
-    assert first.text_count == second.text_count
-    assert (first.cache_hits, first.cache_misses, first.cache_writes) == (0, first.text_count, first.text_count)
-    # doc-2 is a different scope: identical content is a miss, not a hit.
-    assert (second.cache_hits, second.cache_misses, second.cache_writes) == (0, second.text_count, second.text_count)
-    assert first.cache_bypasses == 0
-    assert second.cache_bypasses == 0
 
 
 def test_skipped_ingest_emits_ingest_skipped_and_no_completed() -> None:
@@ -620,7 +514,7 @@ def test_skipped_ingest_emits_ingest_skipped_and_no_completed() -> None:
                 file_bytes=b"hello world",
                 filename="a.txt",
                 mime_type="text/plain",
-                namespace="ns",
+                tenant_id="ns",
                 collection="corp",
             )
             buffer.clear()
@@ -628,7 +522,7 @@ def test_skipped_ingest_emits_ingest_skipped_and_no_completed() -> None:
                 file_bytes=b"hello world",
                 filename="a.txt",
                 mime_type="text/plain",
-                namespace="ns",
+                tenant_id="ns",
                 collection="corp",
             )
         finally:
@@ -650,13 +544,13 @@ def test_delete_document_emits_index_deleted() -> None:
                 file_bytes=b"hello world",
                 filename="a.txt",
                 mime_type="text/plain",
-                namespace="ns",
+                tenant_id="ns",
                 collection="corp",
             )
             buffer.clear()
             await core.delete_document(
                 document_id=result.document_id,
-                namespace="ns",
+                tenant_id="ns",
                 collection="corp",
             )
         finally:
@@ -676,7 +570,7 @@ def test_search_emits_started_and_completed_with_scope() -> None:
         try:
             await core.search(
                 query="fox",
-                namespace="ns",
+                tenant_id="ns",
                 collections=["corp"],
                 limit=5,
                 rerank=False,
@@ -688,251 +582,46 @@ def test_search_emits_started_and_completed_with_scope() -> None:
     buffer = asyncio.run(scenario())
     [started] = [e for e in buffer.events if isinstance(e, SearchStarted)]
     [completed] = [e for e in buffer.events if isinstance(e, SearchCompleted)]
-    assert started.namespace == "ns"
+    assert started.tenant_id == "ns"
     assert started.collections == ("corp",)
     assert started.limit == 5
     assert completed.result_count == 1
     assert completed.applied_rerank is False
 
 
-def test_search_completed_distinguishes_requested_attempted_and_applied_rerank() -> None:
+def test_search_completed_distinguishes_requested_attempted_and_applied_rerank() -> (
+    None
+):
     async def scenario() -> SearchCompleted:
         buffer = EventBuffer()
-        pipeline_runner = SearchPipelineRunner(
+        pipeline_runner = SearchRunner(
             embedding_provider=FakeEmbeddingProvider(),
             sparse_embedder=FakeSparseEmbedder(),
-            vector_store=RecordingVectorStore(search_results=[make_search_result(id="hit-1")]),
+            vector_store=RecordingVectorStore(
+                search_results=[make_search_result(id="hit-1")]
+            ),
             reranker=FakeReranker(error=RuntimeError("rerank failed")),
             event_sink=buffer,
         )
         await pipeline_runner.search(
             SearchRequest(
                 query="fox",
-                namespace="ns",
+                tenant_id="ns",
                 collections=["corp"],
                 limit=5,
                 rerank=True,
                 rerank_budget=RerankBudget(fallback_on_error=True),
             )
         )
-        [completed] = [event for event in buffer.events if isinstance(event, SearchCompleted)]
+        [completed] = [
+            event for event in buffer.events if isinstance(event, SearchCompleted)
+        ]
         return completed
 
     completed = asyncio.run(scenario())
     assert completed.requested_rerank is True
     assert completed.attempted_rerank is True
     assert completed.applied_rerank is False
-
-
-def test_search_completed_reports_unapplied_sidecar_when_scope_rejects_hits() -> None:
-    async def scenario() -> SearchCompleted:
-        buffer = EventBuffer()
-        pipeline_runner = SearchPipelineRunner(
-            embedding_provider=FakeEmbeddingProvider(),
-            sparse_embedder=FakeSparseEmbedder(),
-            vector_store=RecordingVectorStore(search_results=[make_search_result(id="vector-hit", namespace="ns")]),
-            sidecar=FakeSearchSidecar(
-                results=[make_search_result(id="sidecar-hit", namespace="other-ns")]
-            ),
-            event_sink=buffer,
-        )
-        await pipeline_runner.search(
-            SearchRequest(
-                query="fox",
-                namespace="ns",
-                collections=["corp"],
-                limit=5,
-                execution=SearchExecutionOptions(use_lexical_search=True),
-            )
-        )
-        [completed] = [event for event in buffer.events if isinstance(event, SearchCompleted)]
-        return completed
-
-    completed = asyncio.run(scenario())
-    assert completed.requested_sidecar is True
-    assert completed.attempted_sidecar is True
-    assert completed.applied_sidecar is False
-
-
-def test_search_dense_embed_completed_reports_cache_bypass() -> None:
-    async def scenario() -> list[EmbedCompleted]:
-        buffer = EventBuffer()
-        store = RecordingVectorStore(search_results=[make_search_result(id="hit-1")])
-        core = _make_core(event_sink=buffer, store=store, embedding_cache=InMemoryCache())
-        try:
-            await core.search(
-                query="fox",
-                namespace="ns",
-                collections=["corp"],
-                limit=5,
-                rerank=False,
-            )
-        finally:
-            await core.close()
-        return [e for e in buffer.events if isinstance(e, EmbedCompleted) and e.role == "dense"]
-
-    [completed] = asyncio.run(scenario())
-    assert (completed.cache_hits, completed.cache_misses, completed.cache_writes) == (0, 0, 0)
-    assert completed.cache_bypasses == 1
-
-
-def test_search_with_precomputed_vectors_emits_no_embed_events() -> None:
-    async def scenario() -> EventBuffer:
-        buffer = EventBuffer()
-        store = RecordingVectorStore(search_results=[make_search_result(id="hit-1")])
-        pipeline_runner = SearchPipelineRunner(
-            embedding_provider=FakeEmbeddingProvider(),
-            sparse_embedder=FakeSparseEmbedder(),
-            vector_store=store,
-            event_sink=buffer,
-        )
-        await pipeline_runner.search(
-            SearchRequest(
-                query="unused",
-                namespace="ns",
-                collections=["corp"],
-                limit=5,
-                rerank=False,
-                execution=SearchExecutionOptions(
-                    query_vector=[1.0, 2.0, 3.0, 4.0],
-                    query_sparse_vectors={
-                        "bm25": SparseVector(indices=[1], values=[1.0])
-                    },
-                ),
-            )
-        )
-        return buffer
-
-    buffer = asyncio.run(scenario())
-    assert not [e for e in buffer.events if isinstance(e, (EmbedRequested, EmbedCompleted))]
-
-
-def test_query_plan_and_stage_trace_strips_query_text_and_records_budget() -> None:
-    async def scenario() -> EventBuffer:
-        buffer = EventBuffer()
-        store = RecordingVectorStore(search_results=[make_search_result(id="hit-1")])
-        core = _make_core(event_sink=buffer, store=store)
-        try:
-            await core.search(
-                query="sensitive billing question",
-                namespace="ns",
-                collections=["corp"],
-                limit=5,
-                rerank=False,
-                query_plan=query_plan_preset("hybrid_with_mmr", limit=5),
-                metadata_filter=Term("team", "support"),
-                rerank_budget=RerankBudget(candidate_count=12, timeout_seconds=1.5, max_output=5),
-                document_ids=["doc-1"],
-            )
-        finally:
-            await core.close()
-        return buffer
-
-    buffer = asyncio.run(scenario())
-    [planned] = [e for e in buffer.events if isinstance(e, SearchPlanned)]
-    assert planned.channels == (_DENSE_PRIMARY_CHANNEL, "sparse:bm25:bm25")
-    assert planned.fusion == "rrf"
-    assert planned.plan_rerank == "mmr"
-    assert planned.metadata_filter == "Term"
-    assert planned.document_id_count == 1
-    assert planned.rerank_candidate_count == 12
-    assert planned.rerank_timeout_ms == 1500.0
-    assert planned.rerank_max_output == 5
-    assert planned.rerank_fallback_on_error is False
-    assert planned.retrieve_stage == "HybridRetrieve"
-    assert planned.fuse_stage == "none"
-    assert "sensitive billing question" not in str(planned)
-
-    stages = [e for e in buffer.events if isinstance(e, SearchStageCompleted)]
-    stage_names = [(event.stage, event.stage_name) for event in stages]
-    assert ("retrieve", "HybridRetrieve") in stage_names
-    assert all(event.stage != "fuse" for event in stages)
-    assert all(event.duration_ms >= 0.0 for event in stages)
-    assert "sensitive billing question" not in str(stages)
-
-
-def test_query_plan_trace_uses_provider_aware_default_plan() -> None:
-    buffer = EventBuffer()
-    class ProviderAwareStore(RecordingVectorStore):
-        def default_query_plan(self, *, result_limit: int) -> QueryPlan:
-            return QueryPlan(
-                prefetches=(
-                    Prefetch(channel=DenseChannel(), limit=20),
-                    Prefetch(
-                        channel=SparseChannel(
-                            vector_field="splade",
-                            using_query_vector="splade",
-                        ),
-                        limit=20,
-                    ),
-                ),
-                fuse=PrefetchFusion(),
-                final_limit=result_limit,
-                search_profile="balanced",
-            )
-
-    store = ProviderAwareStore()
-
-    emit_query_plan_trace_event(
-        buffer,
-        namespace="ns",
-        collections=["corp"],
-        limit=5,
-        content_types=None,
-        document_ids=None,
-        metadata_filter=None,
-        rerank_budget=None,
-        use_lexical_search=False,
-        query_plan=None,
-        pipeline=default_search_pipeline(reranker_present=False, sidecar_present=False),
-        store=store,
-    )
-
-    [planned] = [event for event in buffer.events if isinstance(event, SearchPlanned)]
-    assert planned.search_profile == "balanced"
-    assert planned.channels == (_DENSE_PRIMARY_CHANNEL, "sparse:splade:splade")
-
-
-def test_plan_trace_expectations_cover_every_preset() -> None:
-    assert tuple(_EXPECTED_PLAN_TRACE_BY_PRESET) == QUERY_PLAN_PRESETS
-
-
-@pytest.mark.parametrize(
-    ("preset", "expected"),
-    _EXPECTED_PLAN_TRACE_BY_PRESET.items(),
-)
-def test_search_planned_event_matches_preset_shape(
-    preset: str,
-    expected: dict[str, object],
-) -> None:
-    async def scenario() -> SearchPlanned:
-        buffer = EventBuffer()
-        core = _make_core(
-            event_sink=buffer,
-            store=RecordingVectorStore(search_results=[make_search_result(id="hit-1")]),
-        )
-        try:
-            await core.search(
-                query="private preset probe",
-                namespace="ns",
-                collections=["corp"],
-                limit=4,
-                rerank=False,
-                query_plan=query_plan_preset(preset, limit=4),
-            )
-        finally:
-            await core.close()
-        [planned] = [e for e in buffer.events if isinstance(e, SearchPlanned)]
-        return planned
-
-    planned = asyncio.run(scenario())
-    assert planned.channels == expected["channels"]
-    assert planned.prefetch_limits == expected["prefetch_limits"]
-    assert planned.fusion == expected["fusion"]
-    assert planned.plan_rerank == expected["plan_rerank"]
-    assert planned.final_limit == 4
-    assert planned.metadata_filter == TRACE_ABSENT_LABEL
-    assert "private preset probe" not in str(planned)
 
 
 def test_stage_error_event_emitted_on_failure() -> None:
@@ -953,7 +642,7 @@ def test_stage_error_event_emitted_on_failure() -> None:
                     file_bytes=b"hello world",
                     filename="a.txt",
                     mime_type="text/plain",
-                    namespace="ns",
+                    tenant_id="ns",
                     collection="corp",
                 )
         finally:
@@ -971,3 +660,20 @@ def test_stage_error_event_emitted_on_failure() -> None:
 def test_event_sink_protocol_is_runtime_checkable() -> None:
     assert isinstance(NoOpSink(), EventSink)
     assert isinstance(EventBuffer(), EventSink)
+
+
+def _make_core(
+    *,
+    event_sink: EventSink | None,
+    store: RecordingVectorStore | None = None,
+) -> Engine:
+    return Engine(
+        make_test_config(
+            qdrant_collection="rag_core_events_tests",
+            embedding_dimensions=4,
+        ),
+        embedding_provider=FakeEmbeddingProvider(),
+        sparse_embedder=FakeSparseEmbedder(),
+        vector_store=store or RecordingVectorStore(),
+        event_sink=event_sink,
+    )

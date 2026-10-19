@@ -6,10 +6,7 @@ import os
 
 import pytest
 
-from rag_core import Config
-from rag_core.core import Engine
 from rag_core.demo import DemoEmbeddingProvider
-from rag_core.search import query_plan_preset
 from rag_core.search.providers.embedding import create_embedding_provider
 
 pytestmark = [pytest.mark.live]
@@ -47,43 +44,5 @@ def test_local_dense_embeddings_rank_paraphrase_above_demo_hash() -> None:
 
         assert _dot(local_query, local_docs[0]) > _dot(local_query, local_docs[1])
         assert _dot(demo_query, demo_docs[0]) < _dot(demo_query, demo_docs[1])
-
-    asyncio.run(_run())
-
-
-def test_rag_core_local_config_ingests_and_searches_with_dense_local_model() -> None:
-    _skip_if_download_disabled()
-
-    async def _run() -> None:
-        core = Engine(Config.local())
-        try:
-            await core.ensure_ready()
-            await core.add_bytes(
-                file_bytes=RIGHT.encode("utf-8"),
-                filename="vehicle.txt",
-                mime_type="text/plain",
-                namespace="acme",
-                collection="proof",
-            )
-            await core.add_bytes(
-                file_bytes=WRONG.encode("utf-8"),
-                filename="spreadsheet.txt",
-                mime_type="text/plain",
-                namespace="acme",
-                collection="proof",
-            )
-            hits = await core.search(
-                query=QUERY,
-                namespace="acme",
-                collections=["proof"],
-                limit=2,
-                rerank=False,
-                query_plan=query_plan_preset("dense_only", limit=2),
-            )
-        finally:
-            await core.close()
-
-        assert hits[0].title == "vehicle.txt"
-        assert hits[0].score > hits[1].score
 
     asyncio.run(_run())

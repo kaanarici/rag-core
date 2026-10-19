@@ -50,7 +50,7 @@ def source_dedupe_key(result: SearchResult) -> SourceDedupeKey:
     if result.content_sha256 and result.chunk_index is not None:
         return (
             "content_sha256",
-            result.namespace or "",
+            result.tenant_id or "",
             result.collection or "",
             result.content_sha256,
             "chunk",
@@ -224,18 +224,18 @@ def drop_none(payload: dict[str, object]) -> dict[str, object]:
 
 
 def _document_dedupe_key(result: SearchResult) -> tuple[str, str, str, str] | None:
-    namespace = result.namespace or ""
+    tenant_id = result.tenant_id or ""
     if result.document_id:
-        return ("document_id", namespace, result.collection or "", result.document_id)
+        return ("document_id", tenant_id, result.collection or "", result.document_id)
     if result.document_key and result.collection:
-        return ("document_key", namespace, result.collection, result.document_key)
+        return ("document_key", tenant_id, result.collection, result.document_key)
     return None
 
 
 def _scope_prefix(result: SearchResult) -> str:
     parts: list[str] = []
-    if result.namespace:
-        parts.append(result.namespace)
+    if result.tenant_id:
+        parts.append(result.tenant_id)
     if result.collection:
         parts.append(result.collection)
     if not parts:

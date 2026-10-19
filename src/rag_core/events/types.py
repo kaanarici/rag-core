@@ -30,16 +30,14 @@ from rag_core.events.ingest_events import (
     IngestStarted as IngestStarted,
 )
 from rag_core.events.search_events import (
-    LexicalSidecarBoundExceeded as LexicalSidecarBoundExceeded,
-    NeighborExpandSkipped as NeighborExpandSkipped,
     RerankApplied as RerankApplied,
     SearchCompleted as SearchCompleted,
     SearchPlanned as SearchPlanned,
     SearchStageCompleted as SearchStageCompleted,
     SearchStarted as SearchStarted,
-    SidecarApplied as SidecarApplied,
     StageError as StageError,
 )
+
 
 @dataclass(frozen=True)
 class AuditContext:
@@ -89,9 +87,6 @@ Event = Union[
     SearchStageCompleted,
     SearchCompleted,
     RerankApplied,
-    SidecarApplied,
-    NeighborExpandSkipped,
-    LexicalSidecarBoundExceeded,
     StageError,
 ]
 
@@ -116,8 +111,6 @@ __all__ = (
     "IngestCompleted",
     "IngestSkipped",
     "IngestStarted",
-    "LexicalSidecarBoundExceeded",
-    "NeighborExpandSkipped",
     "OcrApplied",
     "ParseCompleted",
     "RerankApplied",
@@ -125,6 +118,5 @@ __all__ = (
     "SearchPlanned",
     "SearchStageCompleted",
     "SearchStarted",
-    "SidecarApplied",
     "StageError",
 )

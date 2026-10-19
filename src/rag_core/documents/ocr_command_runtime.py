@@ -2,30 +2,23 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
-from collections.abc import Callable
+import os
+import signal
 from dataclasses import dataclass, field
 from pathlib import Path
-import subprocess
 import tempfile
-from typing import Any
+from typing import Any, BinaryIO
 
 from rag_core.documents.exception_names import exception_type
-from rag_core.documents.ocr_provider_names import (
-    GEMINI_OCR_PROVIDER,
-    MISTRAL_OCR_PROVIDER,
-)
 from rag_core.documents.page_indices import normalize_page_indices
 from rag_core.documents.subprocess_env import (
     PYTHON_SUBPROCESS_ENV_KEYS,
     allowlisted_subprocess_env,
 )
-from rag_core.provider_api_keys import GEMINI_API_KEY_ENVS, MISTRAL_API_KEY_ENVS
 
-_OCR_PROVIDER_ENV_KEYS: dict[str, tuple[str, ...]] = {
-    MISTRAL_OCR_PROVIDER: MISTRAL_API_KEY_ENVS,
-    GEMINI_OCR_PROVIDER: GEMINI_API_KEY_ENVS,
-}
+_OCR_PROVIDER_ENV_KEYS: dict[str, tuple[str, ...]] = {}
 
 
 @dataclass(frozen=True)
@@ -38,7 +31,7 @@ class CommandOcrOutput:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-def run_command_ocr(
+async def run_command_ocr(
     *,
     file_bytes: bytes,
     filename: str,
@@ -52,7 +45,6 @@ def run_command_ocr(
     supports_page_selection: bool,
     timeout_seconds: float,
     extra_env: dict[str, str],
-    run_command: Callable[..., Any] = subprocess.run,
 ) -> CommandOcrOutput:
     temp_path: str | None = None
     try:
@@ -74,22 +66,15 @@ def run_command_ocr(
             "metadata": metadata,
         }
         try:
-            completed = run_command(
-                command,
-                input=json.dumps(payload),
-                text=True,
-                capture_output=True,
-                check=False,
-                timeout=timeout_seconds,
-                env=_subprocess_env(
+            with tempfile.TemporaryFile() as output_file:
+                stdout = await _run_ocr_process(
+                    command=command,
+                    payload=json.dumps(payload).encode(),
+                    output_file=output_file,
                     provider_name=provider_name,
+                    timeout_seconds=timeout_seconds,
                     extra_env=extra_env,
-                ),
-            )
-        except subprocess.TimeoutExpired:
-            raise RuntimeError(
-                f"OCR provider {provider_name} timed out after {timeout_seconds:g}s"
-            ) from None
+                )
         except OSError as exc:
             raise RuntimeError(
                 f"OCR provider {provider_name} failed to start "
@@ -99,21 +84,22 @@ def run_command_ocr(
         if temp_path is not None:
             Path(temp_path).unlink(missing_ok=True)
 
-    if completed.returncode != 0:
-        raise RuntimeError(
-            f"OCR provider {provider_name} failed with code {_safe_returncode(completed.returncode)}"
-        )
-
     try:
-        parsed = json.loads(completed.stdout)
+        parsed = json.loads(stdout)
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"OCR provider {provider_name} returned invalid JSON") from exc
+        raise RuntimeError(
+            f"OCR provider {provider_name} returned invalid JSON"
+        ) from exc
     if not isinstance(parsed, dict):
-        raise RuntimeError(f"OCR provider {provider_name} returned a non-object payload")
+        raise RuntimeError(
+            f"OCR provider {provider_name} returned a non-object payload"
+        )
 
     raw_markdown = parsed.get("markdown")
     if not isinstance(raw_markdown, str):
-        raise RuntimeError(f"OCR provider {provider_name} returned invalid markdown payload")
+        raise RuntimeError(
+            f"OCR provider {provider_name} returned invalid markdown payload"
+        )
 
     raw_metadata = parsed.get("metadata", {})
     return CommandOcrOutput(
@@ -130,6 +116,59 @@ def run_command_ocr(
         ),
         metadata=dict(raw_metadata) if isinstance(raw_metadata, dict) else {},
     )
+
+
+async def _run_ocr_process(
+    *,
+    command: list[str],
+    payload: bytes,
+    output_file: BinaryIO,
+    provider_name: str,
+    timeout_seconds: float,
+    extra_env: dict[str, str],
+) -> bytes:
+    # File-backed output avoids inherited-pipe waits after the command exits.
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=output_file,
+        stderr=asyncio.subprocess.DEVNULL,
+        start_new_session=os.name == "posix",
+        env=_subprocess_env(provider_name=provider_name, extra_env=extra_env),
+    )
+    try:
+        await asyncio.wait_for(process.communicate(payload), timeout=timeout_seconds)
+    except BaseException as exc:
+        failure = exc
+        try:
+            if os.name == "posix":
+                os.killpg(process.pid, signal.SIGKILL)
+            elif process.returncode is None:
+                process.kill()
+        except ProcessLookupError:
+            pass
+        cleanup = asyncio.create_task(asyncio.wait_for(process.wait(), timeout=0.5))
+        while True:
+            try:
+                await asyncio.shield(cleanup)
+                break
+            except asyncio.CancelledError as cancelled:
+                failure = cancelled
+                continue
+            except TimeoutError:
+                break
+        if isinstance(failure, TimeoutError):
+            raise RuntimeError(
+                f"OCR provider {provider_name} timed out after {timeout_seconds:g}s"
+            ) from None
+        raise failure
+
+    if process.returncode != 0:
+        raise RuntimeError(
+            f"OCR provider {provider_name} failed with code {_safe_returncode(process.returncode)}"
+        )
+    output_file.seek(0)
+    return output_file.read()
 
 
 def normalize_ocr_page_indices(raw_indices: object) -> list[int]:

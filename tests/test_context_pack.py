@@ -9,8 +9,6 @@ from rag_core.search import Context
 from rag_core.events import EventBuffer
 from rag_core.retrieval_defaults import DEFAULT_CONTEXT_LIMIT
 from rag_core.search.context_pack import (
-    CONTEXT_EXPANSION_AFTER_METADATA_KEY,
-    CONTEXT_EXPANSION_BEFORE_METADATA_KEY,
     EvidenceSpan,
     build_context_pack,
     context_pack_response_payload,
@@ -22,7 +20,6 @@ from rag_core.search.context_pack import (
     source_preview_from_snippet,
     source_reference_from_result,
 )
-from rag_core.search.planning import query_plan_preset
 from tests.support import (
     FakeEmbeddingProvider,
     FakeSparseEmbedder,
@@ -452,7 +449,7 @@ def test_context_pack_keeps_exact_content_across_scopes_and_prepared_texts() -> 
             make_search_result(
                 id="course-a-original",
                 text="same source, course A preparation",
-                namespace="school",
+                tenant_id="school",
                 collection="course-a",
                 document_id="doc-a",
                 content_sha256=exact_hash,
@@ -461,7 +458,7 @@ def test_context_pack_keeps_exact_content_across_scopes_and_prepared_texts() -> 
             make_search_result(
                 id="course-b-copy",
                 text="same source, course A preparation",
-                namespace="school",
+                tenant_id="school",
                 collection="course-b",
                 document_id="doc-b",
                 content_sha256=exact_hash,
@@ -470,7 +467,7 @@ def test_context_pack_keeps_exact_content_across_scopes_and_prepared_texts() -> 
             make_search_result(
                 id="course-a-contextualized",
                 text="same source, distinct contextualized preparation",
-                namespace="school",
+                tenant_id="school",
                 collection="course-a",
                 document_id="doc-c",
                 content_sha256=exact_hash,
@@ -479,7 +476,7 @@ def test_context_pack_keeps_exact_content_across_scopes_and_prepared_texts() -> 
             make_search_result(
                 id="course-a-remapped",
                 text="same source, course A preparation",
-                namespace="school",
+                tenant_id="school",
                 collection="course-a",
                 document_id="doc-d",
                 content_sha256=exact_hash,
@@ -773,61 +770,8 @@ def test_context_pack_token_budget_translates_to_char_budget() -> None:
     assert pack.char_count == len(pack.as_text())
 
 
-def test_context_pack_uses_expansion_text_without_moving_locator() -> None:
-    hit = make_search_result(
-        id="expanded",
-        text="Matched amberglint chunk.",
-        document_id="guide",
-        title="Guide",
-        chunk_index=2,
-        start_char=100,
-        end_char=124,
-        metadata={
-            CONTEXT_EXPANSION_BEFORE_METADATA_KEY: ["Previous policy sentence."],
-            CONTEXT_EXPANSION_AFTER_METADATA_KEY: ["Next rollout sentence."],
-        },
-    )
-
-    pack = build_context_pack([hit], query="amberglint")
-    [snippet] = pack.snippets
-
-    assert snippet.text == (
-        "Previous policy sentence.\n\n"
-        "Matched amberglint chunk.\n\n"
-        "Next rollout sentence."
-    )
-    assert snippet.locator.start_offset == 100
-    assert snippet.locator.end_offset == 124
-    assert pack.source_previews[0].locator_label == "chunk 2"
 
 
-def test_context_pack_trims_expansion_before_original_chunk() -> None:
-    hit = make_search_result(
-        id="expanded",
-        text="Matched amberglint chunk.",
-        document_id="guide",
-        title="Guide",
-        chunk_index=2,
-        start_char=100,
-        end_char=124,
-        metadata={
-            CONTEXT_EXPANSION_BEFORE_METADATA_KEY: ["Previous policy sentence."],
-            CONTEXT_EXPANSION_AFTER_METADATA_KEY: ["Next rollout sentence."],
-        },
-    )
-    header = "[space-1:corpus-1:guide#chunk-2] Guide chunk 2"
-
-    pack = build_context_pack(
-        [hit],
-        query="amberglint",
-        max_chars=len(header) + 1 + len(hit.text),
-    )
-    [snippet] = pack.snippets
-
-    assert snippet.text == hit.text
-    assert snippet.truncated is True
-    assert snippet.locator.start_offset == 100
-    assert snippet.locator.end_offset == 124
 
 
 @pytest.mark.parametrize(
@@ -1026,7 +970,7 @@ def test_rag_core_retrieve_context_builds_pack_and_forwards_scope() -> None:
         try:
             pack = await core.context(
                 query="How do I pay?",
-                namespace="acme",
+                tenant_id="acme",
                 collections=["help"],
                 limit=4,
                 rerank=False,
@@ -1043,46 +987,6 @@ def test_rag_core_retrieve_context_builds_pack_and_forwards_scope() -> None:
     assert store.search_calls[0].collections == ["help"]
 
 
-def test_rag_core_retrieve_context_honors_explicit_query_plan_final_limit() -> None:
-    async def scenario() -> tuple[Context, RecordingVectorStore]:
-        store = RecordingVectorStore(
-            search_results=[
-                make_search_result(
-                    id="hit-1", text="One", document_id="doc-1", chunk_index=0
-                ),
-                make_search_result(
-                    id="hit-2", text="Two", document_id="doc-2", chunk_index=0
-                ),
-                make_search_result(
-                    id="hit-3", text="Three", document_id="doc-3", chunk_index=0
-                ),
-            ]
-        )
-        core = Engine(
-            make_test_config(
-                qdrant_collection="rag_core_context_pack_query_plan_limit",
-                embedding_dimensions=4,
-            ),
-            embedding_provider=FakeEmbeddingProvider(),
-            sparse_embedder=FakeSparseEmbedder(),
-            vector_store=store,
-        )
-        try:
-            pack = await core.context(
-                query="How do I pay?",
-                namespace="acme",
-                collections=["help"],
-                limit=1,
-                rerank=False,
-                query_plan=query_plan_preset("dense_only", limit=3),
-            )
-        finally:
-            await core.close()
-        return pack, store
-
-    pack, store = asyncio.run(scenario())
-    assert len(pack.snippets) == 3
-    assert store.search_calls[0].limit == 3
 
 
 def test_context_pack_payload_includes_source_previews_and_citation_summary() -> None:
@@ -1466,7 +1370,7 @@ def test_rag_core_retrieve_context_emits_context_pack_timing() -> None:
         try:
             await core.context(
                 query="How do I pay?",
-                namespace="acme",
+                tenant_id="acme",
                 collections=["help"],
                 limit=4,
                 rerank=False,

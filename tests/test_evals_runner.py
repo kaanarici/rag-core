@@ -19,8 +19,7 @@ from rag_core.evals import (
     load_cases,
     run_eval,
 )
-from rag_core.search.planning import query_plan_preset
-from rag_core.search.providers.memory_store import InMemoryVectorStore
+from tests.support.local_store import LocalQdrantStore
 from rag_core.search.request_models import (
     RerankBudget,
     RerankResult,
@@ -39,7 +38,7 @@ from tests.support import (
 
 
 def test_eval_case_is_frozen() -> None:
-    case = EvalCase(query="q", namespace="ns", collections=("c",), expected_ids=("a",))
+    case = EvalCase(query="q", tenant_id="ns", collections=("c",), expected_ids=("a",))
     with pytest.raises((FrozenInstanceError, AttributeError)):
         case.query = "other"  # type: ignore[misc]
 
@@ -47,7 +46,7 @@ def test_eval_case_is_frozen() -> None:
 def test_eval_case_stores_expected_ids() -> None:
     case = EvalCase(
         query="q",
-        namespace="ns",
+        tenant_id="ns",
         collections=("c",),
         expected_ids=("doc-a",),
     )
@@ -57,14 +56,14 @@ def test_eval_case_stores_expected_ids() -> None:
     with pytest.raises(TypeError, match="unexpected keyword argument"):
         cast(Any, EvalCase)(
             query="q",
-            namespace="ns",
+            tenant_id="ns",
             collections=("c",),
             expected_chunk_ids=("doc-a",),
         )
 
 
 def test_eval_result_is_frozen() -> None:
-    case = EvalCase(query="q", namespace="ns", collections=("c",), expected_ids=("a",))
+    case = EvalCase(query="q", tenant_id="ns", collections=("c",), expected_ids=("a",))
     result = EvalResult(
         case=case,
         retrieved_ids=("a",),
@@ -82,13 +81,13 @@ def test_load_cases_round_trip(tmp_path: Path) -> None:
     payload = [
         {
             "query": "q1",
-            "namespace": "ns",
+            "tenant_id": "ns",
             "collections": ["c"],
             "expected_ids": ["x", "y"],
         },
         {
             "query": "q2",
-            "namespace": "ns",
+            "tenant_id": "ns",
             "collections": ["c"],
             "expected_ids": ["z", "w"],
             "expected_grades": {"z": 3, "w": 1},
@@ -104,7 +103,7 @@ def test_load_cases_round_trip(tmp_path: Path) -> None:
     assert len(cases) == 2
     assert cases[0] == EvalCase(
         query="q1",
-        namespace="ns",
+        tenant_id="ns",
         collections=("c",),
         expected_ids=("x", "y"),
         expected_grades=None,
@@ -120,7 +119,7 @@ def test_load_cases_skips_blank_lines(tmp_path: Path) -> None:
         + json.dumps(
             {
                 "query": "q",
-                "namespace": "ns",
+                "tenant_id": "ns",
                 "collections": ["c"],
                 "expected_ids": ["x"],
             }
@@ -141,7 +140,7 @@ def _make_keyword_core(collection: str) -> Engine:
         ),
         embedding_provider=KeywordEmbeddingProvider(BASELINE_VOCABULARY),
         sparse_embedder=KeywordSparseEmbedder(BASELINE_VOCABULARY),
-        vector_store=InMemoryVectorStore(),
+        vector_store=LocalQdrantStore(dense_dimensions=len(BASELINE_VOCABULARY)),
     )
 
 
@@ -179,13 +178,13 @@ def test_run_eval_default_matches_explicit_sequential_path(
     cases = [
         EvalCase(
             query="billing",
-            namespace="rt",
+            tenant_id="rt",
             collections=("docs",),
             expected_ids=("billing",),
         ),
         EvalCase(
             query="shipping",
-            namespace="rt",
+            tenant_id="rt",
             collections=("docs",),
             expected_ids=("shipping",),
         ),
@@ -219,7 +218,7 @@ def test_run_eval_concurrent_path_preserves_input_order() -> None:
     cases = [
         EvalCase(
             query=f"doc-{index}",
-            namespace="rt",
+            tenant_id="rt",
             collections=("docs",),
             expected_ids=(f"doc-{index}",),
         )
@@ -254,7 +253,7 @@ def test_run_eval_concurrent_path_respects_max_concurrency() -> None:
     cases = [
         EvalCase(
             query=f"doc-{index}",
-            namespace="rt",
+            tenant_id="rt",
             collections=("docs",),
             expected_ids=(f"doc-{index}",),
         )
@@ -280,19 +279,19 @@ def test_run_eval_concurrent_path_isolates_case_failures() -> None:
     cases = [
         EvalCase(
             query="good-1",
-            namespace="rt",
+            tenant_id="rt",
             collections=("docs",),
             expected_ids=("good-1",),
         ),
         EvalCase(
             query="bad",
-            namespace="rt",
+            tenant_id="rt",
             collections=("docs",),
             expected_ids=("bad",),
         ),
         EvalCase(
             query="good-2",
-            namespace="rt",
+            tenant_id="rt",
             collections=("docs",),
             expected_ids=("good-2",),
         ),
@@ -315,7 +314,7 @@ def test_eval_report_uses_wall_clock_throughput_for_concurrent_runs() -> None:
         EvalResult(
             case=EvalCase(
                 query=f"doc-{index}",
-                namespace="rt",
+                tenant_id="rt",
                 collections=("docs",),
                 expected_ids=(f"doc-{index}",),
             ),
@@ -358,7 +357,7 @@ def test_run_eval_drives_core_search() -> None:
                     file_bytes=f"# {doc_id}\n\n{body}".encode("utf-8"),
                     filename=f"{doc_id}.md",
                     mime_type="text/markdown",
-                    namespace="rt",
+                    tenant_id="rt",
                     collection="docs",
                     document_id=doc_id,
                     document_key=f"{doc_id}.md",
@@ -367,13 +366,13 @@ def test_run_eval_drives_core_search() -> None:
             cases = [
                 EvalCase(
                     query="when does billing run",
-                    namespace="rt",
+                    tenant_id="rt",
                     collections=("docs",),
                     expected_ids=("billing",),
                 ),
                 EvalCase(
                     query="international shipping customs",
-                    namespace="rt",
+                    tenant_id="rt",
                     collections=("docs",),
                     expected_ids=("shipping",),
                 ),
@@ -394,37 +393,6 @@ def test_run_eval_drives_core_search() -> None:
         assert result.retrieved_ids[0] in result.case.expected_ids
 
 
-def test_run_eval_passes_query_plan_to_core_search() -> None:
-    async def go() -> RecordingVectorStore:
-        store = RecordingVectorStore(
-            search_results=[
-                make_search_result(document_id="billing", collection="docs")
-            ]
-        )
-        core = Engine(
-            make_test_config(
-                qdrant_collection="rag_core_eval_query_plan",
-                embedding_dimensions=4,
-            ),
-            embedding_provider=FakeEmbeddingProvider(),
-            sparse_embedder=FakeSparseEmbedder(),
-            vector_store=store,
-        )
-        case = EvalCase(
-            query="billing policy",
-            namespace="rt",
-            collections=("docs",),
-            expected_ids=("billing",),
-        )
-        plan = query_plan_preset("dense_only", limit=10)
-        try:
-            await run_eval(core, [case], query_plan=plan)
-            return store
-        finally:
-            await core.close()
-
-    store = asyncio.run(go())
-    assert store.search_calls[0].query_plan == query_plan_preset("dense_only", limit=10)
 
 
 def test_run_eval_matches_expected_document_key() -> None:
@@ -440,7 +408,7 @@ def test_run_eval_matches_expected_document_key() -> None:
 
     case = EvalCase(
         query="billing policy",
-        namespace="rt",
+        tenant_id="rt",
         collections=("docs",),
         expected_ids=("billing.md",),
     )
@@ -467,7 +435,7 @@ def test_run_eval_enforces_document_scope_and_forbidden_ids() -> None:
 
     case = EvalCase(
         query="scoped query",
-        namespace="rt",
+        tenant_id="rt",
         collections=("docs",),
         document_ids=("internal-allowed",),
         expected_ids=("allowed-source",),
@@ -489,7 +457,7 @@ def test_run_eval_reports_empty_scope_without_ranking_credit() -> None:
 
     case = EvalCase(
         query="answer absent",
-        namespace="rt",
+        tenant_id="rt",
         collections=("empty",),
         expected_ids=(),
         expect_no_results=True,
@@ -508,7 +476,7 @@ def test_eval_report_excludes_no_result_controls_from_ranking_metrics() -> None:
     answerable = EvalResult(
         case=EvalCase(
             query="answerable",
-            namespace="rt",
+            tenant_id="rt",
             collections=("docs",),
             expected_ids=("answer",),
         ),
@@ -522,7 +490,7 @@ def test_eval_report_excludes_no_result_controls_from_ranking_metrics() -> None:
     empty_scope = EvalResult(
         case=EvalCase(
             query="empty scope",
-            namespace="rt",
+            tenant_id="rt",
             collections=("empty",),
             expected_ids=(),
             expect_no_results=True,
@@ -562,7 +530,7 @@ def test_run_eval_computes_context_quality_metrics() -> None:
 
     case = EvalCase(
         query="invoice payment",
-        namespace="rt",
+        tenant_id="rt",
         collections=("docs",),
         expected_ids=("private-doc-id",),
         expected_context_contains=("ACH", "card"),
@@ -598,7 +566,7 @@ def test_run_eval_marks_context_forbidden_text_failures() -> None:
 
     case = EvalCase(
         query="billing",
-        namespace="rt",
+        tenant_id="rt",
         collections=("docs",),
         expected_ids=("billing",),
         expected_context_contains=("Billing answer",),
@@ -620,7 +588,7 @@ def test_run_eval_records_search_failure_without_raw_exception_detail() -> None:
 
     case = EvalCase(
         query="billing policy",
-        namespace="rt",
+        tenant_id="rt",
         collections=("docs",),
         expected_ids=("billing",),
     )
@@ -676,7 +644,7 @@ def test_run_eval_can_measure_rerank_improvement() -> None:
         )
         case = EvalCase(
             query="billing policy",
-            namespace="rt",
+            tenant_id="rt",
             collections=("docs",),
             expected_ids=("billing",),
         )

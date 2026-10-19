@@ -43,7 +43,7 @@ async def _ingest_integration_corpus(core: object) -> None:
             file_bytes=doc["markdown"].encode("utf-8"),
             filename=f"{doc['document_id']}.md",
             mime_type="text/markdown",
-            namespace="integration",
+            tenant_id="integration",
             collection="docs",
             document_id=doc["document_id"],
             document_key=f"{doc['document_id']}.md",
@@ -57,7 +57,7 @@ def test_integration_corpus_search_returns_expected_doc(case: dict[str, object])
             await _ingest_integration_corpus(core)
             hits = await core.search(
                 query=str(case["query"]),
-                namespace="integration",
+                tenant_id="integration",
                 collections=["docs"],
                 limit=5,
                 rerank=False,

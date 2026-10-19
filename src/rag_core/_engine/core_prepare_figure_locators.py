@@ -11,7 +11,6 @@ _FIGURE_METADATA_KEYS = (
     "bbox",
     "figure_bbox",
     "figure_thumbnail_url",
-    "image_url",
     "page_index",
     "page_height",
     "page_number",
@@ -20,7 +19,6 @@ _FIGURE_METADATA_KEYS = (
     "row_range",
     "sheet_name",
     "slide_number",
-    "thumbnail_url",
     "text_anchor_end_char",
     "text_anchor_start_char",
 )
@@ -140,9 +138,7 @@ def _figure_metadata(item: Mapping[str, object]) -> dict[str, object]:
         "bbox",
         "figure_bbox",
         "figure_thumbnail_url",
-        "image_url",
         "page_index",
-        "thumbnail_url",
     ):
         value = item.get(key)
         if value is not None:

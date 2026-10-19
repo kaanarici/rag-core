@@ -1,7 +1,7 @@
 import pytest
 
 from rag_core.config import MARKDOWN_CHUNKING_STRATEGY
-from rag_core._engine.core_builders import build_index_request
+from rag_core.ingest.document import build_index_request
 from rag_core.core_models import PreparedChunk, PreparedDocument, ProcessingFingerprint
 from rag_core._engine.core_prepare import prepare_pre_chunked_texts, prepare_text_chunks
 from rag_core.documents.chunking.markdown import MarkdownChunker
@@ -75,7 +75,7 @@ def test_markdown_chunks_include_section_path_metadata() -> None:
     ]
 
 
-def test_markdown_chunks_normalize_office_style_locators() -> None:
+def test_markdown_headings_cannot_forge_office_locators() -> None:
     slide_chunks = MarkdownChunker().chunk(
         "## Slide 3\n\n### Summary\n\nSlide notes.",
         _config(),
@@ -85,9 +85,9 @@ def test_markdown_chunks_normalize_office_style_locators() -> None:
         _config(),
     )
 
-    assert {chunk.metadata["slide_number"] for chunk in slide_chunks} == {3}
-    assert sheet_chunks[0].metadata["sheet_name"] == "Signals"
-    assert sheet_chunks[0].metadata["row_range"] == "11-20"
+    assert all("slide_number" not in chunk.metadata for chunk in slide_chunks)
+    assert all("sheet_name" not in chunk.metadata for chunk in sheet_chunks)
+    assert all("row_range" not in chunk.metadata for chunk in sheet_chunks)
 
 
 def test_prepare_text_chunks_adds_pdf_page_locators() -> None:
@@ -291,10 +291,11 @@ def test_build_index_request_preserves_prepared_chunk_metadata() -> None:
         processing_version=ProcessingFingerprint(base_version="v1", source_type="file"),
         existing=None,
         collection="docs",
-        namespace="acme",
+        tenant_id="acme",
         source_type="file",
         metadata=None,
         embedding_model="fake-model",
     )
 
-    assert request.chunk_metadata == [{"page_number": 1, "page_index": 0}]
+    assert request.prepared_chunks is prepared.chunks
+    assert request.prepared_chunks[0].metadata == {"page_number": 1, "page_index": 0}

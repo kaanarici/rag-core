@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import NoReturn
 
 import asyncio
 import hashlib
@@ -7,7 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from rag_core._engine.core_archive_ingest import ingest_zip_archive_with_core
+from rag_core.ingest.archive import ingest_zip_archive_with_core
 from rag_core.core_models import IngestedDocument
 from rag_core.events import (
     EventBuffer,
@@ -15,10 +16,8 @@ from rag_core.events import (
     IngestBatchFailed,
     IngestBatchProgress,
 )
-from rag_core.ingest.lifecycle import IngestBatchLifecycle
-from rag_core.ingest.local import LocalIngestRequest, run_local_ingest
-from rag_core.ingest.local.models import LocalIngestSuccess
-from rag_core.ingest.urls import RemoteUrlIngestRequest, run_remote_url_ingest
+from rag_core.ingest.batch import BatchEvents
+from rag_core.ingest.local import LocalIngestRequest, run_local_ingest_with_core
 
 
 class _OutOfOrderLocalCore:
@@ -34,7 +33,7 @@ class _OutOfOrderLocalCore:
         self,
         file_path: Path,
         *,
-        namespace: str,
+        tenant_id: str,
         collection: str,
         document_key: str,
         metadata: dict[str, str] | None = None,
@@ -50,7 +49,7 @@ class _OutOfOrderLocalCore:
             raise RuntimeError("parse failed")
         return IngestedDocument(
             document_id=f"doc-{file_path.stem}",
-            namespace=namespace,
+            tenant_id=tenant_id,
             collection=collection,
             chunk_count=1,
             filename=file_path.name,
@@ -62,6 +61,9 @@ class _OutOfOrderLocalCore:
 
     async def close(self) -> None:
         return None
+
+    async def delete_document(self, *, document_id: str, tenant_id: str, collection: str) -> NoReturn:
+        raise AssertionError("prune_missing is disabled in this test")
 
 
 class _OutOfOrderRemoteCore:
@@ -84,7 +86,7 @@ class _OutOfOrderRemoteCore:
         slug = url.rsplit("/", 1)[-1]
         return IngestedDocument(
             document_id=f"doc-{slug}",
-            namespace=kwargs["namespace"],
+            tenant_id=kwargs["tenant_id"],
             collection=kwargs["collection"],
             chunk_count=1,
             filename=f"{slug}.txt",
@@ -112,7 +114,7 @@ class _CancellationCore:
         self,
         *,
         filename: str,
-        namespace: str,
+        tenant_id: str,
         collection: str,
         document_key: str | None,
         file_bytes: bytes,
@@ -123,7 +125,7 @@ class _CancellationCore:
             await asyncio.Event().wait()
         return IngestedDocument(
             document_id=f"doc-{self.call_count}",
-            namespace=namespace,
+            tenant_id=tenant_id,
             collection=collection,
             chunk_count=1,
             filename=filename,
@@ -136,7 +138,7 @@ class _CancellationCore:
     async def add_bytes(self, **kwargs: object) -> IngestedDocument:
         return await self._ingest(
             filename=cast(str, kwargs["filename"]),
-            namespace=cast(str, kwargs["namespace"]),
+            tenant_id=cast(str, kwargs["tenant_id"]),
             collection=cast(str, kwargs["collection"]),
             document_key=cast(str | None, kwargs["document_key"]),
             file_bytes=cast(bytes, kwargs["file_bytes"]),
@@ -146,7 +148,7 @@ class _CancellationCore:
         self,
         file_path: Path,
         *,
-        namespace: str,
+        tenant_id: str,
         collection: str,
         document_key: str,
         metadata: dict[str, str] | None = None,
@@ -156,7 +158,7 @@ class _CancellationCore:
         del metadata, force_reindex
         return await self._ingest(
             filename=file_path.name,
-            namespace=namespace,
+            tenant_id=tenant_id,
             collection=collection,
             document_key=document_key,
             file_bytes=pre_read_bytes or file_path.read_bytes(),
@@ -165,7 +167,7 @@ class _CancellationCore:
     async def add_url(self, url: str, **kwargs: Any) -> IngestedDocument:
         return await self._ingest(
             filename=f"{url.rsplit('/', 1)[-1]}.md",
-            namespace=cast(str, kwargs["namespace"]),
+            tenant_id=cast(str, kwargs["tenant_id"]),
             collection=cast(str, kwargs["collection"]),
             document_key=f"url:{url}",
             file_bytes=url.encode(),
@@ -174,85 +176,31 @@ class _CancellationCore:
     async def close(self) -> None:
         self.closed = True
 
-
-class _CleanupCore(_CancellationCore):
-    def __init__(
-        self,
-        *,
-        block_close: bool = False,
-        close_error: Exception | None = None,
-        ready_error: Exception | None = None,
-    ) -> None:
-        super().__init__()
-        self.block_close = block_close
-        self.close_error = close_error
-        self.ready_error = ready_error
-        self.close_started = asyncio.Event()
-        self.release_close = asyncio.Event()
-
-    async def ensure_ready(self) -> None:
-        if self.ready_error is not None:
-            raise self.ready_error
-
-    async def close(self) -> None:
-        self.close_started.set()
-        if self.block_close:
-            await self.release_close.wait()
-        if self.close_error is not None:
-            raise self.close_error
-        self.closed = True
+    async def delete_document(self, *, document_id: str, tenant_id: str, collection: str) -> NoReturn:
+        raise AssertionError("prune_missing is disabled in this test")
 
 
-def test_local_and_remote_batch_lifecycle_contracts_match(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        await _assert_local_lifecycle(tmp_path)
-        await _assert_remote_lifecycle(tmp_path)
-
-    asyncio.run(scenario())
 
 
-def test_owned_core_cleanup_cancellation_finishes_close_and_fails_batch(
-    tmp_path: Path,
-) -> None:
-    async def scenario() -> None:
-        await _assert_cleanup_cancellation(tmp_path, source="local")
-        await _assert_cleanup_cancellation(tmp_path, source="url")
-
-    asyncio.run(scenario())
 
 
-def test_owned_core_cleanup_exception_fails_batch_without_completion(
-    tmp_path: Path,
-) -> None:
-    async def scenario() -> None:
-        await _assert_cleanup_exception(tmp_path, source="local")
-        await _assert_cleanup_exception(tmp_path, source="url")
-
-    asyncio.run(scenario())
 
 
-def test_owned_core_cleanup_does_not_replace_primary_failure(tmp_path: Path) -> None:
-    async def scenario() -> None:
-        await _assert_primary_and_cleanup_failure(tmp_path, source="local")
-        await _assert_primary_and_cleanup_failure(tmp_path, source="url")
 
-    asyncio.run(scenario())
+
 
 
 def test_batch_lifecycle_emits_only_first_terminal_event() -> None:
     events = EventBuffer()
-    lifecycle = IngestBatchLifecycle[LocalIngestSuccess](
+    lifecycle = BatchEvents(
         event_sink=events,
-        namespace="acme",
+        tenant_id="acme",
         collection="help",
         planned_count=1,
-        is_success=lambda _record: True,
-        error_type=lambda error: type(error).__name__,
     )
 
     lifecycle.started()
     lifecycle.failed(error=RuntimeError("failed"))
-    lifecycle.cancelled(error=asyncio.CancelledError())
     lifecycle.completed()
 
     assert [event.event_type for event in events.events] == [
@@ -261,135 +209,14 @@ def test_batch_lifecycle_emits_only_first_terminal_event() -> None:
     ]
 
 
-def test_cancelled_batches_emit_failure_with_partial_counts_for_all_sources(
-    tmp_path: Path,
-) -> None:
-    async def scenario() -> None:
-        await _assert_cancelled_archive_lifecycle(tmp_path)
-        await _assert_cancelled_local_lifecycle(tmp_path)
-        await _assert_cancelled_remote_lifecycle(tmp_path)
-
-    asyncio.run(scenario())
 
 
-async def _assert_cleanup_cancellation(
-    tmp_path: Path,
-    *,
-    source: str,
-) -> None:
-    core = _CleanupCore(block_close=True)
-    events = EventBuffer()
-    task = asyncio.create_task(
-        _run_single_owned_batch(
-            tmp_path,
-            source=source,
-            core=core,
-            events=events,
-        )
-    )
-    await asyncio.wait_for(core.close_started.wait(), timeout=1.0)
-    task.cancel()
-    core.release_close.set()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-
-    assert core.closed is True
-    _assert_failed_terminal(
-        events,
-        planned_count=1,
-        completed_count=1,
-        succeeded_count=1,
-        error="CancelledError",
-    )
 
 
-async def _assert_cleanup_exception(
-    tmp_path: Path,
-    *,
-    source: str,
-) -> None:
-    core = _CleanupCore(close_error=RuntimeError("close failed"))
-    events = EventBuffer()
-
-    with pytest.raises(RuntimeError, match="close failed"):
-        await _run_single_owned_batch(
-            tmp_path,
-            source=source,
-            core=core,
-            events=events,
-        )
-
-    assert core.closed is False
-    _assert_failed_terminal(
-        events,
-        planned_count=1,
-        completed_count=1,
-        succeeded_count=1,
-        error="RuntimeError",
-    )
 
 
-async def _assert_primary_and_cleanup_failure(
-    tmp_path: Path,
-    *,
-    source: str,
-) -> None:
-    core = _CleanupCore(
-        ready_error=ValueError("primary ingest failure"),
-        close_error=RuntimeError("cleanup failure"),
-    )
-    events = EventBuffer()
-
-    with pytest.raises(ValueError, match="primary ingest failure"):
-        await _run_single_owned_batch(
-            tmp_path,
-            source=source,
-            core=core,
-            events=events,
-        )
-
-    assert core.closed is False
-    _assert_failed_terminal(
-        events,
-        planned_count=1,
-        completed_count=0,
-        succeeded_count=0,
-        error="ValueError",
-        has_progress=False,
-    )
 
 
-async def _run_single_owned_batch(
-    tmp_path: Path,
-    *,
-    source: str,
-    core: _CleanupCore,
-    events: EventBuffer,
-) -> object:
-    if source == "local":
-        path = tmp_path / f"cleanup-{id(core)}.md"
-        path.write_text("# Complete before cleanup", encoding="utf-8")
-        return await run_local_ingest(
-            LocalIngestRequest(
-                path=path,
-                namespace="acme",
-                collection="help",
-            ),
-            core_factory=lambda: core,
-            event_sink=events,
-        )
-
-    url_file = tmp_path / f"cleanup-{id(core)}.txt"
-    url_file.write_text("https://example.com/complete\n", encoding="utf-8")
-    return await run_remote_url_ingest(
-        RemoteUrlIngestRequest(
-            url_file=url_file,
-            namespace="acme",
-            collection="help",
-        ),
-        core_factory=lambda: core,
-        event_sink=events,
-    )
 
 
 async def _assert_cancelled_archive_lifecycle(tmp_path: Path) -> None:
@@ -403,7 +230,7 @@ async def _assert_cancelled_archive_lifecycle(tmp_path: Path) -> None:
         ingest_zip_archive_with_core(
             core=core,
             archive_path=archive_path,
-            namespace="acme",
+            tenant_id="acme",
             collection="help",
             max_concurrency=1,
             event_sink=events,
@@ -424,14 +251,14 @@ async def _assert_cancelled_local_lifecycle(tmp_path: Path) -> None:
     core = _CancellationCore()
     events = EventBuffer()
     task = asyncio.create_task(
-        run_local_ingest(
+        run_local_ingest_with_core(
             LocalIngestRequest(
                 path=docs,
-                namespace="acme",
+                tenant_id="acme",
                 collection="help",
                 max_concurrency=1,
             ),
-            core_factory=lambda: core,
+            core=core,
             event_sink=events,
         )
     )
@@ -439,36 +266,10 @@ async def _assert_cancelled_local_lifecycle(tmp_path: Path) -> None:
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    assert core.closed is True
+    assert core.closed is False
     _assert_cancelled_lifecycle_events(events)
 
 
-async def _assert_cancelled_remote_lifecycle(tmp_path: Path) -> None:
-    url_file = tmp_path / "cancel-urls.txt"
-    url_file.write_text(
-        "https://example.com/a\nhttps://example.com/b\n",
-        encoding="utf-8",
-    )
-    core = _CancellationCore()
-    events = EventBuffer()
-    task = asyncio.create_task(
-        run_remote_url_ingest(
-            RemoteUrlIngestRequest(
-                url_file=url_file,
-                namespace="acme",
-                collection="help",
-                max_concurrency=1,
-            ),
-            core_factory=lambda: core,
-            event_sink=events,
-        )
-    )
-    await asyncio.wait_for(core.second_started.wait(), timeout=1.0)
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    assert core.closed is True
-    _assert_cancelled_lifecycle_events(events)
 
 
 def _assert_cancelled_lifecycle_events(events: EventBuffer) -> None:
@@ -518,14 +319,14 @@ async def _assert_local_lifecycle(tmp_path: Path) -> None:
     events = EventBuffer()
 
     task = asyncio.create_task(
-        run_local_ingest(
+        run_local_ingest_with_core(
             LocalIngestRequest(
                 path=docs,
-                namespace="acme",
+                tenant_id="acme",
                 collection="help",
                 max_concurrency=3,
             ),
-            core_factory=lambda: core,
+            core=core,
             event_sink=events,
         )
     )
@@ -544,46 +345,6 @@ async def _assert_local_lifecycle(tmp_path: Path) -> None:
     _assert_shared_lifecycle_events(events)
 
 
-async def _assert_remote_lifecycle(tmp_path: Path) -> None:
-    url_file = tmp_path / "urls.txt"
-    url_file.write_text(
-        "\n".join(
-            [
-                "https://example.com/a",
-                "https://example.com/b",
-                "https://example.com/c",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    core = _OutOfOrderRemoteCore()
-    events = EventBuffer()
-
-    task = asyncio.create_task(
-        run_remote_url_ingest(
-            RemoteUrlIngestRequest(
-                url_file=url_file,
-                namespace="acme",
-                collection="help",
-                max_concurrency=3,
-            ),
-            core_factory=lambda: core,
-            event_sink=events,
-        )
-    )
-    try:
-        await asyncio.wait_for(core.all_started.wait(), timeout=1.0)
-        await _wait_for_progress(events, count=2)
-    finally:
-        core.release_first.set()
-    result = await task
-
-    assert [record.requested_url for record in result.records] == [
-        "https://example.com/a",
-        "https://example.com/b",
-        "https://example.com/c",
-    ]
-    _assert_shared_lifecycle_events(events)
 
 
 async def _wait_for_progress(events: EventBuffer, *, count: int) -> None:
@@ -616,3 +377,20 @@ def _assert_shared_lifecycle_events(events: EventBuffer) -> None:
     assert len(completed) == 1
     assert completed[0].succeeded_count == 2
     assert completed[0].failed_count == 1
+
+
+
+
+
+
+
+
+
+
+@pytest.mark.parametrize("source", ["local", "archive"])
+def test_cancellation_joins_workers_and_reports_partial_progress(tmp_path: Path, source: str) -> None:
+    asyncio.run(_assert_cancelled_local_lifecycle(tmp_path) if source == "local" else _assert_cancelled_archive_lifecycle(tmp_path))
+
+
+def test_local_batch_out_of_order_progress_and_record_order(tmp_path: Path) -> None:
+    asyncio.run(_assert_local_lifecycle(tmp_path))

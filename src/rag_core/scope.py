@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-DEFAULT_NAMESPACE = "default"
+DEFAULT_TENANT_ID = "default"
 
 
-def normalize_namespace(namespace: str | None) -> str:
-    value = DEFAULT_NAMESPACE if namespace is None else namespace
+def normalize_tenant_id(tenant_id: str | None) -> str:
+    value = DEFAULT_TENANT_ID if tenant_id is None else tenant_id
     if not isinstance(value, str) or not value.strip():
-        raise ValueError("namespace must not be empty")
+        raise ValueError("tenant_id must not be empty")
     return value.strip()
 
 
@@ -48,8 +48,8 @@ def _normalize_collection_sequence(values: Sequence[str]) -> list[str]:
 
 
 __all__ = [
-    "DEFAULT_NAMESPACE",
+    "DEFAULT_TENANT_ID",
     "normalize_collection",
-    "normalize_namespace",
+    "normalize_tenant_id",
     "resolve_collections_argument",
 ]

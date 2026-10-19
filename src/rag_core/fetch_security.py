@@ -9,7 +9,7 @@ import hashlib
 from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import SplitResult, unquote, urlsplit, urlunsplit
-from rag_core.ingest.urls.document_keys import private_remote_document_key
+from rag_core.ingest.remote_keys import private_remote_document_key
 import math
 from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING

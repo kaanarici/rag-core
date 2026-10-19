@@ -5,7 +5,6 @@
 .env
 .env.local
 /.rag-core/
-/dev/project_identity.local.toml
 
 # Agent & planning docs (local only)
 /AGENTS.md
@@ -26,9 +25,3 @@
 __pycache__/
 build/
 dist/
-
-# Docs site (Fumadocs / Next.js): build artifacts only; source is tracked
-/docs-site/node_modules/
-/docs-site/.next/
-/docs-site/.source/
-/docs-site/out/

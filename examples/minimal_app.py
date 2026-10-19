@@ -14,12 +14,12 @@ async def run_demo() -> None:
             file_bytes=b"Billing is due monthly and invoices can be paid by card or ACH.",
             filename="billing.txt",
             mime_type="text/plain",
-            namespace="acme",
+            tenant_id="acme",
             collection="help-center",
         )
         context = await core.context(
             query="How can I pay invoices?",
-            namespace="acme",
+            tenant_id="acme",
             collections=["help-center"],
             limit=3,
             rerank=False,

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
+from rag_core._async import run_sync
+
 import logging
 
 from rag_core.documents.chunking.code_detection import detect_code_language
@@ -76,4 +77,4 @@ class CodeConverter(BaseConverter):
                 quality=quality,
             )
 
-        return await asyncio.to_thread(_convert)
+        return await run_sync(_convert)

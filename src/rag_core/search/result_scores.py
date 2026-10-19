@@ -21,16 +21,3 @@ def sanitize_result_score(result: SearchResult) -> SearchResult:
     if isinstance(result.score, float) and score == result.score:
         return result
     return replace(result, score=score)
-
-
-def blended_score(
-    *,
-    vector_score: object,
-    sidecar_score: object,
-    alpha: float,
-) -> float:
-    score = (
-        alpha * finite_score_or_zero(vector_score)
-        + (1.0 - alpha) * finite_score_or_zero(sidecar_score)
-    )
-    return finite_score_or_zero(score)

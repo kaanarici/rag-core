@@ -12,14 +12,14 @@ INGEST_FINGERPRINT_PAYLOAD_KEY = "ingest_fingerprint"
 
 def validate_document_lookup_inputs(
     *,
-    namespace: str,
+    tenant_id: str,
     collection: str,
     document_id: str | None,
     document_key: str | None,
 ) -> tuple[str, str]:
-    namespace_scoped = namespace.strip()
-    if not namespace_scoped:
-        raise ValueError("namespace is required for get_document_record")
+    tenant_id_scoped = tenant_id.strip()
+    if not tenant_id_scoped:
+        raise ValueError("tenant_id is required for get_document_record")
     collection_scoped = collection.strip()
     if not collection_scoped:
         raise ValueError("collection is required for get_document_record")
@@ -27,7 +27,7 @@ def validate_document_lookup_inputs(
         raise ValueError(
             "document_id or document_key is required for get_document_record"
         )
-    return namespace_scoped, collection_scoped
+    return tenant_id_scoped, collection_scoped
 
 
 def resolve_document_id_from_payload(
@@ -49,7 +49,7 @@ def resolve_document_id_from_payload(
 def stored_document_record_from_payload(
     *,
     payload: Mapping[str, object],
-    namespace: str,
+    tenant_id: str,
     collection: str,
     document_id: str,
     chunk_count: int,
@@ -58,7 +58,7 @@ def stored_document_record_from_payload(
 ) -> StoredDocumentRecord:
     return StoredDocumentRecord(
         document_id=document_id,
-        namespace=namespace,
+        tenant_id=tenant_id,
         collection=collection,
         document_key=payload_optional_str(
             payload,
@@ -81,6 +81,9 @@ def stored_document_record_from_payload(
             invalid_field_message=invalid_field_message,
         ),
         chunk_count=chunk_count,
+        revision=payload_optional_str(
+            payload, "_rag_revision", invalid_field_message=invalid_field_message
+        ),
     )
 
 
@@ -115,3 +118,18 @@ __all__ = [
     "stored_document_record_from_payload",
     "validate_document_lookup_inputs",
 ]
+
+
+def document_record_fields(policy: VectorStorePolicy) -> list[str]:
+    return [
+        policy.tenant_id_field,
+        policy.collection_field,
+        policy.document_id_field,
+        policy.document_key_field,
+        policy.content_sha256_field,
+        policy.processing_version_field,
+        INGEST_FINGERPRINT_PAYLOAD_KEY,
+        "_rag_revision",
+        "_rag_kind",
+        "_rag_chunks",
+    ]

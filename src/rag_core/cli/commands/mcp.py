@@ -2,29 +2,20 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable
-from typing import Protocol
+from typing import TYPE_CHECKING
 
-from rag_core.cli.inputs import cli_safe_error_message
-from rag_core.provider_errors import (
-    is_provider_bootstrap_error,
-    is_provider_error,
-    provider_bootstrap_message,
-    provider_runtime_message,
-)
-from rag_core.core_models import Config
-from rag_core.integrations.protocols import SupportsRetrieveContext
+from rag_core.core import Engine
+from rag_core.cli.config import config_from_args
 
-
-class McpCore(SupportsRetrieveContext, Protocol):
-    async def ensure_ready(self) -> None: ...
-
-    async def close(self) -> None: ...
+if TYPE_CHECKING:
+    from rag_core.events.sink import EventSink
 
 
 async def run_mcp_command(
     args: argparse.Namespace,
     *,
-    core_factory: Callable[[Config], McpCore],
+    core_factory: Callable[..., Engine],
+    event_sink: EventSink | None = None,
 ) -> int:
     try:
         from mcp.server.stdio import stdio_server
@@ -37,47 +28,24 @@ async def run_mcp_command(
 
     if not args.collection:
         raise ValueError(
-            "--collection is required (repeat the flag or use --collections a,b)"
+            "--collection is required (repeat the flag for multiple collections)"
         )
     if args.limit_cap <= 0:
         raise ValueError("--limit-cap must be positive")
 
-    config = Config.from_cli(args)
-    try:
-        core = core_factory(config)
-    except Exception as exc:
-        if is_provider_bootstrap_error(exc):
-            raise ValueError(provider_bootstrap_message(exc, action="mcp")) from exc
-        raise
-
-    try:
-        try:
-            await core.ensure_ready()
-        except Exception as exc:
-            if is_provider_bootstrap_error(exc):
-                raise ValueError(provider_bootstrap_message(exc, action="mcp")) from exc
-            raise ValueError(cli_safe_error_message(exc, action="mcp")) from exc
-
+    config = config_from_args(args)
+    async with core_factory(config, event_sink=event_sink) as core:
         server = build_mcp_server(
             core,
-            namespace=args.namespace,
+            tenant_id=args.tenant_id,
             collections=list(args.collection),
-            rerank=args.rerank,
+            rerank=False,
             limit_cap=args.limit_cap,
         )
-        try:
-            async with stdio_server() as (read_stream, write_stream):
-                await server.run(
-                    read_stream,
-                    write_stream,
-                    server.create_initialization_options(),
-                )
-        except Exception as exc:
-            if is_provider_error(exc) or is_provider_bootstrap_error(exc):
-                raise ValueError(provider_runtime_message(exc, action="mcp")) from exc
-            raise
-    finally:
-        await core.close()
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(
+                read_stream, write_stream, server.create_initialization_options()
+            )
     return 0
 
 

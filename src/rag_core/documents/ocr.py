@@ -3,19 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
-from rag_core.documents.ocr_provider_runtime import (
-    build_gemini_ocr_command,
-    build_mistral_ocr_command,
-    run_command_provider_ocr,
+from rag_core.documents.ocr_command_runtime import (
+    run_command_ocr as run_command_provider_ocr,
 )
-from rag_core.documents.ocr_provider_names import (
-    COMMAND_OCR_PROVIDER,
-    DEFAULT_GEMINI_OCR_MODEL,
-    DEFAULT_MISTRAL_OCR_MODEL,
-    GEMINI_OCR_PROVIDER,
-    MISTRAL_OCR_PROVIDER,
-)
-from rag_core.search.providers.registry import OCR_PROVIDERS
+
+COMMAND_OCR_PROVIDER = "command"
 
 
 @dataclass(frozen=True)
@@ -85,7 +77,7 @@ class CommandOcrProvider:
         return self._supports_page_selection
 
     async def extract_markdown(self, request: OcrRequest) -> OcrResult:
-        output = run_command_provider_ocr(
+        output = await run_command_provider_ocr(
             file_bytes=request.file_bytes,
             filename=request.filename,
             mime_type=request.mime_type,
@@ -107,52 +99,3 @@ class CommandOcrProvider:
             pages_processed=output.pages_processed,
             metadata=output.metadata,
         )
-
-
-def build_mistral_ocr_provider(
-    *,
-    model_name: str = DEFAULT_MISTRAL_OCR_MODEL,
-    python_executable: str | None = None,
-    timeout_seconds: float = 300.0,
-    extra_env: dict[str, str] | None = None,
-) -> CommandOcrProvider:
-    command = build_mistral_ocr_command(
-        model_name=model_name,
-        python_executable=python_executable,
-    )
-    return CommandOcrProvider(
-        command=command,
-        provider_name=MISTRAL_OCR_PROVIDER,
-        model_name=model_name,
-        supports_page_selection=True,
-        timeout_seconds=timeout_seconds,
-        extra_env=extra_env,
-    )
-
-
-def build_gemini_ocr_provider(
-    *,
-    model_name: str = DEFAULT_GEMINI_OCR_MODEL,
-    python_executable: str | None = None,
-    timeout_seconds: float = 300.0,
-    extra_env: dict[str, str] | None = None,
-) -> CommandOcrProvider:
-    command = build_gemini_ocr_command(
-        model_name=model_name,
-        python_executable=python_executable,
-    )
-    return CommandOcrProvider(
-        command=command,
-        provider_name=GEMINI_OCR_PROVIDER,
-        model_name=model_name,
-        supports_page_selection=False,
-        timeout_seconds=timeout_seconds,
-        extra_env=extra_env,
-    )
-
-def create_ocr_provider(*, provider: str, **kwargs: Any) -> OcrProvider:
-    return OCR_PROVIDERS.create(provider, **kwargs)
-
-
-OCR_PROVIDERS.register(MISTRAL_OCR_PROVIDER, build_mistral_ocr_provider)
-OCR_PROVIDERS.register(GEMINI_OCR_PROVIDER, build_gemini_ocr_provider)

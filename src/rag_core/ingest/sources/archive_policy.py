@@ -4,7 +4,7 @@ import hashlib
 import zipfile
 from pathlib import Path, PurePosixPath
 
-from rag_core.documents.converters.format_support import is_local_ingest_extension
+from rag_core.documents.formats import is_local_ingest_extension
 
 
 def safe_archive_member_path(raw_path: str) -> str:

@@ -36,9 +36,12 @@ class _FakeClient:
         collection_name: str,
         field_name: str,
         field_schema: rest.PayloadSchemaType | rest.KeywordIndexParams,
-    ) -> None:
+        wait: bool = True,
+    ) -> rest.UpdateResult:
         assert collection_name == "docs"
+        assert wait is True
         self.create_payload_index_calls.append((field_name, field_schema))
+        return rest.UpdateResult(status=rest.UpdateStatus.COMPLETED)
 
 
 def _run_create(policy: VectorStorePolicy) -> _FakeClient:
@@ -59,13 +62,13 @@ def _run_create(policy: VectorStorePolicy) -> _FakeClient:
 
 
 def test_create_collection_marks_tenant_payload_index_when_policy_sets_it() -> None:
-    client = _run_create(VectorStorePolicy(tenant_payload_field="namespace"))
+    client = _run_create(VectorStorePolicy(tenant_payload_field="tenant_id"))
 
     by_field = dict(client.create_payload_index_calls)
-    namespace_schema = by_field["namespace"]
-    assert isinstance(namespace_schema, rest.KeywordIndexParams)
-    assert namespace_schema.is_tenant is True
-    assert namespace_schema.type == rest.KeywordIndexType.KEYWORD
+    tenant_id_schema = by_field["tenant_id"]
+    assert isinstance(tenant_id_schema, rest.KeywordIndexParams)
+    assert tenant_id_schema.is_tenant is True
+    assert tenant_id_schema.type == rest.KeywordIndexType.KEYWORD
 
     # Other policy-driven fields keep the default keyword schema so we don't
     # accidentally opt every field into multi-tenant mode.
@@ -83,12 +86,12 @@ def test_create_collection_skips_tenant_hint_when_policy_field_is_none() -> None
 
 def test_create_collection_routes_tenant_hint_to_custom_field_name() -> None:
     client = _run_create(
-        VectorStorePolicy(namespace_field="ns", tenant_payload_field="ns")
+        VectorStorePolicy(tenant_id_field="ns", tenant_payload_field="ns")
     )
 
     fields = [field_name for field_name, _ in client.create_payload_index_calls]
     assert "ns" in fields
-    assert "namespace" not in fields
+    assert "tenant_id" not in fields
     ns_schema = dict(client.create_payload_index_calls)["ns"]
     assert isinstance(ns_schema, rest.KeywordIndexParams)
     assert ns_schema.is_tenant is True

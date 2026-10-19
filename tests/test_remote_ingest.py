@@ -9,6 +9,8 @@ from threading import Lock
 import pytest
 
 import rag_core
+from rag_core.config.ingest_config import DEFAULT_PROCESSING_VERSION
+from rag_core.core_models import ProcessingFingerprint
 from rag_core.core import Engine
 from rag_core.core_models import IngestedDocument
 from rag_core.events import (
@@ -21,8 +23,6 @@ from rag_core.fetch_security import FetchLimits, FetchSecurityPolicy, validate_f
 from rag_core.fetch_security import safe_remote_document_key
 from rag_core.fetching import FetchResponse
 from rag_core._engine.core_remote import ingest_remote_url
-from rag_core.ingest.urls.models import RemoteUrlSourceItem
-from rag_core.ingest.urls.records import safe_remote_ingest_error
 
 from tests.support import (
     FakeEmbeddingProvider,
@@ -133,7 +133,7 @@ def test_ingest_url_indexes_with_url_source_type_and_redacted_identity() -> None
         try:
             document = await core.add_url(
                 " https://example.com/docs/guide?private=alpha ",
-                namespace="team-space",
+                tenant_id="team-space",
                 collection="corpus-1",
                 metadata={"title": "Remote Guide", "source_type": "caller"},
                 fetch_client=fetch_client,
@@ -146,7 +146,12 @@ def test_ingest_url_indexes_with_url_source_type_and_redacted_identity() -> None
         assert document.document_key == expected_key
         assert document.filename == "guide.txt"
         assert document.processing_version == (
-            '{"base_version":"rag_core_processing_v4","source_type":"url"}'
+            ProcessingFingerprint(
+                base_version=DEFAULT_PROCESSING_VERSION,
+                source_type="url",
+                sparse_index=True,
+                sparse_model=FakeSparseEmbedder.model_name,
+            ).serialize()
         )
         assert document.metadata["title"] == "Remote Guide"
         assert document.metadata["source_type"] == "url"
@@ -175,7 +180,7 @@ def test_ingest_url_emits_redacted_fetch_events() -> None:
         try:
             await core.add_url(
                 "https://example.com/docs/guide?private=alpha",
-                namespace="team-space",
+                tenant_id="team-space",
                 collection="corpus-1",
                 fetch_client=fetch_client,
             )
@@ -185,14 +190,14 @@ def test_ingest_url_emits_redacted_fetch_events() -> None:
         started = events.by_type("fetch.started")
         assert len(started) == 1
         assert isinstance(started[0], FetchStarted)
-        assert started[0].namespace == "team-space"
+        assert started[0].tenant_id == "team-space"
         assert started[0].collection == "corpus-1"
         assert started[0].redacted_url == "https://example.com/?redacted"
 
         completed = events.by_type("fetch.completed")
         assert len(completed) == 1
         assert isinstance(completed[0], FetchCompleted)
-        assert completed[0].namespace == "team-space"
+        assert completed[0].tenant_id == "team-space"
         assert completed[0].collection == "corpus-1"
         assert completed[0].redacted_url == "https://example.com/docs/guide?redacted"
         assert completed[0].status_code == 200
@@ -222,7 +227,7 @@ def test_ingest_url_fetch_failure_event_omits_error_message() -> None:
             with pytest.raises(RuntimeError, match="fetch exploded"):
                 await core.add_url(
                     "https://example.com/docs/guide?private=alpha",
-                    namespace="team-space",
+                    tenant_id="team-space",
                     collection="corpus-1",
                     fetch_client=fetch_client,
                 )
@@ -251,7 +256,7 @@ def test_ingest_remote_url_offloads_blocking_fetches() -> None:
         file_bytes: bytes,
         filename: str,
         mime_type: str,
-        namespace: str,
+        tenant_id: str,
         collection: str,
         document_id: str | None = None,
         document_key: str | None = None,
@@ -264,7 +269,7 @@ def test_ingest_remote_url_offloads_blocking_fetches() -> None:
         return IngestedDocument(
             document_id=document_id or filename,
             collection=collection,
-            namespace=namespace,
+            tenant_id=tenant_id,
             chunk_count=1,
             filename=filename,
             mime_type=mime_type,
@@ -276,7 +281,7 @@ def test_ingest_remote_url_offloads_blocking_fetches() -> None:
                 ingest_remote_url(
                     f"https://example.com/docs/{index}",
                     ingest_bytes=add_bytes,
-                    namespace="acme",
+                    tenant_id="acme",
                     collection="help",
                     fetch_client=fetch_client,
                 )
@@ -289,43 +294,6 @@ def test_ingest_remote_url_offloads_blocking_fetches() -> None:
     assert len(fetch_client.calls) == 8
     assert len(ingested) == 8
     assert fetch_client.peak_active > 1
-
-
-def test_safe_remote_ingest_error_uses_generic_message_for_query_bearing_urls() -> None:
-    item = RemoteUrlSourceItem(
-        url="https://example.com/export?id=1&token=secret",
-        redacted_url="https://example.com/export?redacted",
-        document_key="url:https://example.com/export?redacted",
-        query_sha256="hash",
-        source_line=1,
-        raw_query="id=1&token=secret",
-    )
-
-    message = safe_remote_ingest_error(
-        RuntimeError("parser failed on token=secret"),
-        item,
-    )
-
-    assert message == "RuntimeError while ingesting https://example.com/export?redacted"
-    assert "token=secret" not in message
-
-
-def test_safe_remote_ingest_error_sanitizes_non_query_runtime_messages() -> None:
-    item = RemoteUrlSourceItem(
-        url="https://example.com/docs/final",
-        redacted_url="https://example.com/docs/final",
-        document_key="url:https://example.com/docs/final",
-        source_line=1,
-    )
-
-    message = safe_remote_ingest_error(
-        RuntimeError("inner failure at /tmp/private-cache with api_key=secret"),
-        item,
-    )
-
-    assert message == "RuntimeError while ingesting https://example.com/docs/final"
-    assert "api_key=secret" not in message
-    assert "/tmp/private-cache" not in message
 
 
 def test_ingest_url_revalidates_custom_fetch_client_response_with_default_policy() -> (
@@ -359,7 +327,7 @@ def test_ingest_url_revalidates_custom_fetch_client_response_with_default_policy
             with pytest.raises(ValueError, match="HTTP requires explicit opt-in"):
                 await core.add_url(
                     "https://example.com/docs?private=alpha",
-                    namespace="team-space",
+                    tenant_id="team-space",
                     collection="corpus-1",
                     fetch_client=fetch_client,
                 )
@@ -397,7 +365,7 @@ def test_ingest_url_rejects_custom_fetch_client_with_explicit_policy() -> None:
             ):
                 await core.add_url(
                     "http://127.0.0.1/docs?private=alpha",
-                    namespace="team-space",
+                    tenant_id="team-space",
                     collection="corpus-1",
                     fetch_client=fetch_client,
                     fetch_policy=ALLOW_HTTP_PRIVATE_POLICY,
@@ -458,7 +426,7 @@ def test_ingest_url_can_build_default_fetch_client_with_policy_and_limits(
         try:
             document = await core.add_url(
                 "http://localhost:8000/docs?private=alpha",
-                namespace="team-space",
+                tenant_id="team-space",
                 collection="corpus-1",
                 fetch_policy=policy,
                 fetch_limits=limits,
@@ -497,7 +465,7 @@ def test_ingest_url_rejects_ambiguous_fetch_configuration(
             ):
                 await core.add_url(
                     "https://example.com/docs/guide",
-                    namespace="team-space",
+                    tenant_id="team-space",
                     collection="corpus-1",
                     fetch_client=fetch_client,
                     fetch_policy=fetch_policy,
@@ -521,7 +489,7 @@ def test_ingest_url_uses_url_source_type_when_runtime_default_differs() -> None:
         try:
             document = await core.add_url(
                 "https://example.com/docs/guide",
-                namespace="team-space",
+                tenant_id="team-space",
                 collection="corpus-1",
                 fetch_client=fetch_client,
             )
@@ -530,7 +498,12 @@ def test_ingest_url_uses_url_source_type_when_runtime_default_differs() -> None:
 
         assert fetch_client.calls == ["https://example.com/docs/guide"]
         assert document.processing_version == (
-            '{"base_version":"rag_core_processing_v4","source_type":"url"}'
+            ProcessingFingerprint(
+                base_version=DEFAULT_PROCESSING_VERSION,
+                source_type="url",
+                sparse_index=True,
+                sparse_model=FakeSparseEmbedder.model_name,
+            ).serialize()
         )
         assert document.metadata["source_type"] == "url"
 
@@ -544,13 +517,13 @@ def test_ingest_url_skips_when_same_remote_content_is_already_indexed() -> None:
         try:
             created = await core.add_url(
                 "https://example.com/docs/guide?private=alpha",
-                namespace="team-space",
+                tenant_id="team-space",
                 collection="corpus-1",
                 fetch_client=fetch_client,
             )
             repeated = await core.add_url(
                 "https://example.com/docs/guide?private=alpha",
-                namespace="team-space",
+                tenant_id="team-space",
                 collection="corpus-1",
                 fetch_client=fetch_client,
             )
@@ -588,13 +561,13 @@ def test_ingest_url_distinguishes_redacted_query_identities() -> None:
         try:
             first = await core.add_url(
                 "https://example.com/export?id=1",
-                namespace="team-space",
+                tenant_id="team-space",
                 collection="corpus-1",
                 fetch_client=fetch_client,
             )
             second = await core.add_url(
                 "https://example.com/export?id=2",
-                namespace="team-space",
+                tenant_id="team-space",
                 collection="corpus-1",
                 fetch_client=fetch_client,
             )
@@ -616,7 +589,7 @@ def test_ingest_url_reindexes_when_stored_processing_version_drifts() -> None:
         try:
             created = await core.add_url(
                 "https://example.com/docs/guide?private=alpha",
-                namespace="team-space",
+                tenant_id="team-space",
                 collection="corpus-1",
                 fetch_client=fetch_client,
             )
@@ -627,7 +600,7 @@ def test_ingest_url_reindexes_when_stored_processing_version_drifts() -> None:
             )
             reindexed = await core.add_url(
                 "https://example.com/docs/guide?private=alpha",
-                namespace="team-space",
+                tenant_id="team-space",
                 collection="corpus-1",
                 fetch_client=fetch_client,
             )

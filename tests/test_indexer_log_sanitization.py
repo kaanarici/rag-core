@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from rag_core.documents.prepare_chunks import prepare_pre_chunked_texts
 import asyncio
 import logging
 
@@ -29,17 +30,7 @@ def test_index_document_info_log_omits_document_identity(
 
         with caplog.at_level(logging.INFO, logger="rag_core.search.indexer"):
             result = await indexer.index_document(
-                IndexRequest(
-                    document_id="doc-private-sk-test-secret",
-                    collection="corpus-private-sk-test-secret",
-                    namespace="namespace-private-sk-test-secret",
-                    text="unused",
-                    filename="private-roadmap.md",
-                    mime_type="text/markdown",
-                    source_type="file",
-                    document_key="/Users/person/private-roadmap.md",
-                    pre_chunked_texts=["fox query"],
-                )
+                IndexRequest(prepared_chunks=prepare_pre_chunked_texts(["fox query"]), document_id="doc-private-sk-test-secret", collection="corpus-private-sk-test-secret", tenant_id="tenant_id-private-sk-test-secret", text="unused", filename="private-roadmap.md", mime_type="text/markdown", source_type="file", document_key="/Users/person/private-roadmap.md")
             )
 
         assert result.document_id == "doc-private-sk-test-secret"
@@ -55,7 +46,7 @@ def test_index_document_info_log_omits_document_identity(
         forbidden_substrings=(
             "doc-private",
             "corpus-private",
-            "namespace-private",
+            "tenant_id-private",
             "private-roadmap",
             "/Users/person",
             "fox query",

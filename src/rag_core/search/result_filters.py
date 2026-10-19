@@ -1,31 +1,23 @@
 from __future__ import annotations
 
-from rag_core.search.filter_eval import eval_filter
-from rag_core.search.stored_payload_fields import SEARCH_RESULT_FILTER_FIELDS
-from rag_core.search.request_models import SearchSidecarQuery
+from rag_core.search.request_models import SearchQuery
 from rag_core.search.vector_models import SearchResult
 
 
-def search_result_payload(result: SearchResult) -> dict[str, object]:
-    payload = dict(result.metadata)
-    for key in SEARCH_RESULT_FILTER_FIELDS:
-        value = getattr(result, key)
-        if value is not None:
-            payload[key] = value
-    return payload
-
-
-def result_matches_sidecar_query(
+def result_matches_query(
     result: SearchResult,
-    query: SearchSidecarQuery,
+    query: SearchQuery,
     *,
-    allow_missing_namespace: bool = False,
+    allow_missing_tenant_id: bool = False,
 ) -> bool:
-    result_namespace = _result_namespace(result)
-    if result_namespace is None:
-        if not allow_missing_namespace:
+    """Check returned scope after the backend has applied metadata filters."""
+    if query.metadata_filter is not None:
+        raise ValueError("metadata filters must be applied by the vector store")
+    result_tenant_id = _result_tenant_id(result)
+    if result_tenant_id is None:
+        if not allow_missing_tenant_id:
             return False
-    elif result_namespace != query.namespace:
+    elif result_tenant_id != query.tenant_id:
         return False
     if query.collections is not None and not query.collections:
         return False
@@ -39,18 +31,13 @@ def result_matches_sidecar_query(
         return False
     if query.document_ids and result.document_id not in query.document_ids:
         return False
-    if query.metadata_filter is not None and not eval_filter(
-        query.metadata_filter,
-        search_result_payload(result),
-    ):
-        return False
     return True
 
 
-def _result_namespace(result: SearchResult) -> str | None:
-    if result.namespace:
-        return result.namespace
-    value = result.metadata.get("namespace")
+def _result_tenant_id(result: SearchResult) -> str | None:
+    if result.tenant_id:
+        return result.tenant_id
+    value = result.metadata.get("tenant_id")
     if isinstance(value, str) and value:
         return value
     return None

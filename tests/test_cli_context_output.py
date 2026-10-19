@@ -45,6 +45,13 @@ class RecordingCore:
     async def ensure_ready(self) -> None:
         pass
 
+    async def __aenter__(self) -> RecordingCore:
+        await self.ensure_ready()
+        return self
+
+    async def __aexit__(self, *_args: object) -> None:
+        await self.close()
+
     async def context(self, **kwargs: object) -> FakeContext:
         self.calls.append(kwargs)
         return FakeContext()
@@ -69,7 +76,7 @@ def test_retrieve_context_emits_canonical_context_payload(
         [
             "context",
             "billing policy",
-            "--namespace",
+            "--tenant-id",
             "acme",
             "--collection",
             "help",
@@ -84,17 +91,19 @@ def test_retrieve_context_emits_canonical_context_payload(
 
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["context_text"] == "[S1] Billing guide\nInvoices can be paid by card."
+    assert (
+        payload["context_text"] == "[S1] Billing guide\nInvoices can be paid by card."
+    )
     assert payload["citation_summary"] == "[C1] Billing guide"
     assert "ok" not in payload
     assert RecordingCore.calls == [
         {
             "query": "billing policy",
-            "namespace": "acme",
+            "tenant_id": "acme",
             "collections": ["help"],
             "limit": 3,
             "rerank": False,
-            "query_plan": None,
+            "mode": None,
             "content_types": None,
             "document_ids": None,
             "metadata_filter": None,
@@ -113,7 +122,7 @@ def test_retrieve_context_default_and_explicit_rank_output_are_byte_identical(
     argv = [
         "context",
         "billing policy",
-        "--namespace",
+        "--tenant-id",
         "acme",
         "--collection",
         "help",
@@ -144,7 +153,7 @@ def test_retrieve_context_default_limit_matches_context_pack_default(
         [
             "context",
             "billing policy",
-            "--namespace",
+            "--tenant-id",
             "acme",
             "--collection",
             "help",
@@ -169,7 +178,7 @@ def test_retrieve_context_passes_scope_filters(
         [
             "context",
             "billing policy",
-            "--namespace",
+            "--tenant-id",
             "acme",
             "--collection",
             "help",
@@ -199,17 +208,21 @@ def test_search_context_json_flag_keeps_context_payload(
         [
             "context",
             "billing policy",
-            "--namespace",
+            "--tenant-id",
             "acme",
             "--collection",
             "help",
             "--json",
+            "--qdrant-location",
+            ":memory:",
         ]
     )
 
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["context_text"] == "[S1] Billing guide\nInvoices can be paid by card."
+    assert (
+        payload["context_text"] == "[S1] Billing guide\nInvoices can be paid by card."
+    )
     assert RecordingCore.calls[0]["query"] == "billing policy"
 
 
@@ -223,7 +236,7 @@ def test_retrieve_context_rejects_non_positive_budget_before_runtime_setup(
             [
                 "context",
                 "billing policy",
-                "--namespace",
+                "--tenant-id",
                 "acme",
                 "--collection",
                 "help",
@@ -246,7 +259,7 @@ def test_retrieve_context_context_order_extrema_threads_prompt_rendering(
         [
             "context",
             "billing policy",
-            "--namespace",
+            "--tenant-id",
             "acme",
             "--collection",
             "help",

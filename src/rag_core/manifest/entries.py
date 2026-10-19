@@ -6,12 +6,12 @@ from pathlib import Path
 from typing import Any
 
 from rag_core.core_models import CollectionManifestEntry
-from rag_core.manifest.paths import manifest_segment
+from rag_core.manifest.paths import manifest_identity
 
 _ENTRY_KEYS = frozenset(
     {
         "document_id",
-        "namespace",
+        "tenant_id",
         "collection",
         "document_key",
         "content_sha256",
@@ -98,10 +98,10 @@ def _entry_from_dict(payload: dict[str, Any]) -> CollectionManifestEntry:
         raise ValueError("manifest entry fields must match the canonical shape")
     return CollectionManifestEntry(
         document_id=_entry_required_str(payload, "document_id"),
-        namespace=manifest_segment(
-            "namespace", _entry_required_str(payload, "namespace")
+        tenant_id=manifest_identity(
+            "tenant_id", _entry_required_str(payload, "tenant_id")
         ),
-        collection=manifest_segment(
+        collection=manifest_identity(
             "collection", _entry_required_str(payload, "collection")
         ),
         document_key=_entry_optional_str(payload, "document_key"),

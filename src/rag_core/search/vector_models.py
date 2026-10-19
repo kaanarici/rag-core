@@ -8,8 +8,6 @@ import numbers
 from dataclasses import dataclass, field
 from typing import Final, Optional, Sequence
 
-from rag_core.search.sparse_channels import merge_sparse_channels
-
 SEARCH_RESULT_TYPE_TEXT: Final[str] = "text"
 
 
@@ -52,7 +50,6 @@ class VectorPoint:
 
     id: str
     dense_vector: list[float]
-    sparse_vector: SparseVector
     payload: dict[str, object]
     sparse_vectors: dict[str, SparseVector] = field(default_factory=dict)
     sparse_text: str | None = None
@@ -60,10 +57,6 @@ class VectorPoint:
     def __post_init__(self) -> None:
         _validate_non_empty_id(self.id, "VectorPoint.id")
         _validate_dense_vector(self.dense_vector, "VectorPoint.dense_vector")
-
-    def all_sparse_vectors(self) -> dict[str, SparseVector]:
-        """Return sparse vectors keyed by channel name (always includes bm25)."""
-        return merge_sparse_channels(self.sparse_vector, self.sparse_vectors)
 
 
 @dataclass(frozen=True)
@@ -96,16 +89,13 @@ class SearchResult:
     section_path: Optional[str] = None
     document_path: Optional[str] = None
     chunk_index: Optional[int] = None
-    chunk_word_count: Optional[int] = None
-    chunk_token_estimate: Optional[int] = None
     start_char: Optional[int] = None
     end_char: Optional[int] = None
-    embedding_model: Optional[str] = None
     chunker_strategy: Optional[str] = None
     result_type: Optional[str] = None
     figure_id: Optional[str] = None
     figure_thumbnail_url: Optional[str] = None
-    namespace: Optional[str] = None
+    tenant_id: Optional[str] = None
     metadata: dict[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:

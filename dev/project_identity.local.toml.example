@@ -1,3 +1,0 @@
-# Optional override (copy to dev/project_identity.local.toml, gitignored).
-# [display]
-# name = "my-retrieval-engine"

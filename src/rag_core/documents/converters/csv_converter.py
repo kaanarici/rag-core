@@ -6,7 +6,7 @@ import csv
 import io
 import logging
 
-from rag_core.config.env_access import get_env_int
+from . import converter_settings
 
 from .base import (
     ConversionResult,
@@ -32,9 +32,7 @@ class CsvConverter(TextLikeConverter):
     parser_label = "local:csv"
 
     def __init__(self, *, max_rows: int = 0) -> None:
-        self._max_rows = max(
-            1, max_rows or get_env_int("LOCAL_PARSE_CSV_MAX_ROWS", 1000)
-        )
+        self._max_rows = max(1, max_rows or converter_settings("csv")["max_rows"])
 
     def _render(
         self,

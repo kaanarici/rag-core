@@ -13,7 +13,7 @@ from rag_core.evals import (
 def test_redact_eval_report_strips_retrieved_identifiers() -> None:
     case = EvalCase(
         query="secret query",
-        namespace="rt",
+        tenant_id="rt",
         collections=("docs",),
         expected_ids=("doc-secret",),
     )

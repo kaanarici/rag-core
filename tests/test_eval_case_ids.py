@@ -16,7 +16,7 @@ def test_load_cases_accepts_optional_case_id(tmp_path: Path) -> None:
             {
                 "case_id": "billing/refund-policy",
                 "query": "refund policy",
-                "namespace": "acme",
+                "tenant_id": "acme",
                 "collections": ["help"],
                 "expected_ids": ["refunds.md#chunk-1"],
             }
@@ -36,7 +36,7 @@ def test_load_cases_rejects_blank_case_id_without_echoing_payload(tmp_path: Path
             {
                 "case_id": "",
                 "query": "secret refund question",
-                "namespace": "acme",
+                "tenant_id": "acme",
                 "collections": ["help"],
                 "expected_ids": ["secret-doc#chunk-1"],
             }
@@ -63,7 +63,7 @@ def test_load_cases_rejects_duplicate_case_id_with_line_context(tmp_path: Path) 
                     {
                         "case_id": "billing/refund-policy",
                         "query": "refund policy",
-                        "namespace": "acme",
+                        "tenant_id": "acme",
                         "collections": ["help"],
                         "expected_ids": ["refunds.md#chunk-1"],
                     }
@@ -72,7 +72,7 @@ def test_load_cases_rejects_duplicate_case_id_with_line_context(tmp_path: Path) 
                     {
                         "case_id": "billing/refund-policy",
                         "query": "another refund policy",
-                        "namespace": "acme",
+                        "tenant_id": "acme",
                         "collections": ["help"],
                         "expected_ids": ["refunds.md#chunk-2"],
                     }
@@ -95,7 +95,7 @@ def test_eval_result_payload_includes_stable_case_id() -> None:
     result = EvalResult(
         case=EvalCase(
             query="refund policy",
-            namespace="acme",
+            tenant_id="acme",
             collections=("help",),
             expected_ids=("refunds.md#chunk-1",),
             case_id="billing/refund-policy",

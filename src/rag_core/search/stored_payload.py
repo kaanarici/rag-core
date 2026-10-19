@@ -10,6 +10,9 @@ from rag_core.search.policy import DEFAULT_POLICY, VectorStorePolicy
 from rag_core.search.document_records import INGEST_FINGERPRINT_PAYLOAD_KEY
 from rag_core.search.result_scores import finite_score_or_zero
 from rag_core.search.stored_payload_fields import (
+    FIXED_PAYLOAD_KEYS,
+    SECTION_PAYLOAD_KEYS,
+    SPAN_PAYLOAD_KEYS,
     optional_payload_int,
     optional_payload_str,
     required_payload_str,
@@ -23,50 +26,6 @@ from rag_core.search.vector_models import (
 
 JsonPayloadKey: TypeAlias = str | int | float | Enum
 
-SECTION_PAYLOAD_KEYS = (
-    "result_type",
-    "figure_id",
-    "image_url",
-    "thumbnail_url",
-    "figure_thumbnail_url",
-    "figure_caption",
-    "figure_bbox",
-    "page_index",
-    "page_number",
-    "bbox",
-    "page_width",
-    "page_height",
-    "slide_number",
-    "paragraph_index",
-    "sheet_name",
-    "row_range",
-    "line_start",
-    "line_end",
-    "is_full_page",
-    "anchor_chunk_index",
-    "offset_reconstruction",
-)
-
-# Chunker-owned char span keys; always emitted from PreparedChunk regardless of
-# section_info presence so EvidenceSpans round-trip through upsert -> search.
-SPAN_PAYLOAD_KEYS = ("start_char", "end_char")
-
-_FIXED_PAYLOAD_KEYS = frozenset(
-    {
-        "mime_type",
-        "document_path",
-        "chunk_word_count",
-        "chunk_token_estimate",
-        "chunker_strategy",
-        "embedding_model",
-        "section_id",
-        "section_path",
-        "section_title",
-        *SECTION_PAYLOAD_KEYS,
-        *SPAN_PAYLOAD_KEYS,
-    }
-)
-
 
 def validate_json_payload(
     payload: Mapping[str, object] | Mapping[JsonPayloadKey, object],
@@ -77,6 +36,8 @@ def validate_json_payload(
 def json_payload_value(value: object) -> object:
     if isinstance(value, Enum):
         return value.value
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError("vector payload numbers must be finite")
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     if isinstance(value, Mapping):
@@ -104,7 +65,7 @@ def _payload_key(key: object) -> str:
 
 def build_stored_payload(
     *,
-    namespace: str,
+    tenant_id: str,
     collection: str,
     document_id: str,
     document_key: str | None,
@@ -116,11 +77,8 @@ def build_stored_payload(
     source_type: str,
     document_path: str | None,
     chunk_index: int,
-    chunk_text: str,
-    chunk_token_count: int,
     payload_text: str,
     content_type: ContentType,
-    embedding_model: str | None,
     chunker_strategy: str,
     title: str | None,
     chunk_start_char: int | None = None,
@@ -129,10 +87,8 @@ def build_stored_payload(
     section_info: dict[str, object] | None = None,
     policy: VectorStorePolicy = DEFAULT_POLICY,
 ) -> dict[str, object]:
-    chunk_word_count = len(chunk_text.split())
-    chunk_token_estimate = int(chunk_token_count or max(1, round(chunk_word_count * 1.3)))
     payload: dict[str, object] = {
-        policy.namespace_field: namespace,
+        policy.tenant_id_field: tenant_id,
         policy.collection_field: collection,
         policy.document_id_field: document_id,
         policy.document_key_field: document_key,
@@ -145,13 +101,9 @@ def build_stored_payload(
         policy.source_type_field: source_type,
         "mime_type": mime_type,
         "document_path": document_path,
-        "chunk_word_count": chunk_word_count,
-        "chunk_token_estimate": chunk_token_estimate,
         "chunker_strategy": chunker_strategy,
         "result_type": SEARCH_RESULT_TYPE_TEXT,
     }
-    if embedding_model:
-        payload["embedding_model"] = embedding_model
     if processing_version:
         payload[policy.processing_version_field] = processing_version
     payload.update(
@@ -191,13 +143,12 @@ def _filterable_metadata(
     *,
     policy: VectorStorePolicy,
 ) -> dict[str, object]:
-    reserved = _FIXED_PAYLOAD_KEYS | {
-        policy.namespace_field,
+    reserved = FIXED_PAYLOAD_KEYS | {
+        policy.tenant_id_field,
         policy.collection_field,
         policy.document_id_field,
         policy.document_key_field,
         policy.content_sha256_field,
-        INGEST_FINGERPRINT_PAYLOAD_KEY,
         policy.processing_version_field,
         policy.content_type_field,
         policy.source_type_field,
@@ -214,7 +165,11 @@ def _filterable_metadata(
         if not key.strip():
             continue
         if key == "quality" and isinstance(value, Mapping):
-            filterable.update(_quality_filter_fields(value))
+            filterable.update(
+                (field, value)
+                for field, value in _quality_filter_fields(value).items()
+                if field not in reserved
+            )
             continue
         if _is_filterable_value(value):
             filterable[key] = value
@@ -297,7 +252,7 @@ def payload_to_result(
         score=finite_score_or_zero(score),
         content_type=required_payload_str(payload, policy.content_type_field),
         source_type=optional_payload_str(payload, policy.source_type_field) or "",
-        namespace=optional_payload_str(payload, policy.namespace_field),
+        tenant_id=optional_payload_str(payload, policy.tenant_id_field),
         document_id=optional_payload_str(payload, policy.document_id_field),
         collection=optional_payload_str(payload, policy.collection_field),
         document_key=optional_payload_str(payload, policy.document_key_field),
@@ -308,18 +263,12 @@ def payload_to_result(
         section_path=optional_payload_str(payload, "section_path"),
         document_path=optional_payload_str(payload, "document_path"),
         chunk_index=optional_payload_int(payload, policy.chunk_index_field),
-        chunk_word_count=optional_payload_int(payload, "chunk_word_count"),
-        chunk_token_estimate=optional_payload_int(payload, "chunk_token_estimate"),
         start_char=optional_payload_int(payload, "start_char"),
         end_char=optional_payload_int(payload, "end_char"),
-        embedding_model=optional_payload_str(payload, "embedding_model"),
         chunker_strategy=optional_payload_str(payload, "chunker_strategy"),
         result_type=optional_payload_str(payload, "result_type"),
         figure_id=optional_payload_str(payload, "figure_id"),
-        figure_thumbnail_url=(
-            optional_payload_str(payload, "thumbnail_url")
-            or optional_payload_str(payload, "figure_thumbnail_url")
-        ),
+        figure_thumbnail_url=optional_payload_str(payload, "figure_thumbnail_url"),
         metadata=result_metadata(payload, policy=policy),
     )
 
@@ -337,7 +286,7 @@ def merge_duplicate_result(
         ),
         content_type=preferred.content_type,
         source_type=preferred.source_type,
-        namespace=preferred.namespace or fallback.namespace,
+        tenant_id=preferred.tenant_id or fallback.tenant_id,
         document_id=preferred.document_id or fallback.document_id,
         collection=preferred.collection or fallback.collection,
         document_key=preferred.document_key or fallback.document_key,
@@ -348,19 +297,8 @@ def merge_duplicate_result(
         section_path=preferred.section_path or fallback.section_path,
         document_path=preferred.document_path or fallback.document_path,
         chunk_index=preferred.chunk_index if preferred.chunk_index is not None else fallback.chunk_index,
-        chunk_word_count=(
-            preferred.chunk_word_count
-            if preferred.chunk_word_count is not None
-            else fallback.chunk_word_count
-        ),
-        chunk_token_estimate=(
-            preferred.chunk_token_estimate
-            if preferred.chunk_token_estimate is not None
-            else fallback.chunk_token_estimate
-        ),
         start_char=preferred.start_char if preferred.start_char is not None else fallback.start_char,
         end_char=preferred.end_char if preferred.end_char is not None else fallback.end_char,
-        embedding_model=preferred.embedding_model or fallback.embedding_model,
         chunker_strategy=preferred.chunker_strategy or fallback.chunker_strategy,
         result_type=preferred.result_type or fallback.result_type,
         figure_id=preferred.figure_id or fallback.figure_id,

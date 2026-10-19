@@ -11,10 +11,10 @@ from typing import Any, cast
 import pytest
 
 from rag_core.core import Engine
-from rag_core._engine.core_archive_ingest import ingest_zip_archive_with_core
+from rag_core.ingest.archive import ingest_zip_archive_with_core
 from rag_core.core_models import IngestedDocument
 from rag_core.events import EventBuffer
-from rag_core.ingest.local.models import LocalIngestResult
+from rag_core.ingest.local import LocalIngestResult
 from rag_core.events import (
     IngestBatchCompleted,
     IngestBatchProgress,
@@ -63,14 +63,14 @@ def test_rag_core_ingest_archive_indexes_supported_zip_members(tmp_path: Path) -
         try:
             result = await core.add_archive(
                 archive_path,
-                namespace="acme",
+                tenant_id="acme",
                 collection="help",
                 metadata={"team": "docs"},
                 max_concurrency=2,
             )
             rerun_result = await core.add_archive(
                 archive_path,
-                namespace="acme",
+                tenant_id="acme",
                 collection="help",
                 metadata={"team": "docs"},
                 max_concurrency=2,
@@ -83,7 +83,7 @@ def test_rag_core_ingest_archive_indexes_supported_zip_members(tmp_path: Path) -
 
     assert result.succeeded_count == 2
     assert result.failed_count == 0
-    assert {record.manifest_status for record in result.succeeded} == {"missing"}
+    assert {record.ingest_state for record in result.succeeded} == {"created"}
     assert [record.document_key for record in result.succeeded] == [
         archive_document_key(archive_path, "docs/guide.md"),
         archive_document_key(archive_path, "docs/reference.md"),
@@ -91,7 +91,7 @@ def test_rag_core_ingest_archive_indexes_supported_zip_members(tmp_path: Path) -
     assert rerun_result.succeeded_count == 2
     assert rerun_result.skipped_count == 2
     assert rerun_result.failed_count == 0
-    assert {record.manifest_status for record in rerun_result.succeeded} == {
+    assert {record.ingest_state for record in rerun_result.succeeded} == {
         "unchanged"
     }
     assert [record.path for record in result.succeeded] == [
@@ -131,7 +131,7 @@ def test_rag_core_ingest_archive_failure_preserves_sanitized_message(
         result = await ingest_zip_archive_with_core(
             core=FailingCore(),
             archive_path=archive_path,
-            namespace="acme",
+            tenant_id="acme",
             collection="help",
             event_sink=events,
         )
@@ -185,7 +185,7 @@ def test_archive_ingest_streams_planned_members_on_demand(
             self.file_bytes.append(file_bytes)
             return IngestedDocument(
                 document_id=f"doc-{len(self.file_bytes)}",
-                namespace=cast(str, kwargs["namespace"]),
+                tenant_id=cast(str, kwargs["tenant_id"]),
                 collection=cast(str, kwargs["collection"]),
                 chunk_count=1,
                 filename=cast(str, kwargs["filename"]),
@@ -201,7 +201,7 @@ def test_archive_ingest_streams_planned_members_on_demand(
         ingest_zip_archive_with_core(
             core=core,
             archive_path=archive_path,
-            namespace="acme",
+            tenant_id="acme",
             collection="help",
             max_concurrency=2,
         )
@@ -211,8 +211,8 @@ def test_archive_ingest_streams_planned_members_on_demand(
     assert Counter(core.file_bytes) == Counter([b"# Guide", b"# Reference"])
     assert Counter(opened_members) == Counter(
         {
-            "docs/guide.md": 2,
-            "docs/reference.md": 2,
+            "docs/guide.md": 1,
+            "docs/reference.md": 1,
         }
     )
 
@@ -243,7 +243,7 @@ def test_archive_ingest_indexes_central_directory_once_for_member_access(
             file_bytes = cast(bytes, kwargs["file_bytes"])
             return IngestedDocument(
                 document_id=f"doc-{self.count}",
-                namespace=cast(str, kwargs["namespace"]),
+                tenant_id=cast(str, kwargs["tenant_id"]),
                 collection=cast(str, kwargs["collection"]),
                 chunk_count=1,
                 filename=cast(str, kwargs["filename"]),
@@ -257,7 +257,7 @@ def test_archive_ingest_indexes_central_directory_once_for_member_access(
         ingest_zip_archive_with_core(
             core=CountingCore(),
             archive_path=archive_path,
-            namespace="acme",
+            tenant_id="acme",
             collection="help",
             max_concurrency=4,
         )
@@ -292,7 +292,7 @@ def test_archive_ingest_serializes_limit_sized_members_but_keeps_small_concurren
                 self.in_flight_bytes -= len(file_bytes)
             return IngestedDocument(
                 document_id=cast(str, kwargs["filename"]),
-                namespace=cast(str, kwargs["namespace"]),
+                tenant_id=cast(str, kwargs["tenant_id"]),
                 collection=cast(str, kwargs["collection"]),
                 chunk_count=1,
                 filename=cast(str, kwargs["filename"]),
@@ -317,7 +317,7 @@ def test_archive_ingest_serializes_limit_sized_members_but_keeps_small_concurren
         result = await ingest_zip_archive_with_core(
             core=core,
             archive_path=archive_path,
-            namespace="acme",
+            tenant_id="acme",
             collection="help",
             max_concurrency=4,
             limits=ArchiveLimits(

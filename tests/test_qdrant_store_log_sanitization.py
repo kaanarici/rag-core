@@ -8,7 +8,6 @@ from typing import Any, cast
 
 import pytest
 
-from rag_core.search.providers.qdrant_store import create_qdrant_collection
 from rag_core.search.providers.qdrant_store import QdrantVectorStore
 from tests.support import TEST_API_SECRET, assert_caplog_omits_private
 
@@ -53,6 +52,9 @@ class _ExistingCollectionClient:
 
 
 class _CreateCollectionClient:
+    async def get_collections(self) -> object:
+        return SimpleNamespace(collections=[])
+
     def __init__(self) -> None:
         self.create_collection_calls: list[dict[str, object]] = []
 
@@ -152,11 +154,7 @@ def test_created_collection_log_omits_collection_name(
         store._client = cast(Any, client)
 
         with caplog.at_level(logging.INFO, logger=LOGGER_NAME):
-            await create_qdrant_collection(
-                client=cast(Any, client),
-                config=store._config,
-                logger=logging.getLogger(LOGGER_NAME),
-            )
+            await store.ensure_collection()
 
         assert client.create_collection_calls[0]["collection_name"] == PRIVATE_COLLECTION
 
@@ -167,8 +165,6 @@ def test_created_collection_log_omits_collection_name(
     assert "provider=qdrant" in message
     assert "backend=qdrant" not in message
     assert "dense_dimensions=3" in message
-    assert "quantization=INT8" in message
-    assert "hnsw_ef=100" in message
     assert f"collection_fingerprint={_fingerprint(PRIVATE_COLLECTION)}" in message
     assert_caplog_omits_private(
         caplog,

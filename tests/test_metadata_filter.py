@@ -1,7 +1,7 @@
 """Coverage for the typed metadata-filter AST.
 
 The AST is the engine's vendor-neutral way to express filters beyond the
-first-class ``namespace``/``collections``/``document_ids``/``content_types``
+first-class ``tenant_id``/``collections``/``document_ids``/``content_types``
 fields. These tests pin down construction validation, the in-memory
 interpreter's payload semantics, the Qdrant translator's ``rest.Filter`` shape,
 and round-trip behaviour through the search pipeline.
@@ -10,6 +10,7 @@ and round-trip behaviour through the search pipeline.
 from __future__ import annotations
 
 import asyncio
+import uuid
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -17,14 +18,9 @@ import pytest
 from qdrant_client import models as rest
 
 from rag_core.search.filter_eval import eval_filter
-from rag_core.search.providers.memory_store import InMemoryVectorStore
+from tests.support.local_store import LocalQdrantStore
 from rag_core.search.providers.qdrant_filters import metadata_filter_to_qdrant
-from rag_core.search.query_plan import UnsupportedQueryStage
-from rag_core.search.pipeline_runner import (
-    SearchExecutionOptions,
-    SearchPipelineRunner,
-    SearchRequest,
-)
+from rag_core.search.filters import UnsupportedFilter
 from rag_core.search.filters import (
     And,
     Filter,
@@ -41,7 +37,6 @@ from rag_core.search.vector_models import (
     VectorPoint,
 )
 
-from tests.support import FakeEmbeddingProvider, FakeSparseEmbedder
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +82,10 @@ def test_eval_filter_term_in_range_combinations() -> None:
     assert eval_filter(Term(field="language", value="fr"), payload) is False
     assert eval_filter(In(field="category", values=("news", "blog")), payload) is True
     assert eval_filter(In(field="category", values=("blog",)), payload) is False
-    assert eval_filter(Range(field="published_at", gte=1000.0, lte=2000.0), payload) is True
+    assert (
+        eval_filter(Range(field="published_at", gte=1000.0, lte=2000.0), payload)
+        is True
+    )
     assert eval_filter(Range(field="published_at", gt=1700.0), payload) is False
 
 
@@ -150,7 +148,12 @@ def test_eval_filter_boolean_composition() -> None:
     composite = And(
         filters=(
             In(field="category", values=("news", "blog")),
-            Or(filters=(Term(field="language", value="en"), Term(field="language", value="fr"))),
+            Or(
+                filters=(
+                    Term(field="language", value="en"),
+                    Term(field="language", value="fr"),
+                )
+            ),
             Not(filter=Range(field="published_at", lt=1000.0)),
         )
     )
@@ -171,14 +174,24 @@ def test_eval_filter_boolean_composition() -> None:
 
 def test_memory_store_metadata_filter_narrows_candidates() -> None:
     async def _run() -> None:
-        store = InMemoryVectorStore()
+        store = LocalQdrantStore(dense_dimensions=3)
         await store.upsert(
             [
-                _payload_point("p1", language="en", category="news", published_at=1000.0),
-                _payload_point("p2", language="en", category="news", published_at=2000.0),
-                _payload_point("p3", language="fr", category="news", published_at=1500.0),
-                _payload_point("p4", language="en", category="blog", published_at=1500.0),
-                _payload_point("p5", language="en", category="news", published_at=500.0),
+                _payload_point(
+                    "p1", language="en", category="news", published_at=1000.0
+                ),
+                _payload_point(
+                    "p2", language="en", category="news", published_at=2000.0
+                ),
+                _payload_point(
+                    "p3", language="fr", category="news", published_at=1500.0
+                ),
+                _payload_point(
+                    "p4", language="en", category="blog", published_at=1500.0
+                ),
+                _payload_point(
+                    "p5", language="en", category="news", published_at=500.0
+                ),
             ]
         )
 
@@ -192,58 +205,19 @@ def test_memory_store_metadata_filter_narrows_candidates() -> None:
         results = await store.search(
             SearchQuery(
                 dense_vector=[1.0, 0.0, 0.0],
-                sparse_vector=SparseVector(indices=[], values=[]),
-                namespace="ns",
+                tenant_id="ns",
                 collections=["corpus"],
                 limit=10,
                 metadata_filter=metadata_filter,
             )
         )
-        assert sorted(hit.id for hit in results) == ["p1", "p2"]
+        assert sorted(hit.id for hit in results) == sorted(
+            str(uuid.uuid5(uuid.NAMESPACE_URL, p)) for p in ["p1", "p2"]
+        )
 
     asyncio.run(_run())
 
 
-def test_search_pipeline_runner_round_trips_metadata_filter() -> None:
-    async def _run() -> None:
-        store = InMemoryVectorStore()
-        await store.upsert(
-            [
-                _payload_point("p1", language="en", category="news", published_at=1500.0),
-                _payload_point("p2", language="en", category="blog", published_at=1500.0),
-                _payload_point("p3", language="fr", category="news", published_at=1500.0),
-            ]
-        )
-
-        pipeline_runner = SearchPipelineRunner(
-            embedding_provider=FakeEmbeddingProvider(vocabulary=("a",)),
-            sparse_embedder=FakeSparseEmbedder(),
-            vector_store=store,
-        )
-
-        metadata_filter: Filter = And(
-            filters=(
-                Term(field="language", value="en"),
-                Term(field="category", value="news"),
-            )
-        )
-        results = await pipeline_runner.search(
-            SearchRequest(
-                query="anything",
-                collections=["corpus"],
-                namespace="ns",
-                metadata_filter=metadata_filter,
-                execution=SearchExecutionOptions(
-                    query_vector=[1.0, 0.0, 0.0],
-                    query_sparse_vectors={
-                        "bm25": SparseVector(indices=[1], values=[1.0])
-                    },
-                ),
-            )
-        )
-        assert [hit.id for hit in results] == ["p1"]
-
-    asyncio.run(_run())
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +280,7 @@ def test_metadata_filter_to_qdrant_translates_nested_shape() -> None:
 
 
 def test_metadata_filter_to_qdrant_rejects_string_ranges() -> None:
-    with pytest.raises(UnsupportedQueryStage, match="string Range"):
+    with pytest.raises(UnsupportedFilter, match="string Range"):
         metadata_filter_to_qdrant(
             Range(field="published_at", gte="2026-05-01", lt="2026-06-01")
         )
@@ -317,7 +291,7 @@ def test_metadata_filter_to_qdrant_raises_on_unknown_node() -> None:
     class Mystery:
         field: str = "x"
 
-    with pytest.raises(UnsupportedQueryStage, match="Mystery"):
+    with pytest.raises(UnsupportedFilter, match="Mystery"):
         metadata_filter_to_qdrant(Mystery())  # type: ignore[arg-type]
 
 
@@ -329,11 +303,11 @@ def _payload_point(
     published_at: float,
 ) -> VectorPoint:
     return VectorPoint(
-        id=point_id,
+        id=str(uuid.uuid5(uuid.NAMESPACE_URL, point_id)),
         dense_vector=[1.0, 0.0, 0.0],
-        sparse_vector=SparseVector(indices=[1], values=[1.0]),
+        sparse_vectors={"bm25": SparseVector(indices=[1], values=[1.0])},
         payload={
-            "namespace": "ns",
+            "tenant_id": "ns",
             "collection": "corpus",
             "document_id": point_id,
             "content_type": "document",

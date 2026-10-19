@@ -33,7 +33,7 @@ class FakeRemoteEngine:
         return IngestedDocument(
             document_id=f"doc-{index}",
             collection=kwargs["collection"],
-            namespace=kwargs["namespace"],
+            tenant_id=kwargs["tenant_id"],
             chunk_count=1,
             filename="guide.txt",
             mime_type="text/plain",

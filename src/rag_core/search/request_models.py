@@ -1,30 +1,49 @@
-"""Provider query, sidecar query, delete, rerank, and stored-record models."""
+"""Scoped vector queries, deletion, rerank budgets, and stored document identity."""
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional
+from typing import Literal, Optional
 
 from rag_core.retrieval_defaults import DEFAULT_SEARCH_LIMIT
 from rag_core.search.filters import Filter
-from rag_core.search.sparse_channels import merge_sparse_channels
 from rag_core.search.vector_models import SparseVector, _validate_dense_vector
 
-if TYPE_CHECKING:
-    from rag_core.search.query_plan import QueryPlan
+
+SearchMode = Literal["dense", "hybrid", "lexical"]
+SEARCH_MODES = ("dense", "hybrid", "lexical")
+
+
+def validate_search_mode(mode: str) -> None:
+    if mode not in SEARCH_MODES:
+        raise ValueError(f"mode must be one of {SEARCH_MODES}")
 
 
 @dataclass(frozen=True)
 class StoredDocumentRecord:
     document_id: str
-    namespace: str
+    tenant_id: str
     collection: str
     document_key: str | None = None
     content_sha256: str | None = None
     ingest_fingerprint: str | None = None
     processing_version: str | None = None
     chunk_count: int = 0
+    revision: str | None = None
+    expected_chunk_count: int | None = None
+    committed: bool = False
+    deleted: bool = False
+    retired_revisions: tuple[str, ...] = ()
+
+    @property
+    def is_complete(self) -> bool:
+        return (
+            self.committed
+            and not self.deleted
+            and self.revision is not None
+            and self.expected_chunk_count == self.chunk_count
+        )
 
 
 @dataclass(frozen=True)
@@ -72,30 +91,35 @@ class SearchQuery:
     """Vector-store execution query after embedding and pipeline planning."""
 
     dense_vector: list[float]
-    sparse_vector: SparseVector
-    namespace: str
+    tenant_id: str
     collections: list[str]
     sparse_vectors: dict[str, SparseVector] = field(default_factory=dict)
     content_types: Optional[list[str]] = None
     document_ids: Optional[list[str]] = None
     limit: int = DEFAULT_SEARCH_LIMIT
-    query_plan: "QueryPlan | None" = None
     metadata_filter: Filter | None = None
     lexical_query: str | None = None
+    mode: SearchMode = "dense"
+    candidate_limit: int | None = None
+    excluded_revisions: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        validate_search_mode(self.mode)
         _validate_dense_vector(self.dense_vector, "SearchQuery.dense_vector")
-        _require_non_blank_string(self.namespace, "SearchQuery.namespace")
+        _require_non_blank_string(self.tenant_id, "SearchQuery.tenant_id")
         _require_non_blank_string_items(self.collections, "SearchQuery.collections")
         _require_non_blank_string_items(self.content_types, "SearchQuery.content_types")
         _require_non_blank_string_items(self.document_ids, "SearchQuery.document_ids")
         _require_positive_int(self.limit, "SearchQuery.limit")
+        if self.candidate_limit is None:
+            self.candidate_limit = (
+                max(20, self.limit * 4) if self.mode == "hybrid" else self.limit
+            )
+        _require_positive_int(self.candidate_limit, "SearchQuery.candidate_limit")
+        if self.candidate_limit < self.limit:
+            raise ValueError("SearchQuery.candidate_limit must be at least limit")
         if self.lexical_query is not None and not isinstance(self.lexical_query, str):
             raise ValueError("SearchQuery.lexical_query must be a string")
-
-    def all_sparse_vectors(self) -> dict[str, SparseVector]:
-        """Return query sparse vectors keyed by channel name (always includes bm25)."""
-        return merge_sparse_channels(self.sparse_vector, self.sparse_vectors)
 
     def has_empty_allowlist(self) -> bool:
         return (
@@ -105,33 +129,6 @@ class SearchQuery:
         )
 
 
-@dataclass(frozen=True)
-class SearchSidecarQuery:
-    """Sidecar execution query for optional lexical/exact-match providers."""
-
-    query: str
-    namespace: str
-    collections: list[str]
-    limit: int = DEFAULT_SEARCH_LIMIT
-    content_types: Optional[list[str]] = None
-    document_ids: Optional[list[str]] = None
-    metadata_filter: Filter | None = None
-
-    def __post_init__(self) -> None:
-        _require_non_blank_string(self.query, "SearchSidecarQuery.query")
-        _require_non_blank_string(self.namespace, "SearchSidecarQuery.namespace")
-        _require_non_blank_string_items(
-            self.collections, "SearchSidecarQuery.collections"
-        )
-        _require_non_blank_string_items(
-            self.content_types, "SearchSidecarQuery.content_types"
-        )
-        _require_non_blank_string_items(
-            self.document_ids, "SearchSidecarQuery.document_ids"
-        )
-        _require_positive_int(self.limit, "SearchSidecarQuery.limit")
-
-
 @dataclass
 class DeleteFilter:
     """Filter for deleting points from the vector store.
@@ -139,22 +136,24 @@ class DeleteFilter:
     Tier-widening footgun guard: an empty-string ``document_id`` or
     ``collection`` previously silently widened the delete (e.g. a caller
     intended to remove a single document, mis-formatted the id, and ended
-    up clearing the collection or namespace). Empty strings are now rejected;
-    callers wanting a collection-wide or namespace-wide delete must pass
+    up clearing the collection or tenant_id). Empty strings are now rejected;
+    callers wanting a collection-wide or tenant-wide delete must pass
     ``None`` deliberately (and the engine routes those through the
-    explicit ``delete_collection`` / ``delete_namespace`` helpers on
+    explicit ``delete_collection`` / ``delete_tenant`` helpers on
     ``Engine``).
     """
 
-    namespace: Optional[str] = None
+    tenant_id: Optional[str] = None
     collection: Optional[str] = None
     document_id: Optional[str] = None
 
     def __post_init__(self) -> None:
-        if self.namespace is None or not isinstance(self.namespace, str) or not self.namespace.strip():
-            raise ValueError(
-                "DeleteFilter.namespace must be a non-empty string"
-            )
+        if (
+            self.tenant_id is None
+            or not isinstance(self.tenant_id, str)
+            or not self.tenant_id.strip()
+        ):
+            raise ValueError("DeleteFilter.tenant_id must be a non-empty string")
         if self.collection is not None and (
             not isinstance(self.collection, str) or not self.collection.strip()
         ):
@@ -172,7 +171,7 @@ class DeleteFilter:
         if self.collection is None and self.document_id is None:
             raise ValueError(
                 "DeleteFilter requires at least one of collection or document_id; "
-                "use delete_namespace() for a deliberate namespace-wide delete"
+                "use delete_tenant() for a deliberate tenant-wide delete"
             )
 
 

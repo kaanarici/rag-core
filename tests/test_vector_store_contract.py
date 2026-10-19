@@ -13,10 +13,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from rag_core.search.providers.memory_store import InMemoryVectorStore
 from rag_core.search.providers.qdrant_store import QdrantVectorStore
-from rag_core.search.providers.turbopuffer_store import TurboPufferVectorStore
-from tests.support.turbopuffer_fake import TurboPufferFakeNamespace
 from rag_core.search.filters import Term
 from rag_core.search.provider_protocols import VectorStore
 from rag_core.search.request_models import (
@@ -24,7 +21,6 @@ from rag_core.search.request_models import (
     SearchQuery,
 )
 from rag_core.search.vector_models import (
-    SparseVector,
     VectorPoint,
 )
 
@@ -39,11 +35,6 @@ class _VectorStoreCase:
 def _store_cases() -> list[_VectorStoreCase]:
     return [
         _VectorStoreCase(
-            name="memory",
-            create=InMemoryVectorStore,
-            dense_vector_dimensions=None,
-        ),
-        _VectorStoreCase(
             name="qdrant-local",
             create=lambda: QdrantVectorStore(
                 url=None,
@@ -54,16 +45,7 @@ def _store_cases() -> list[_VectorStoreCase]:
                 quantization_enabled=False,
             ),
             dense_vector_dimensions=3,
-        ),
-        _VectorStoreCase(
-            name="turbopuffer-fake",
-            create=lambda: TurboPufferVectorStore(
-                namespace=f"contract_{uuid.uuid4().hex}",
-                dense_dimensions=3,
-                namespace_client=TurboPufferFakeNamespace(),
-            ),
-            dense_vector_dimensions=3,
-        ),
+        )
     ]
 
 
@@ -85,8 +67,7 @@ def test_vector_store_contract_dense_search_and_scoping(case: _VectorStoreCase) 
             results = await store.search(
                 SearchQuery(
                     dense_vector=[1.0, 0.0, 0.0],
-                    sparse_vector=_empty_sparse(),
-                    namespace="contract-namespace",
+                    tenant_id="contract-tenant_id",
                     collections=["corpus-alpha"],
                     limit=10,
                 )
@@ -112,8 +93,7 @@ def test_vector_store_contract_metadata_filters(case: _VectorStoreCase) -> None:
             results = await store.search(
                 SearchQuery(
                     dense_vector=[1.0, 0.0, 0.0],
-                    sparse_vector=_empty_sparse(),
-                    namespace="contract-namespace",
+                    tenant_id="contract-tenant_id",
                     collections=["corpus-alpha"],
                     limit=10,
                     metadata_filter=Term(field="section", value="details"),
@@ -133,7 +113,6 @@ def test_vector_store_contract_document_record_lookup(case: _VectorStoreCase) ->
         store = case.create()
         try:
             assert store.capabilities.per_point_delete is True
-            assert store.capabilities.document_record_lookup is True
             assert (
                 store.capabilities.dense_vector_dimensions
                 == case.dense_vector_dimensions
@@ -141,12 +120,12 @@ def test_vector_store_contract_document_record_lookup(case: _VectorStoreCase) ->
             await store.upsert(_contract_points())
 
             by_id = await store.get_document_record(
-                namespace="contract-namespace",
+                tenant_id="contract-tenant_id",
                 collection="corpus-alpha",
                 document_id="doc-alpha",
             )
             by_key = await store.get_document_record(
-                namespace="contract-namespace",
+                tenant_id="contract-tenant_id",
                 collection="corpus-alpha",
                 document_key="/docs/alpha.md",
             )
@@ -187,7 +166,7 @@ def test_vector_store_contract_key_lookup_rejects_missing_document_id(
             )
 
             record = await store.get_document_record(
-                namespace="contract-namespace",
+                tenant_id="contract-tenant_id",
                 collection="corpus-alpha",
                 document_key="/docs/missing-a.md",
             )
@@ -207,7 +186,7 @@ def test_vector_store_contract_delete_by_document_scope(case: _VectorStoreCase) 
 
             await store.delete(
                 DeleteFilter(
-                    namespace="contract-namespace",
+                    tenant_id="contract-tenant_id",
                     collection="corpus-alpha",
                     document_id="doc-alpha",
                 )
@@ -216,8 +195,7 @@ def test_vector_store_contract_delete_by_document_scope(case: _VectorStoreCase) 
             deleted = await store.search(
                 SearchQuery(
                     dense_vector=[1.0, 0.0, 0.0],
-                    sparse_vector=_empty_sparse(),
-                    namespace="contract-namespace",
+                    tenant_id="contract-tenant_id",
                     collections=["corpus-alpha"],
                     limit=10,
                 )
@@ -225,8 +203,7 @@ def test_vector_store_contract_delete_by_document_scope(case: _VectorStoreCase) 
             preserved = await store.search(
                 SearchQuery(
                     dense_vector=[0.0, 1.0, 0.0],
-                    sparse_vector=_empty_sparse(),
-                    namespace="contract-namespace",
+                    tenant_id="contract-tenant_id",
                     collections=["corpus-beta"],
                     limit=10,
                 )
@@ -252,8 +229,7 @@ def test_vector_store_contract_delete_point_ids(case: _VectorStoreCase) -> None:
             results = await store.search(
                 SearchQuery(
                     dense_vector=[1.0, 0.0, 0.0],
-                    sparse_vector=_empty_sparse(),
-                    namespace="contract-namespace",
+                    tenant_id="contract-tenant_id",
                     collections=["corpus-alpha"],
                     limit=10,
                 )
@@ -335,9 +311,8 @@ def _point(
     return VectorPoint(
         id=point_id,
         dense_vector=dense,
-        sparse_vector=_empty_sparse(),
         payload={
-            "namespace": "contract-namespace",
+            "tenant_id": "contract-tenant_id",
             "collection": collection,
             "document_id": document_id,
             "document_key": document_key,
@@ -364,10 +339,6 @@ def _point_without_document_id(
     return VectorPoint(
         id=point_id,
         dense_vector=point.dense_vector,
-        sparse_vector=point.sparse_vector,
+        sparse_vectors=dict(point.sparse_vectors),
         payload=payload,
     )
-
-
-def _empty_sparse() -> SparseVector:
-    return SparseVector(indices=[], values=[])

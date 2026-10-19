@@ -5,7 +5,6 @@ from typing import Any, cast
 import pytest
 
 from rag_core.search.vector_models import (
-    SparseVector,
     VectorPoint,
 )
 
@@ -14,7 +13,6 @@ def _point(point_id: object) -> VectorPoint:
     return VectorPoint(
         id=cast(Any, point_id),
         dense_vector=[1.0],
-        sparse_vector=SparseVector(indices=[], values=[]),
         payload={"text": "alpha"},
     )
 

@@ -4,9 +4,7 @@ The contextualizer enriches a chunk with a short context paragraph before it
 is embedded or BM25-indexed. The canonical shape is per-chunk so that cache
 keys are stable; batching is an internal concern of any given adapter.
 
-The cache wrapper (see :mod:`rag_core.search.providers.embedding_cache`) is
-paired with the contextualizer so reindexing an unchanged document re-pays
-nothing.
+Applications may wrap this provider with their own caching or request policy.
 """
 
 from __future__ import annotations
@@ -14,7 +12,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from rag_core.config.contextualizer_config import validate_contextualizer_chunk_cap
 from rag_core.documents.contextualizer_provider_names import NOOP_CONTEXTUALIZER_ID
 
 
@@ -31,7 +28,7 @@ class ChunkContextRequest:
     chunk_text: str
     chunk_index: int
     total_chunks: int
-    namespace: str = ""
+    tenant_id: str = ""
     collection: str = ""
     document_id: str = ""
 
@@ -84,3 +81,11 @@ __all__ = [
     "contextualizer_chunk_cap",
     "validate_contextualizer_chunk_cap",
 ]
+
+
+def validate_contextualizer_chunk_cap(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError("contextualizer_chunk_cap must be a positive integer")
+    return value

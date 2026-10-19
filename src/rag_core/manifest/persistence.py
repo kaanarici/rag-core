@@ -1,7 +1,7 @@
 """Concrete on-disk manifest persistence.
 
-JSONL one file per ``(namespace, collection)`` at
-``<directory>/<namespace>/<collection>.jsonl``. The latest line for each
+JSONL one file per ``(tenant_id, collection)`` at
+``<directory>/<tenant_id>/<collection>.jsonl``. The latest line for each
 ``document_id`` is the authoritative entry. Writes append when possible;
 delete and compaction rewrite the JSONL atomically to keep the current
 manifest small and canonical. ``read_entries`` collapses to the latest entry
@@ -13,10 +13,8 @@ adapter needs the same shape.
 
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
 from rag_core.core_models import CollectionManifestEntry
 from rag_core.manifest.entries import ManifestReadError
@@ -29,23 +27,7 @@ from rag_core.manifest.paths import (
     manifest_scope_segments as _manifest_scope_segments,
     manifest_segment as _manifest_segment,
 )
-from rag_core.manifest.reconciliation import (
-    ManifestReconciliation,
-    ManifestReconciliationItem,
-    ManifestReconciliationStatus,
-    ManifestSource,
-    manifest_reconciliation_payload,
-    reconcile_entries,
-)
 from rag_core.private_files import reject_symlink_ancestors, reject_symlink_path
-
-
-@dataclass(frozen=True)
-class ManifestSummary:
-    document_count: int
-    chunk_count: int
-    needs_ocr_count: int
-    parser_counts: dict[str, int]
 
 
 @dataclass(frozen=True)
@@ -63,50 +45,44 @@ class ManifestCompactionResult:
         return self.content_changed or self.removed_entry_count > 0
 
 
-def manifest_path(directory: Path, namespace: str, collection: str) -> Path:
+def manifest_path(directory: Path, tenant_id: str, collection: str) -> Path:
     """Resolve the JSONL path for a collection.
 
-    Namespace and collection must be single path segments so the manifest always
-    stays under ``directory``.
+    Scope identifiers are encoded as single path segments under ``directory``.
     """
-    namespace_segment, collection_segment = _manifest_scope_segments(
-        namespace,
+    tenant_id_segment, collection_segment = _manifest_scope_segments(
+        tenant_id,
         collection,
     )
-    path = Path(directory) / namespace_segment / f"{collection_segment}.jsonl"
+    path = Path(directory) / tenant_id_segment / f"{collection_segment}.jsonl"
     _reject_manifest_scope_symlinks(path)
     return path
 
 
-def validate_manifest_scope(namespace: str, collection: str) -> None:
+def validate_manifest_scope(tenant_id: str, collection: str) -> None:
     """Reject manifest scope values that cannot map to one JSONL file."""
-    _manifest_scope_segments(namespace, collection)
+    _manifest_scope_segments(tenant_id, collection)
 
 
 def write_entry(directory: Path, entry: CollectionManifestEntry) -> None:
     """Append a manifest entry as one JSONL line under the manifest lock."""
-    path = manifest_path(directory, entry.namespace, entry.collection)
+    path = manifest_path(directory, entry.tenant_id, entry.collection)
     append_manifest_jsonl_entry(path, entry)
 
 
 def write_entry_if_stale(directory: Path, entry: CollectionManifestEntry) -> bool:
-    path = manifest_path(directory, entry.namespace, entry.collection)
+    path = manifest_path(directory, entry.tenant_id, entry.collection)
     return append_manifest_jsonl_entry_if_stale(path, entry, _entry_is_stale)
-
-
-def write_entry_if_content_stale(directory: Path, entry: CollectionManifestEntry) -> bool:
-    path = manifest_path(directory, entry.namespace, entry.collection)
-    return append_manifest_jsonl_entry_if_stale(path, entry, _content_is_stale)
 
 
 def delete_entry(
     directory: Path,
     *,
-    namespace: str,
+    tenant_id: str,
     collection: str,
     document_id: str,
 ) -> bool:
-    path = manifest_path(directory, namespace, collection)
+    path = manifest_path(directory, tenant_id, collection)
     if not path.exists():
         return False
 
@@ -131,37 +107,28 @@ def _entry_is_stale(
     return entry_to_dict(current) != entry_to_dict(entry)
 
 
-def _content_is_stale(
-    current: CollectionManifestEntry | None,
-    entry: CollectionManifestEntry,
-) -> bool:
-    if current is None:
-        return True
-    return current.content_sha256 != entry.content_sha256
-
-
 def read_entries(
     directory: Path,
-    namespace: str,
+    tenant_id: str,
     collection: str | None = None,
 ) -> list[CollectionManifestEntry]:
     """Return the latest entry per ``document_id`` for the given scope.
 
     When ``collection`` is given, only that collection's JSONL is read. When
-    ``collection`` is None, every collection directly under ``namespace`` is
+    ``collection`` is None, every collection directly under ``tenant_id`` is
     scanned and merged. Empty / missing directories return ``[]``.
     """
-    namespace_segment = _manifest_segment("namespace", namespace)
+    tenant_id_segment = _manifest_segment("tenant_id", tenant_id)
     collection_segment = (
         _manifest_segment("collection", collection) if collection is not None else None
     )
-    base = Path(directory) / namespace_segment
+    base = Path(directory) / tenant_id_segment
     _reject_manifest_scope_symlinks(base)
     if not base.exists():
         return []
     paths: list[Path]
     if collection_segment is not None:
-        single = Path(directory) / namespace_segment / f"{collection_segment}.jsonl"
+        single = Path(directory) / tenant_id_segment / f"{collection_segment}.jsonl"
         paths = [single] if single.exists() else []
     else:
         paths = sorted(base.glob("*.jsonl"))
@@ -169,6 +136,13 @@ def read_entries(
     by_doc: dict[tuple[str, str], CollectionManifestEntry] = {}
     for path in paths:
         for entry in read_manifest_jsonl_entries(path):
+            if (
+                entry.tenant_id != tenant_id
+                or (collection is not None and entry.collection != collection)
+                or path.name
+                != f"{_manifest_segment('collection', entry.collection)}.jsonl"
+            ):
+                raise ManifestReadError(path, 0, "invalid_entry")
             by_doc[(entry.collection, entry.document_id)] = entry
     return list(by_doc.values())
 
@@ -180,30 +154,30 @@ def _reject_manifest_scope_symlinks(path: Path) -> None:
 
 def compact_manifest(
     directory: Path,
-    namespace: str,
+    tenant_id: str,
     collection: str,
 ) -> ManifestCompactionResult:
     """Rewrite one JSONL manifest to the latest entry per canonical source."""
-    path = manifest_path(directory, namespace, collection)
+    path = manifest_path(directory, tenant_id, collection)
     if not path.exists():
         return ManifestCompactionResult(before_entry_count=0, after_entry_count=0)
 
     def latest_by_document(
         entries: list[CollectionManifestEntry],
     ) -> list[CollectionManifestEntry]:
-        by_doc: dict[str, CollectionManifestEntry] = {}
-        key_owner: dict[str, str] = {}
-        for entry in entries:
-            doc_key = f"document_id:{entry.document_id}"
+        seen_documents: set[str] = set()
+        seen_keys: set[str] = set()
+        current: list[CollectionManifestEntry] = []
+        for entry in reversed(entries):
+            if entry.document_id in seen_documents:
+                continue
+            seen_documents.add(entry.document_id)
             if entry.document_key:
-                previous_doc_key = key_owner.get(entry.document_key)
-                if previous_doc_key is not None and previous_doc_key != doc_key:
-                    by_doc.pop(previous_doc_key, None)
-                key_owner[entry.document_key] = doc_key
-                by_doc[doc_key] = entry
-            else:
-                by_doc[doc_key] = entry
-        return list(by_doc.values())
+                if entry.document_key in seen_keys:
+                    continue
+                seen_keys.add(entry.document_key)
+            current.append(entry)
+        return list(reversed(current))
 
     before_entry_count, after_entry_count, content_changed = (
         update_manifest_jsonl_entries(
@@ -219,33 +193,20 @@ def compact_manifest(
     return result
 
 
-def summarize_entries(entries: Sequence[CollectionManifestEntry]) -> ManifestSummary:
-    parser_counts = Counter(entry.parser or "unknown" for entry in entries)
-    return ManifestSummary(
-        document_count=len(entries),
-        chunk_count=sum(entry.chunk_count for entry in entries),
-        needs_ocr_count=sum(1 for entry in entries if entry.needs_ocr),
-        parser_counts=dict(sorted(parser_counts.items())),
-    )
-
-
 __all__ = [
     "ManifestCompactionResult",
-    "ManifestReconciliation",
-    "ManifestReconciliationItem",
-    "ManifestReconciliationStatus",
     "ManifestReadError",
-    "ManifestSource",
-    "ManifestSummary",
     "compact_manifest",
     "delete_entry",
-    "manifest_reconciliation_payload",
     "manifest_path",
     "read_entries",
-    "reconcile_entries",
-    "summarize_entries",
     "validate_manifest_scope",
     "write_entry",
-    "write_entry_if_content_stale",
     "write_entry_if_stale",
 ]
+
+
+def clear_entries(directory: Path, *, tenant_id: str, collection: str) -> None:
+    path = manifest_path(directory, tenant_id, collection)
+    if path.exists():
+        update_manifest_jsonl_entries(path, lambda _entries: [])

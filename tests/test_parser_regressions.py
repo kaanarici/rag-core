@@ -5,7 +5,6 @@ import importlib
 from copy import deepcopy
 from dataclasses import dataclass
 from io import BytesIO
-from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable
 
@@ -36,8 +35,6 @@ from rag_core.core_models import (
     PreparedDocument,
     estimate_token_count,
 )
-from rag_core.ingest.local import ManifestPreviewRequest, preview_manifest
-from rag_core.manifest.entries import sanitize_manifest_metadata
 from rag_core.search.context_pack import Context, build_context_pack
 from rag_core.search.indexer import DocumentIndexer, IndexRequest
 from rag_core.search.stored_payload import payload_to_result
@@ -844,25 +841,7 @@ def test_code_line_locators_survive_index_payload_and_context_pack() -> None:
             vector_store=store,
         )
         await indexer.index_document(
-            IndexRequest(
-                document_id="answer.py",
-                collection="code-fixtures",
-                namespace="fixture",
-                text=prepared.markdown,
-                filename="answer.py",
-                mime_type="text/x-python",
-                source_type="file",
-                document_key="file:answer.py",
-                content_sha256="sha256:answer.py",
-                processing_version="test-code-context",
-                document_metadata=prepared.metadata,
-                pre_chunked_texts=[chunk.text for chunk in prepared.chunks],
-                embedding_chunk_texts=[
-                    chunk.embedding_text for chunk in prepared.chunks
-                ],
-                chunk_metadata=[dict(chunk.metadata) for chunk in prepared.chunks],
-                prepared_chunks=list(prepared.chunks),
-            )
+            IndexRequest(document_id="answer.py", collection="code-fixtures", tenant_id="fixture", text=prepared.markdown, filename="answer.py", mime_type="text/x-python", source_type="file", document_key="file:answer.py", content_sha256="sha256:answer.py", processing_version="test-code-context", document_metadata=prepared.metadata, prepared_chunks=list(prepared.chunks))
         )
         [points] = store.upsert_calls
         results = [
@@ -1858,41 +1837,6 @@ def test_xlsx_multiple_charts_become_distinct_prepared_chunk_locators() -> None:
     }
 
 
-def test_default_pdf_inspector_route_preserves_two_page_locators(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    pytest.importorskip("pdf_inspector", reason="requires the optional pdf extra")
-    monkeypatch.delenv("PDF_INSPECTOR_MODE", raising=False)
-
-    prepared = asyncio.run(
-        prepare_document_bytes(
-            file_bytes=_two_page_pdf_bytes(),
-            filename="two-page.pdf",
-            mime_type="application/pdf",
-            path=None,
-            ocr_provider=None,
-            chunking_config=ChunkingConfig(max_chars=220, overlap=0),
-        )
-    )
-
-    assert prepared.metadata["parser"] == "local:pdf_inspector"
-    assert prepared.metadata["page_count"] == 2
-    assert prepared.markdown.count("## Page 1") == 1
-    assert prepared.markdown.count("## Page 2") == 1
-    page_one = next(
-        chunk for chunk in prepared.chunks if "PAGE-ONE-EVIDENCE" in chunk.text
-    )
-    page_two = next(
-        chunk for chunk in prepared.chunks if "PAGE-TWO-EVIDENCE" in chunk.text
-    )
-    assert (page_one.metadata["page_number"], page_one.metadata["page_index"]) == (
-        1,
-        0,
-    )
-    assert (page_two.metadata["page_number"], page_two.metadata["page_index"]) == (
-        2,
-        1,
-    )
 
 
 @pytest.mark.parametrize(
@@ -1959,7 +1903,6 @@ def test_pdf_parse_records_page_quality(
             page_count=1,
         )
 
-    monkeypatch.setattr(pdf_converter_module, "pdf_inspector_enabled", lambda: False)
     monkeypatch.setattr(pdf_converter_module, "extract_pdf", fake_extract_pdf)
 
     markdown, metadata = asyncio.run(
@@ -2069,7 +2012,6 @@ def test_real_pdf_parse_metadata_survives_prepare_and_ingest(
         "prepare and ingest with enough text for quality scoring."
     )
     file_bytes = _minimal_pdf_bytes(text)
-    monkeypatch.setattr(pdf_converter_module, "pdf_inspector_enabled", lambda: False)
 
     async def go() -> tuple[PreparedDocument, IngestedDocument, RecordingVectorStore]:
         prepared = await prepare_document_bytes(
@@ -2091,7 +2033,7 @@ def test_real_pdf_parse_metadata_survives_prepare_and_ingest(
                 file_bytes=file_bytes,
                 filename="quality-proof.pdf",
                 mime_type="application/pdf",
-                namespace="parsers",
+                tenant_id="parsers",
                 collection="fixtures",
                 document_id="real-pdf",
                 document_key="quality-proof.pdf",
@@ -2126,36 +2068,6 @@ def test_real_pdf_parse_metadata_survives_prepare_and_ingest(
     )
 
 
-def test_local_manifest_preview_uses_same_converter_metadata_as_direct_bytes(
-    tmp_path: Path,
-) -> None:
-    file_path = tmp_path / "scores.csv"
-    payload = _csv_bytes()
-    file_path.write_bytes(payload)
-
-    _, direct_metadata = asyncio.run(
-        parse_file_bytes(
-            file_bytes=payload,
-            filename=file_path.name,
-            mime_type="text/csv",
-        )
-    )
-    preview = asyncio.run(
-        preview_manifest(
-            ManifestPreviewRequest(
-                path=file_path,
-                namespace="acme",
-                collection="docs",
-            )
-        )
-    )
-
-    assert preview.manifest_entry.parser == direct_metadata["parser"]
-    assert preview.manifest_entry.needs_ocr == direct_metadata["needs_ocr"]
-    assert (
-        preview.manifest_entry.metadata["quality"]
-        == sanitize_manifest_metadata(direct_metadata)["quality"]
-    )
 
 
 def test_short_docx_keeps_extracted_text_without_forcing_ocr() -> None:
@@ -2254,26 +2166,6 @@ def test_text_binary_payload_is_rejected_instead_of_indexed() -> None:
         )
 
 
-def test_local_manifest_preview_keeps_ocr_required_metadata_without_provider(
-    tmp_path: Path,
-) -> None:
-    file_path = tmp_path / "scan.png"
-    file_path.write_bytes(_png_bytes())
-
-    preview = asyncio.run(
-        preview_manifest(
-            ManifestPreviewRequest(
-                path=file_path,
-                namespace="acme",
-                collection="docs",
-            )
-        )
-    )
-
-    assert preview.document.ocr.needed is True
-    assert preview.document.chunk_count == 0
-    assert preview.manifest_entry.needs_ocr is True
-    assert preview.manifest_entry.metadata["parser"] == "ocr_required"
 
 
 def test_single_private_use_glyph_routes_pdf_page_to_ocr() -> None:
@@ -2365,3 +2257,12 @@ def assert_quality_metadata(metadata: dict[str, Any]) -> None:
     assert isinstance(quality["mojibake_ratio"], float)
     assert isinstance(quality["text_to_page_ratio"], float)
     assert isinstance(quality["page_count"], int)
+
+
+def test_native_pdf_preserves_two_page_locators() -> None:
+    prepared = asyncio.run(prepare_document_bytes(
+        file_bytes=_two_page_pdf_bytes(), filename="report.pdf", mime_type="application/pdf",
+        path=None, ocr_provider=None,
+    ))
+    assert prepared.metadata["parser"] == "local:pymupdf"
+    assert {chunk.metadata["page_number"] for chunk in prepared.chunks} == {1, 2}

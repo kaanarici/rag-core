@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from rag_core._async import run_sync
+
 import asyncio
-import threading
 from collections.abc import Iterable
 from typing import Any, Callable, cast
 
@@ -18,7 +19,6 @@ from rag_core.search.providers.provider_health import (
     build_healthy_provider_health,
     build_unhealthy_provider_health,
 )
-from rag_core.search.providers.provider_retry import retry_provider_call
 
 TextEmbeddingLoader = Callable[[], type[Any]]
 
@@ -41,7 +41,17 @@ class LocalEmbeddingProvider:
         )
         self._text_embedding_loader = text_embedding_loader or _import_text_embedding
         self._model: Any | None = None
-        self._lock = threading.Lock()
+        self._lock = asyncio.Lock()
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    def _inference_lock(self) -> asyncio.Lock:
+        loop = asyncio.get_running_loop()
+        if loop is not self._loop:
+            if self._lock.locked():
+                raise RuntimeError("LocalEmbeddingProvider cannot run concurrently across event loops")
+            self._lock = asyncio.Lock()
+            self._loop = loop
+        return self._lock
 
     @property
     def dimensions(self) -> int:
@@ -52,23 +62,18 @@ class LocalEmbeddingProvider:
         return self._model_name
 
     async def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        return await asyncio.to_thread(self._embed_texts_sync, list(texts))
+        async with self._inference_lock():
+            return await run_sync(self._embed_texts_sync, list(texts))
 
     async def embed_query(self, query: str) -> list[float]:
-        vectors = await asyncio.to_thread(self._embed_query_sync, query)
+        async with self._inference_lock():
+            vectors = await run_sync(self._embed_query_sync, query)
         return vectors[0]
 
     async def check_health(self) -> ProviderHealth:
-        async def load_model() -> object:
-            return await asyncio.to_thread(self._ensure_model)
-
         try:
-            await retry_provider_call(
-                load_model,
-                classify=lambda _exc: False,
-                provider_name=LOCAL_EMBEDDING_PROVIDER,
-                attempts=1,
-            )
+            async with self._inference_lock():
+                await run_sync(self._ensure_model)
         except Exception as exc:
             return build_unhealthy_provider_health(
                 provider_name=LOCAL_EMBEDDING_PROVIDER,
@@ -88,11 +93,11 @@ class LocalEmbeddingProvider:
     def _ensure_model(self) -> Any:
         if self._model is not None:
             return self._model
-        text_embedding = self._text_embedding_loader()
-        self._model = text_embedding(
-            model_name=self._model_name,
-            cuda=False,
-        )
+        try:
+            text_embedding = self._text_embedding_loader()
+            self._model = text_embedding(model_name=self._model_name, cuda=False)
+        except Exception as exc:
+            raise RuntimeError(_download_error(self._model_name)) from exc
         return self._model
 
     def _embed_texts_sync(self, texts: list[str]) -> list[list[float]]:
@@ -109,13 +114,7 @@ class LocalEmbeddingProvider:
         embed: Callable[[Any], object],
         expected_count: int,
     ) -> list[list[float]]:
-        try:
-            with self._lock:
-                raw_vectors = list(
-                    cast(Iterable[object], embed(self._ensure_model()))
-                )
-        except Exception as exc:
-            raise RuntimeError(_download_error(self._model_name)) from exc
+        raw_vectors = list(cast(Iterable[object], embed(self._ensure_model())))
         vectors = [_vector_to_float_list(vector) for vector in raw_vectors]
         if len(vectors) != expected_count:
             raise ValueError(

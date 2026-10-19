@@ -3,20 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-ChunkingStrategyName = Literal["auto", "markdown", "semantic", "code"]
+ChunkingStrategyName = Literal["auto", "markdown"]
 
 CHUNKING_STRATEGY_AUTO: ChunkingStrategyName = "auto"
 MARKDOWN_CHUNKING_STRATEGY: ChunkingStrategyName = "markdown"
-SEMANTIC_CHUNKING_STRATEGY: ChunkingStrategyName = "semantic"
-CODE_CHUNKING_STRATEGY: ChunkingStrategyName = "code"
 PRECHUNKED_CHUNKING_STRATEGY = "prechunked"
-CONTENT_CHUNKER_CHUNKING_STRATEGY = "content_chunker"
 XLSX_CHUNKING_STRATEGY = "xlsx"
-BUILTIN_CHUNKING_STRATEGIES = (
-    MARKDOWN_CHUNKING_STRATEGY,
-    SEMANTIC_CHUNKING_STRATEGY,
-    CODE_CHUNKING_STRATEGY,
-)
+BUILTIN_CHUNKING_STRATEGIES = (MARKDOWN_CHUNKING_STRATEGY,)
 PUBLIC_CHUNKING_STRATEGIES = (CHUNKING_STRATEGY_AUTO, *BUILTIN_CHUNKING_STRATEGIES)
 
 

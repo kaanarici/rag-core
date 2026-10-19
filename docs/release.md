@@ -1,75 +1,59 @@
-# Release readiness
+# Development and release
 
-Use this page when a maintainer wants to treat the current tree as public-beta
-ready. These checks prove package shape, local no-key journeys, optional HTTP
-runtime wiring, and public-checkout reproducibility. They do not prove semantic
-retrieval quality on arbitrary corpora or paid-provider behavior.
-
-## Local gate
-
-Run the full landing gate from a clean checkout:
+Requires Python 3.11+ and uv. Run checks locally from the repository root:
 
 ```bash
-./scripts/landing_check.sh
+uv sync --group dev
+uv run ruff check .
+uv run mypy src tests examples
+uv run pytest -q -m 'not live'
+./scripts/dx_smoke.sh
+uv build
+uv run python scripts/check_dist_artifacts.py
+uv run python scripts/wheel_smoke.py --keep-temp
 ```
 
-This runs sync, lint, typecheck, the full test suite, no-key journey smoke,
-Vercel AI SDK example typecheck, self-host HTTP smoke, optional integration
-smoke, build, artifact checks, and wheel install smoke.
+`./scripts/landing_check.sh` runs those checks. `--quick` selects the smaller
+iteration checks. Neither command publishes, pushes, or starts remote CI.
+GitHub Actions workflows are not shipped in this repository.
 
-For iteration, use:
+The wheel smoke creates a fresh consumer environment, installs the built wheel,
+and exercises real local embeddings, hybrid folder retrieval, persistence,
+CLI reuse, and the scoped application tool. Cached models can be reused.
+`--keep-temp` retains the environment and outputs for inspection.
 
-```bash
-./scripts/landing_check.sh --quick
-```
+Artifact checks reject stale modules and local agent/planning files. They verify
+that packaged source matches the checkout and that public docs and examples are
+present in the source archive. Build into an empty `dist/` directory so old wheels
+do not get mistaken for the current package.
 
-## Public checkout gate
+## What the checks establish
 
-After pushing, prove that a fresh clone can validate itself without local-only
-files:
+The suite covers contracts, parsing, source locations, storage publication,
+recovery, context, and local retrieval. Test doubles establish wiring and work
+ownership. They do not establish semantic quality. See the full
+[verification boundaries](../tests/README.md).
 
-```bash
-./scripts/public_checkout_smoke.sh --package
-./scripts/github_install_smoke.sh https://github.com/kaanarici/rag-core.git main
-```
+TurboPuffer checks use its actual SDK with HTTP fixtures. They do not establish
+hosted ranking, service availability, or capacity. Credentialed provider checks
+are separate, explicit operations. Do not include them in the local gate.
 
-By default the script clones `origin` and checks out the current checkout's
-`HEAD` SHA in a temporary directory. Set a remote URL and ref explicitly when
-checking a branch or tag:
+A passing suite does not prove answer correctness or performance on arbitrary
+documents. Use your application's documents and expected evidence when
+[evaluating retrieval](evaluation.md).
 
-```bash
-./scripts/public_checkout_smoke.sh --package https://github.com/kaanarici/rag-core.git main
-```
+## Preparing an update
 
-Use `--quick` when you only need the first-run developer path:
+1. Read the diff, including untracked source files. Exclude secrets, local state,
+   generated indexes, and unrelated work.
+2. Update the [migration guide](migration.md) for changed APIs or storage. Keep
+   the [README](../README.md) examples runnable against the final code.
+3. Run the local gate against the final files. Record which provider and format
+   paths were exercised. Do not describe fixture or local checks as live proof.
+4. Commit only the verified update. Include `[skip ci]` when remote automation
+   must remain off. Never force-push over another contributor's work.
+5. After an authorized push, verify the remote commit SHA. No tag, GitHub release,
+   or package upload is implied by a source push.
 
-```bash
-./scripts/public_checkout_smoke.sh --quick
-```
-
-Use `github_install_smoke.sh` with an explicit tag when checking installability
-for a release candidate:
-
-```bash
-./scripts/github_install_smoke.sh https://github.com/kaanarici/rag-core.git v0.1.0
-```
-
-## Remote CI
-
-For the public GitHub repository, the release-ready signal is a successful
-`ci` workflow on the pushed SHA:
-
-```bash
-gh run list --repo kaanarici/rag-core --branch main --limit 3
-gh run watch <run-id> --repo kaanarici/rag-core --exit-status
-```
-
-## Release artifacts
-
-The `release-artifacts` workflow runs on `v*` tags or manual dispatch. It runs
-the quick landing gate, builds the sdist and wheel, checks the artifact contents,
-runs the wheel smoke, and uploads `dist/*` as a GitHub Actions artifact. It does
-not publish to a registry.
-
-Registry publishing, tagging, and GitHub Releases are separate release actions.
-Do not treat a green checkout as proof that a package was published.
+rag-core is an early unpublished library. PyPI publication, version tags, hosted
+deployments, and live provider runs require their own explicit request.

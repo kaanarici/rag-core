@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Tuple
 
-from rag_core.documents.converters.registry_maps import (
+from rag_core.documents.formats import (
     is_registered_image_document,
     is_registered_pdf_document,
 )

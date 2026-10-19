@@ -13,7 +13,6 @@ from rag_core.evals import (
     redact_eval_report,
     run_eval,
 )
-from rag_core.search import search_profile
 
 EXAMPLES_DIR = Path(__file__).parent
 CASES_PATH = EXAMPLES_DIR / "eval_cases.jsonl"
@@ -30,7 +29,7 @@ async def run_demo() -> dict[str, object]:
                 file_bytes=path.read_bytes(),
                 filename=path.name,
                 mime_type="text/markdown",
-                namespace="acme",
+                tenant_id="acme",
                 collection="help-center",
                 document_id=path.name,
                 document_key=path.name,
@@ -39,7 +38,7 @@ async def run_demo() -> dict[str, object]:
             core,
             load_cases(CASES_PATH),
             rerank=False,
-            query_plan=search_profile("balanced", limit=10),
+            mode="hybrid",
         )
 
     report = eval_report(
@@ -49,7 +48,7 @@ async def run_demo() -> dict[str, object]:
             "purpose": "wiring_only_demo_embeddings",
             "vector_store": "embedded_qdrant",
             "embedding_model": "demo-dense-v1",
-            "search_profile": "balanced",
+            "retrieval_mode": "hybrid",
             "rerank": False,
         },
     )

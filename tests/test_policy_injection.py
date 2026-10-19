@@ -9,13 +9,15 @@ factory, and the document-id factory without forking the engine.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
+from rag_core.search.policy import DEFAULT_POLICY
 
 from rag_core.core import Engine
-from rag_core._engine.core_lifecycle import resolve_document_id
+from rag_core.ingest.identity import resolve_document_id
 from rag_core.core_models import Config
 from rag_core.search.indexer_points import make_point_id
 from rag_core.search.policy import VectorStorePolicy
-from rag_core.search.providers.memory_store import InMemoryVectorStore
+from tests.support.local_store import LocalQdrantStore
 from rag_core.search.request_models import SearchQuery
 from rag_core.search.vector_models import SparseVector
 
@@ -32,7 +34,7 @@ pytestmark = [pytest.mark.integration]
 
 def _custom_policy() -> VectorStorePolicy:
     return VectorStorePolicy(
-        namespace_field="ns",
+        tenant_id_field="ns",
         collection_field="cid",
         document_id_field="did",
         document_key_field="dkey",
@@ -50,11 +52,12 @@ def _custom_policy() -> VectorStorePolicy:
 
 
 def _config_with_policy(policy: VectorStorePolicy) -> Config:
-    base = make_test_config(embedding_model="text-embedding-3-small", embedding_dimensions=4)
+    base = make_test_config(
+        embedding_model="text-embedding-3-small", embedding_dimensions=4
+    )
     return type(base)(
         vector_store=base.vector_store,
         embedding=base.embedding,
-        reranker=base.reranker,
         chunking=base.chunking,
         ingest=base.ingest,
         policy=policy,
@@ -63,7 +66,7 @@ def _config_with_policy(policy: VectorStorePolicy) -> Config:
 
 def test_resolve_document_id_uses_custom_policy() -> None:
     document_id = resolve_document_id(
-        namespace="team-space",
+        tenant_id="team-space",
         collection="corpus-1",
         document_key="/docs/guide.txt",
         document_id=None,
@@ -74,7 +77,7 @@ def test_resolve_document_id_uses_custom_policy() -> None:
 
 def test_make_point_id_uses_custom_policy() -> None:
     point_id = make_point_id(
-        namespace="team-space",
+        tenant_id="team-space",
         collection="corpus-1",
         document_id="doc-1",
         chunk_index=0,
@@ -89,8 +92,10 @@ def test_policy_renames_propagate_through_ingest_and_search() -> None:
     not leak the renamed keys into ``metadata``."""
 
     async def _run() -> None:
-        policy = _custom_policy()
-        store = InMemoryVectorStore(policy=policy)
+        policy = replace(
+            _custom_policy(), point_id_format=DEFAULT_POLICY.point_id_format
+        )
+        store = LocalQdrantStore(policy=policy)
         core = Engine(
             _config_with_policy(policy),
             embedding_provider=FakeEmbeddingProvider(),
@@ -103,15 +108,15 @@ def test_policy_renames_propagate_through_ingest_and_search() -> None:
                 file_bytes=b"alpha fox query",
                 filename="guide.txt",
                 mime_type="text/plain",
-                namespace="team-space",
+                tenant_id="team-space",
                 collection="corpus-1",
                 path="/docs/guide.txt",
             )
             results = await store.search(
                 SearchQuery(
                     dense_vector=[0.1, 0.2, 0.3, 0.4],
-                    sparse_vector=SparseVector(indices=[1], values=[1.0]),
-                    namespace="team-space",
+                    sparse_vectors={"bm25": SparseVector(indices=[1], values=[1.0])},
+                    tenant_id="team-space",
                     collections=["corpus-1"],
                 )
             )

@@ -16,6 +16,9 @@ class _FakeQdrantClient:
     def __init__(self, count: object) -> None:
         self.count_result = count
 
+    async def retrieve(self, **kwargs: Any) -> list[object]:
+        return []
+
     async def get_collections(self) -> object:
         return SimpleNamespace(collections=[SimpleNamespace(name="docs")])
 
@@ -60,7 +63,7 @@ def _store(client: object) -> QdrantVectorStore:
         location=":memory:",
     )
     store._client = cast(Any, client)
-    store._collection_state.ready = True
+    store._ready = True
     return store
 
 
@@ -85,7 +88,7 @@ def test_qdrant_document_record_rejects_malformed_count_without_leaking(
     async def _run() -> None:
         with pytest.raises(ValueError, match="document count response"):
             await _store(_FakeQdrantClient(count)).get_document_record(
-                namespace="team-space",
+                tenant_id="team-space",
                 collection="corpus-a",
                 document_id="doc-1",
             )
@@ -105,7 +108,7 @@ def test_qdrant_count_result_value_rejects_fractional_float() -> None:
 def test_qdrant_document_record_uses_valid_count() -> None:
     async def _run() -> None:
         record = await _store(_FakeQdrantClient(7)).get_document_record(
-            namespace="team-space",
+            tenant_id="team-space",
             collection="corpus-a",
             document_id="doc-1",
         )

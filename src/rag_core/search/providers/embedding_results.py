@@ -64,31 +64,6 @@ def safe_indexed_embedding_vectors(
     return ordered
 
 
-def safe_ordered_embedding_vectors(
-    *,
-    rows: list[object],
-    expected_count: int,
-    expected_dimensions: int | None,
-    provider_name: str,
-) -> list[list[float]]:
-    _validate_expected_shape(
-        expected_count=expected_count,
-        expected_dimensions=expected_dimensions,
-    )
-    if len(rows) != expected_count:
-        raise ValueError(
-            "%s returned embedding count mismatch: expected %d vectors, got %d"
-            % (provider_name, expected_count, len(rows))
-        )
-    return [
-        _validate_embedding_vector(
-            raw_vector,
-            expected_dimensions=expected_dimensions,
-            provider_name=provider_name,
-            result_index=result_index,
-        )
-        for result_index, raw_vector in enumerate(rows)
-    ]
 
 
 def _validate_expected_shape(

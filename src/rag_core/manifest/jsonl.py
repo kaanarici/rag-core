@@ -12,7 +12,11 @@ from threading import RLock
 from typing import Sequence
 
 from rag_core.core_models import CollectionManifestEntry
-from rag_core.manifest.entries import ManifestReadError, entry_from_json_line, entry_to_dict
+from rag_core.manifest.entries import (
+    ManifestReadError,
+    entry_from_json_line,
+    entry_to_dict,
+)
 from rag_core.private_files import (
     ensure_private_parent_dirs,
     reject_hardlinked_private_fd,
@@ -36,6 +40,9 @@ def append_manifest_jsonl_entry(path: Path, entry: CollectionManifestEntry) -> N
     _reject_manifest_io_paths(path)
     _ensure_private_manifest_parent(path)
     with _manifest_lock(path, exclusive=True):
+        cached = _PROCESS_INDEXES.get(str(path))
+        if cached is not None and cached.signature != _manifest_signature(path):
+            _PROCESS_INDEXES.pop(str(path))
         _append_line_unlocked(path, _manifest_entry_json(entry))
         _update_cached_index_after_append(path, entry)
 
@@ -58,6 +65,16 @@ def append_manifest_jsonl_entry_if_stale(
     return True
 
 
+def latest_manifest_jsonl_entry(
+    path: Path, document_id: str
+) -> CollectionManifestEntry | None:
+    _reject_manifest_io_paths(path)
+    if not path.exists():
+        return None
+    with _manifest_lock(path, exclusive=False):
+        return _cached_latest_entries_unlocked(path).get(document_id)
+
+
 def read_manifest_jsonl_entries(path: Path) -> list[CollectionManifestEntry]:
     _reject_manifest_io_paths(path)
     with _manifest_lock(path, exclusive=False):
@@ -68,7 +85,9 @@ def read_manifest_jsonl_entries(path: Path) -> list[CollectionManifestEntry]:
 
 def update_manifest_jsonl_entries(
     path: Path,
-    transform: Callable[[list[CollectionManifestEntry]], Sequence[CollectionManifestEntry]],
+    transform: Callable[
+        [list[CollectionManifestEntry]], Sequence[CollectionManifestEntry]
+    ],
 ) -> tuple[int, int, bool]:
     _reject_manifest_io_paths(path)
     _ensure_private_manifest_parent(path)
@@ -178,7 +197,9 @@ def _cached_latest_entries_unlocked(path: Path) -> dict[str, CollectionManifestE
     return by_document_id
 
 
-def _update_cached_index_after_append(path: Path, entry: CollectionManifestEntry) -> None:
+def _update_cached_index_after_append(
+    path: Path, entry: CollectionManifestEntry
+) -> None:
     cached = _PROCESS_INDEXES.get(str(path))
     if cached is None:
         return

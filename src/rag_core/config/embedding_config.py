@@ -90,11 +90,21 @@ class EmbeddingConfig:
         elif self.region is not None:
             region = self.region.strip()
             if not region:
-                raise ValueError(
-                    "EmbeddingConfig.region must be a non-empty string"
-                )
+                raise ValueError("EmbeddingConfig.region must be a non-empty string")
             # Region pin without a base_url is pointless and likely a config
             # bug; fail closed rather than silently accept it.
-            raise ValueError(
-                "EmbeddingConfig.region requires base_url to be set"
-            )
+            raise ValueError("EmbeddingConfig.region requires base_url to be set")
+
+
+def default_embedding_model(provider: str) -> str:
+    defaults = {
+        DEFAULT_EMBEDDING_PROVIDER: DEFAULT_EMBEDDING_MODEL,
+        LOCAL_EMBEDDING_PROVIDER: LOCAL_EMBEDDING_MODEL,
+        DEMO_EMBEDDING_PROVIDER: DEMO_EMBEDDING_MODEL,
+    }
+    try:
+        return defaults[provider.strip().lower()]
+    except KeyError:
+        raise ValueError(
+            f"embedding provider {provider!r} needs an explicit model"
+        ) from None

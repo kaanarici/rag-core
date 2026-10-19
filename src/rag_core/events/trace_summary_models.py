@@ -42,17 +42,14 @@ class SearchTraceSummary:
     query_length: int = 0
     limit: int = 0
     collection_count: int = 0
-    final_limit: int = 0
     channels: tuple[str, ...] = ()
-    prefetch_limits: tuple[int, ...] = ()
-    search_profile: str = ""
+    mode: str = ""
+    candidate_limit: int = 0
+    rerank_enabled: bool = False
     fusion: str = ""
-    plan_rerank: str = ""
-    boost: str = ""
     metadata_filter: str = ""
     content_type_count: int = 0
     document_id_count: int = 0
-    rerank_candidate_count: int = 0
     rerank_timeout_ms: float = 0.0
     rerank_max_output: int = 0
     rerank_fallback_on_error: bool = False
@@ -78,29 +75,11 @@ class SearchTraceSummary:
     rerank_truncation_reason: str = ""
     rerank_duration_ms: float = 0.0
     rerank_succeeded: bool = False
-    use_lexical_search: bool = False
-    sidecar_provider: str = ""
-    sidecar_input_count: int = 0
-    sidecar_provider_result_count: int = 0
-    sidecar_accepted_count: int = 0
-    sidecar_dropped_count: int = 0
-    sidecar_result_count: int = 0
-    sidecar_duration_ms: float = 0.0
-    sidecar_succeeded: bool = False
-    sidecar_fallback_reason: str = ""
-    query_transforms: tuple[str, ...] = ()
-    retrieve_stage: str = ""
-    fuse_stage: str = ""
-    rerank_stage: str = ""
-    postprocesses: tuple[str, ...] = ()
     stages: tuple[SearchStageTraceSummary, ...] = ()
     result_count: int = 0
     requested_rerank: bool = False
-    requested_sidecar: bool = False
     attempted_rerank: bool = False
-    attempted_sidecar: bool = False
     applied_rerank: bool = False
-    applied_sidecar: bool = False
     succeeded: bool = False
     duration_ms: float = 0.0
     completed: bool = False
@@ -118,7 +97,7 @@ class SearchTraceSummary:
     def to_payload(self) -> dict[str, object]:
         payload = asdict(self)
         payload["search_id"] = safe_search_id(self.search_id)
-        payload["schema_version"] = 1
+        payload["schema_version"] = 2
         for key in _SEQUENCE_PAYLOAD_FIELDS:
             payload[key] = list(getattr(self, key))
         payload["stage_count"] = self.stage_count
@@ -149,9 +128,6 @@ def search_stage_trace_summary_from_event(
 
 _SEQUENCE_PAYLOAD_FIELDS = (
     "channels",
-    "prefetch_limits",
-    "query_transforms",
-    "postprocesses",
     "error_stages",
     "error_types",
 )

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import NoReturn
 
 import asyncio
 import hashlib
@@ -12,11 +13,9 @@ import pytest
 from rag_core import Config
 from rag_core.core import Engine
 from rag_core.config import (
-    DEFAULT_RERANKER_PROVIDER,
     EmbeddingConfig,
     QdrantConfig,
     VectorStoreConfig,
-    RerankerConfig,
 )
 from rag_core.config.ingest_config import IngestConfig
 from rag_core.core_models import IngestedDocument
@@ -28,16 +27,14 @@ from rag_core.fetch_security import (
 )
 from rag_core.fetching import FetchClient, FetchResponse
 from rag_core.ingest.local import run_local_ingest_with_core
-from rag_core.ingest.local.models import LocalIngestRequest
+from rag_core.ingest.local import LocalIngestRequest
 from rag_core.ingest.sources.local import document_key as local_document_key
 from rag_core.manifest.persistence import read_entries
-from rag_core.ingest.urls import run_remote_url_ingest_with_core
-from rag_core.ingest.urls.models import RemoteUrlIngestRequest
 from rag_core.search.vector_models import SparseVector
 
 pytestmark = [pytest.mark.integration]
 
-_NAMESPACE = "resume"
+_TENANT_ID = "resume"
 _COLLECTION = "docs"
 _CRASH_AFTER_SUCCESSES = 2
 
@@ -127,7 +124,7 @@ class _CrashAfterLocalCore:
         self,
         file_path: Path,
         *,
-        namespace: str,
+        tenant_id: str,
         collection: str,
         document_key: str,
         metadata: dict[str, str] | None = None,
@@ -136,7 +133,7 @@ class _CrashAfterLocalCore:
     ) -> IngestedDocument:
         ingested = await self.core.add_file(
             file_path,
-            namespace=namespace,
+            tenant_id=tenant_id,
             collection=collection,
             document_key=document_key,
             metadata=metadata,
@@ -150,6 +147,9 @@ class _CrashAfterLocalCore:
 
     async def close(self) -> None:
         return None
+
+    async def delete_document(self, *, document_id: str, tenant_id: str, collection: str) -> NoReturn:
+        raise AssertionError("prune_missing is disabled in this test")
 
 
 @dataclass
@@ -165,7 +165,7 @@ class _CrashAfterRemoteCore:
         self,
         url: str,
         *,
-        namespace: str,
+        tenant_id: str,
         collection: str,
         metadata: dict[str, str] | None = None,
         force_reindex: bool = False,
@@ -175,7 +175,7 @@ class _CrashAfterRemoteCore:
     ) -> IngestedDocument:
         ingested = await self.core.add_url(
             url,
-            namespace=namespace,
+            tenant_id=tenant_id,
             collection=collection,
             metadata=metadata,
             force_reindex=force_reindex,
@@ -204,10 +204,9 @@ def test_local_batch_provider_abort_rerun_skips_manifested_successes(
             with pytest.raises(ValueError, match="provider failed during ingest"):
                 await core.add(
                     docs,
-                    namespace=_NAMESPACE,
+                    tenant_id=_TENANT_ID,
                     collection=_COLLECTION,
                     max_concurrency=1,
-                    manifest_dir=manifest_dir,
                 )
             dense.fail_on_text_call = None
             _assert_manifested_success_count(manifest_dir)
@@ -216,10 +215,9 @@ def test_local_batch_provider_abort_rerun_skips_manifested_successes(
             sparse_before = sparse.text_count
             result = await core.add(
                 docs,
-                namespace=_NAMESPACE,
+                tenant_id=_TENANT_ID,
                 collection=_COLLECTION,
                 max_concurrency=1,
-                manifest_dir=manifest_dir,
             )
 
         _assert_rerun_finished_remaining(
@@ -248,12 +246,11 @@ def test_local_batch_crash_rerun_skips_manifested_successes(tmp_path: Path) -> N
                 await run_local_ingest_with_core(
                     LocalIngestRequest(
                         path=docs,
-                        namespace=_NAMESPACE,
+                        tenant_id=_TENANT_ID,
                         collection=_COLLECTION,
                         max_concurrency=1,
                     ),
                     core=crashing_core,
-                    manifest_dir=manifest_dir,
                 )
             _assert_manifested_success_count(manifest_dir)
 
@@ -261,10 +258,9 @@ def test_local_batch_crash_rerun_skips_manifested_successes(tmp_path: Path) -> N
             sparse_before = sparse.text_count
             result = await core.add(
                 docs,
-                namespace=_NAMESPACE,
+                tenant_id=_TENANT_ID,
                 collection=_COLLECTION,
                 max_concurrency=1,
-                manifest_dir=manifest_dir,
             )
 
         _assert_rerun_finished_remaining(
@@ -279,97 +275,8 @@ def test_local_batch_crash_rerun_skips_manifested_successes(tmp_path: Path) -> N
     asyncio.run(go())
 
 
-def test_remote_batch_provider_abort_rerun_skips_manifested_successes(
-    tmp_path: Path,
-) -> None:
-    async def go() -> None:
-        urls = _remote_urls()
-        manifest_dir = tmp_path / "manifest"
-        fetch_client = _StaticFetchClient()
-        core, dense, sparse = _build_core(manifest_dir)
-        async with core:
-            dense.fail_on_text_call = _CRASH_AFTER_SUCCESSES + 1
-            with pytest.raises(ValueError, match="provider failed during ingest"):
-                await core.add_urls(
-                    urls=urls,
-                    namespace=_NAMESPACE,
-                    collection=_COLLECTION,
-                    max_concurrency=1,
-                    fetch_client=fetch_client,
-                    manifest_dir=manifest_dir,
-                )
-            dense.fail_on_text_call = None
-            _assert_manifested_success_count(manifest_dir)
-
-            dense_before = dense.text_count
-            sparse_before = sparse.text_count
-            result = await core.add_urls(
-                urls=urls,
-                namespace=_NAMESPACE,
-                collection=_COLLECTION,
-                max_concurrency=1,
-                fetch_client=fetch_client,
-                manifest_dir=manifest_dir,
-            )
-
-        _assert_rerun_finished_remaining(
-            result,
-            dense=dense,
-            sparse=sparse,
-            dense_before=dense_before,
-            sparse_before=sparse_before,
-        )
-        _assert_remote_manifest_complete(manifest_dir, urls)
-
-    asyncio.run(go())
 
 
-def test_remote_batch_crash_rerun_skips_manifested_successes(tmp_path: Path) -> None:
-    async def go() -> None:
-        urls = _remote_urls()
-        manifest_dir = tmp_path / "manifest"
-        fetch_client = _StaticFetchClient()
-        core, dense, sparse = _build_core(manifest_dir)
-        crashing_core = _CrashAfterRemoteCore(
-            core=core,
-            crash_after_successes=_CRASH_AFTER_SUCCESSES,
-        )
-        async with core:
-            with pytest.raises(_SimulatedCrash):
-                await run_remote_url_ingest_with_core(
-                    RemoteUrlIngestRequest(
-                        urls=urls,
-                        namespace=_NAMESPACE,
-                        collection=_COLLECTION,
-                        max_concurrency=1,
-                    ),
-                    core=crashing_core,
-                    fetch_client=fetch_client,
-                    manifest_dir=manifest_dir,
-                )
-            _assert_manifested_success_count(manifest_dir)
-
-            dense_before = dense.text_count
-            sparse_before = sparse.text_count
-            result = await core.add_urls(
-                urls=urls,
-                namespace=_NAMESPACE,
-                collection=_COLLECTION,
-                max_concurrency=1,
-                fetch_client=fetch_client,
-                manifest_dir=manifest_dir,
-            )
-
-        _assert_rerun_finished_remaining(
-            result,
-            dense=dense,
-            sparse=sparse,
-            dense_before=dense_before,
-            sparse_before=sparse_before,
-        )
-        _assert_remote_manifest_complete(manifest_dir, urls)
-
-    asyncio.run(go())
 
 
 def _build_core(
@@ -378,17 +285,18 @@ def _build_core(
     dense = _CountingDemoEmbeddingProvider()
     sparse = _CountingDemoSparseEmbedder()
     config = Config(
-        vector_store=VectorStoreConfig(qdrant=QdrantConfig(
-            location=":memory:",
-            store_collection=f"rag_core_resume_{uuid.uuid4().hex}",
-            dimension_aware_collection=False,
-        )),
+        vector_store=VectorStoreConfig(
+            qdrant=QdrantConfig(
+                location=":memory:",
+                store_collection=f"rag_core_resume_{uuid.uuid4().hex}",
+                dimension_aware_collection=False,
+            )
+        ),
         embedding=EmbeddingConfig(
             provider="demo",
             model=dense.model_name,
             dimensions=dense.dimensions,
         ),
-        reranker=RerankerConfig(provider=DEFAULT_RERANKER_PROVIDER),
         ingest=IngestConfig(manifest_directory=manifest_dir),
     )
     return (
@@ -417,7 +325,7 @@ def _remote_urls() -> tuple[str, str, str]:
 
 
 def _assert_local_manifest_complete(manifest_dir: Path, docs: Path) -> None:
-    entries = read_entries(manifest_dir, _NAMESPACE, _COLLECTION)
+    entries = read_entries(manifest_dir, _TENANT_ID, _COLLECTION)
     expected = {
         local_document_key(docs, path): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(docs.glob("*.md"))
@@ -427,7 +335,7 @@ def _assert_local_manifest_complete(manifest_dir: Path, docs: Path) -> None:
 
 
 def _assert_manifested_success_count(manifest_dir: Path) -> None:
-    assert len(read_entries(manifest_dir, _NAMESPACE, _COLLECTION)) == 2
+    assert len(read_entries(manifest_dir, _TENANT_ID, _COLLECTION)) == 2
 
 
 def _assert_rerun_finished_remaining(
@@ -449,7 +357,7 @@ def _assert_remote_manifest_complete(
     manifest_dir: Path,
     urls: tuple[str, str, str],
 ) -> None:
-    entries = read_entries(manifest_dir, _NAMESPACE, _COLLECTION)
+    entries = read_entries(manifest_dir, _TENANT_ID, _COLLECTION)
     assert {entry.metadata["source_url"] for entry in entries} == set(urls)
     expected = {
         entry.document_key: hashlib.sha256(

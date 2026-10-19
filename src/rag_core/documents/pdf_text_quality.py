@@ -62,7 +62,6 @@ def looks_like_garbled_pdf_text(text: str) -> bool:
             (0x0700 <= code <= 0x07FF)
             or (0x0800 <= code <= 0x083F)
             or (0xFFF0 <= code <= 0xFFFF)
-            or (0x2500 <= code <= 0x25FF)
             or (0x0300 <= code <= 0x036F)
         ):
             suspicious_count += 1

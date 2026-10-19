@@ -2,12 +2,13 @@
 
 Provides:
 - BaseConverter: protocol for all converters
-- HybridConverter: extract-first / OCR-fallback coordination
+- OfficeConverter: native extraction with an OCR quality gate
 """
 
 from __future__ import annotations
 
-import asyncio
+from rag_core._async import run_sync
+
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -25,7 +26,7 @@ from rag_core.documents.converters.text_helpers import (
     safe_decode as safe_decode,
     text_to_markdown as text_to_markdown,
 )
-from rag_core.documents.exception_names import exception_type, root_exception_type
+from rag_core.documents.exception_names import root_exception_type
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +125,7 @@ class TextLikeConverter(BaseConverter):
                 quality=score_text_quality(content),
             )
 
-        return await asyncio.to_thread(_convert)
+        return await run_sync(_convert)
 
     @abstractmethod
     def _render(
@@ -142,82 +143,19 @@ class TextLikeConverter(BaseConverter):
         """
 
 
-def sanitized_error_value(exc: Exception) -> str:
-    return exception_type(exc)
+class OfficeConverter(BaseConverter):
+    """Native Office extraction with one shared quality/OCR gate."""
 
-
-def sanitized_error_metadata(*, parser: str, exc: Exception) -> Dict[str, Any]:
-    return {"parser": parser, "error": sanitized_error_value(exc)}
-
-
-class HybridConverter(BaseConverter):
-    """Converter that tries local extraction first, then OCR fallback.
-
-    Subclasses implement _try_extract for format-specific extraction.
-    The shared convert method handles the extract-first / OCR-fallback
-    coordination, including partial OCR for PDFs (per-page, not whole-doc).
-    """
+    @abstractmethod
+    async def _try_extract(
+        self, file_bytes: bytes, filename: str, mime_type: str
+    ) -> ConversionResult: ...
 
     async def convert(
         self,
         file_bytes: bytes,
         filename: str,
         mime_type: str,
-    ) -> ConversionResult:
-        """Convert with extract-first, quality-score, OCR-fallback strategy."""
-        try:
-            result = await self._try_extract(file_bytes, filename, mime_type)
-            if result.content and result.quality and result.quality.verdict == QualityVerdict.GOOD:
-                logger.debug(
-                    "%s extracted via text layer (%d chars)",
-                    self.format_name,
-                    len(result.content),
-                )
-                return result
-
-            if result.quality:
-                logger.debug(
-                    "%s extraction quality %s; recommending OCR",
-                    self.format_name,
-                    result.quality.verdict.value,
-                )
-            result.needs_ocr = True
-            return result
-
-        except Exception as exc:
-            logger.warning(
-                "%s extraction failed with %s; recommending OCR",
-                self.format_name,
-                exception_type(exc),
-            )
-            return ConversionResult(
-                needs_ocr=True,
-                metadata=sanitized_error_metadata(
-                    parser="local:%s" % self.format_name,
-                    exc=exc,
-                ),
-            )
-
-    @abstractmethod
-    async def _try_extract(
-        self,
-        file_bytes: bytes,
-        filename: str,
-        mime_type: str,
-    ) -> ConversionResult:
-        """Attempt local text extraction for a single file.
-
-        Returns ConversionResult with quality scoring.
-        The caller uses quality.verdict to decide OCR fallback.
-        """
-
-    async def _convert_office(
-        self,
-        file_bytes: bytes,
-        filename: str,
-        mime_type: str,
-        *,
-        parse_label: str,
     ) -> ConversionResult:
         """Extract-then-gate flow shared by the DOCX and PPTX converters.
 
@@ -235,7 +173,7 @@ class HybridConverter(BaseConverter):
                 root_type,
             )
             raise ValueError(
-                "%s parse failed (%s)" % (parse_label, root_type)
+                "%s parse failed (%s)" % (self.format_name.upper(), root_type)
             ) from exc
 
         quality = result.quality

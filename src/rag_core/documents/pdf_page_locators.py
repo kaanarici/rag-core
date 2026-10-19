@@ -11,7 +11,7 @@ from rag_core.documents.markdown_fences import (
     advance_markdown_fence,
 )
 from rag_core.documents.markdown_headings import parse_atx_heading
-from rag_core.documents.converters.registry_maps import is_registered_pdf_document
+from rag_core.documents.formats import is_registered_pdf_document
 
 # Exact level-two page headings are reserved for converter-owned boundaries.
 _PDF_PAGE_HEADING_LINE_RE = re.compile(r"## Page ([1-9]\d*)")

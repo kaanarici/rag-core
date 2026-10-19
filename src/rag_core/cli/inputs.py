@@ -1,13 +1,6 @@
 from __future__ import annotations
 from collections.abc import Sequence
 
-from rag_core.safe_messages import (
-    error_message as cli_error_message,
-    redacted_url as cli_redacted_url,
-    safe_error_message as cli_safe_error_message,
-    store_location_label as cli_store_location_label,
-)
-
 
 def parse_metadata_fields(values: Sequence[str]) -> dict[str, str]:
     parsed: dict[str, str] = {}
@@ -24,13 +17,3 @@ def parse_non_empty_values(values: Sequence[str], *, field: str) -> list[str] | 
     if any(not value for value in parsed):
         raise ValueError(f"{field} values must be non-empty")
     return parsed or None
-
-
-__all__ = [
-    "cli_error_message",
-    "cli_redacted_url",
-    "cli_safe_error_message",
-    "cli_store_location_label",
-    "parse_metadata_fields",
-    "parse_non_empty_values",
-]

@@ -23,7 +23,11 @@ from typing import Any, TextIO
 from rag_core.private_files import append_private_text, open_private_append_handle
 
 from .sink import EventSink
-from .sink_payloads import event_to_jsonl_dict, event_to_otel_attributes, summarize_event
+from .sink_payloads import (
+    event_to_jsonl_dict,
+    event_to_otel_attributes,
+    summarize_event,
+)
 from .types import Event
 
 _DEFAULT_LOGGER = logging.getLogger("rag_core.events")
@@ -124,7 +128,9 @@ class JsonlSink(_FailureCounter):
             )
             with self._lock:
                 if self._handle is None:
-                    self._handle = open_private_append_handle(self._path, reject_symlink=True)
+                    self._handle = open_private_append_handle(
+                        self._path, reject_symlink=True
+                    )
                 try:
                     self._handle.write(payload + "\n")
                     self._handle.flush()
@@ -156,7 +162,9 @@ class JsonlSink(_FailureCounter):
 
     def _prepare_path(self) -> None:
         if self._path.exists() and self._path.is_dir():
-            raise ValueError(f"events JSONL path must be a file, not a directory: {self._path}")
+            raise ValueError(
+                f"events JSONL path must be a file, not a directory: {self._path}"
+            )
         if self._path.is_symlink():
             raise ValueError(f"events JSONL path must not be a symlink: {self._path}")
         try:
@@ -188,10 +196,7 @@ class MultiSink(_FailureCounter):
                 # One bad sink must not poison the others.
                 continue
             after_failure_count = _sink_failure_count(sink)
-            if (
-                before_failure_count is not None
-                and after_failure_count is not None
-            ):
+            if before_failure_count is not None and after_failure_count is not None:
                 self._record_failures(after_failure_count - before_failure_count)
 
 
@@ -296,14 +301,3 @@ def describe_event_sink_status(sink: EventSink | None) -> dict[str, object]:
     kind = getattr(sink, "provider_name", None) or type(sink).__name__
     failure_count = _sink_failure_count(sink) or 0
     return {"kind": str(kind), "failure_count": failure_count}
-
-
-DEFAULT_EVENT_SINK_PROVIDER = NOOP_EVENT_SINK_PROVIDER
-EVENT_SINK_PROVIDER_ORDER = (
-    DEFAULT_EVENT_SINK_PROVIDER,
-    LOGGING_EVENT_SINK_PROVIDER,
-    JSONL_EVENT_SINK_PROVIDER,
-    BUFFER_EVENT_SINK_PROVIDER,
-    MULTI_EVENT_SINK_PROVIDER,
-    OPENTELEMETRY_EVENT_SINK_PROVIDER,
-)

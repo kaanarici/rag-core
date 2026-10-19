@@ -1,25 +1,4 @@
-"""Per-document concurrency fence for ingest and delete.
-
-Two concurrent operations on the same ``(namespace, collection, document_id)``
-triple are serialized through a shared :class:`asyncio.Lock` so the
-read-stale-delete-then-upsert flow in :mod:`rag_core._engine.core_ingest`
-and the right-to-forget delete in :mod:`rag_core._engine.core_ingest_delete`
-cannot interleave and produce a torn state (e.g. Delete acks the vector
-store but the parallel re-ingest had already started, leaving orphan
-chunks).
-
-Operations on *different* triples run concurrently. The fence is keyed by
-the triple, not the collection.
-
-Lock identity is the contract: callers that need to coordinate (the
-ingestor and its delete mixin) must share the same :class:`DocumentFence`
-instance. ``CoreIngestor.__init__`` constructs one and the delete mixin
-reads it back off ``self._fence``.
-
-Memory is bounded by reference counting active waiters: when the last
-holder releases, the entry is dropped. Long-lived locks for inactive
-triples don't accumulate, so a large collection does not leak memory.
-"""
+"""Serialize ingest/delete for one document without retaining idle locks."""
 
 from __future__ import annotations
 
@@ -28,84 +7,89 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-# Triple identity: ``(namespace, collection, document_id)``. The same tuple
-# the indexer uses to derive point identity via
-# :func:`rag_core.search.policy.VectorStorePolicy.make_document_id`. Keeping
-# the keys identical is what guarantees the fence and the indexer agree on
-# what "this document" means; if the triple components ever diverge (e.g.
-# collection casing), they're a bug in the caller, not in the fence.
 DocumentKey = tuple[str, str, str]
 
 
 @dataclass
 class _FenceEntry:
     lock: asyncio.Lock
-    waiters: int
+    waiters: int = 0
+
+
+@dataclass
+class _CollectionGate:
+    condition: asyncio.Condition
+    readers: int = 0
+    writer: bool = False
+    waiting_writers: int = 0
+    users: int = 0
 
 
 class DocumentFence:
-    """Serialize ingest and delete on the same document triple.
-
-    Use as ``async with fence.acquire(namespace=..., collection=..., document_id=...):``.
-    """
-
     def __init__(self) -> None:
-        # ``_registry_lock`` guards the dict mutations only. It's never held
-        # across the await on the per-document lock, so it cannot serialize
-        # different triples against each other.
-        self._registry_lock = asyncio.Lock()
         self._entries: dict[DocumentKey, _FenceEntry] = {}
+        self._collections: dict[tuple[str, str], _CollectionGate] = {}
 
     @asynccontextmanager
     async def acquire(
-        self,
-        *,
-        namespace: str,
-        collection: str,
-        document_id: str,
+        self, *, tenant_id: str, collection: str, document_id: str
     ) -> AsyncIterator[None]:
-        key: DocumentKey = (namespace, collection, document_id)
-        entry = await self._reserve(key)
+        async with self.collection(
+            tenant_id=tenant_id, collection=collection, exclusive=False
+        ):
+            key = (tenant_id, collection, document_id)
+            entry = self._entries.get(key)
+            if entry is None:
+                entry = self._entries[key] = _FenceEntry(asyncio.Lock())
+            entry.waiters += 1
+            try:
+                async with entry.lock:
+                    yield
+            finally:
+                entry.waiters -= 1
+                if entry.waiters == 0:
+                    del self._entries[key]
+
+    @asynccontextmanager
+    async def collection(
+        self, *, tenant_id: str, collection: str, exclusive: bool = True
+    ) -> AsyncIterator[None]:
+        key = (tenant_id, collection)
+        gate = self._collections.get(key)
+        if gate is None:
+            gate = self._collections[key] = _CollectionGate(asyncio.Condition())
+        gate.users += 1
+        entered = False
         try:
-            # Acquire inside the try so a cancellation or error during the
-            # await still drops this waiter's reservation. Acquiring outside
-            # would leak the refcount and pin the entry in the registry
-            # forever, fencing the triple against all future operations.
-            await entry.lock.acquire()
-        except BaseException:
-            await self._release(key)
-            raise
-        try:
+            async with gate.condition:
+                if exclusive:
+                    gate.waiting_writers += 1
+                    try:
+                        await gate.condition.wait_for(
+                            lambda: not gate.writer and gate.readers == 0
+                        )
+                    finally:
+                        gate.waiting_writers -= 1
+                        gate.condition.notify_all()
+                    gate.writer = True
+                else:
+                    await gate.condition.wait_for(
+                        lambda: not gate.writer and gate.waiting_writers == 0
+                    )
+                    gate.readers += 1
+                entered = True
             yield
         finally:
-            entry.lock.release()
-            await self._release(key)
-
-    async def _reserve(self, key: DocumentKey) -> _FenceEntry:
-        async with self._registry_lock:
-            entry = self._entries.get(key)
-            if entry is None:
-                entry = _FenceEntry(lock=asyncio.Lock(), waiters=0)
-                self._entries[key] = entry
-            entry.waiters += 1
-            return entry
-
-    async def _release(self, key: DocumentKey) -> None:
-        async with self._registry_lock:
-            entry = self._entries.get(key)
-            if entry is None:
-                # Should not happen. But if it does, the registry is already
-                # in the dropped state we want.
-                return
-            entry.waiters -= 1
-            if entry.waiters <= 0:
-                # No remaining holders or waiters: drop the entry so the dict
-                # doesn't grow with one lock per triple ever ingested.
-                self._entries.pop(key, None)
+            if entered:
+                async with gate.condition:
+                    if exclusive:
+                        gate.writer = False
+                    else:
+                        gate.readers -= 1
+                    gate.condition.notify_all()
+            gate.users -= 1
+            if gate.users == 0:
+                del self._collections[key]
 
     def active_keys(self) -> tuple[DocumentKey, ...]:
-        """Snapshot of triples currently held or queued. Test/diagnostic only."""
-        return tuple(self._entries.keys())
-
-
-__all__ = ["DocumentFence", "DocumentKey"]
+        return tuple(self._entries)

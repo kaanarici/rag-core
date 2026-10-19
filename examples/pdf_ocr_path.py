@@ -51,7 +51,6 @@ def describe_pdf_runtime(core: Engine) -> dict[str, object]:
     runtime = core.describe_runtime()
     return {
         "ocr": runtime.get("ocr"),
-        "pdf_inspector": runtime.get("pdf_inspector"),
     }
 
 

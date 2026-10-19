@@ -4,14 +4,14 @@ Covers four guarantees:
 
 1. ``DeleteFilter.__post_init__`` rejects empty / blank ``document_id`` or
    ``collection`` strings so a formatting bug cannot silently widen a
-   per-document delete to a collection-wide or namespace-wide one.
+   per-document delete to a collection-wide or tenant-wide one.
 2. The retrieval facade (``Engine.search`` / ``Engine.context``)
    refuses ``collections=None`` and ``collections=[]`` because silent widening is
    forbidden.
-3. ``CollectionPolicy`` validates namespace binding and allowed collections
+3. ``CollectionPolicy`` validates tenant_id binding and allowed collections
    from the engine seam before any provider call.
-4. Explicit ``delete_collection`` and ``delete_namespace`` facade helpers exist
-   so callers reach collection-wide or namespace-wide deletes deliberately, not
+4. Explicit ``delete_collection`` and ``delete_tenant`` facade helpers exist
+   so callers reach collection-wide or tenant-wide deletes deliberately, not
    by accident.
 """
 
@@ -40,45 +40,45 @@ from tests.support import (
 def test_delete_filter_rejects_empty_document_id() -> None:
     """A formatting bug producing ``document_id=''`` must not silently widen."""
     with pytest.raises(ValueError, match="DeleteFilter.document_id"):
-        DeleteFilter(namespace="ns", collection="c", document_id="")
+        DeleteFilter(tenant_id="ns", collection="c", document_id="")
 
 
 def test_delete_filter_rejects_whitespace_document_id() -> None:
     with pytest.raises(ValueError, match="DeleteFilter.document_id"):
-        DeleteFilter(namespace="ns", collection="c", document_id="   ")
+        DeleteFilter(tenant_id="ns", collection="c", document_id="   ")
 
 
 def test_delete_filter_rejects_empty_collection() -> None:
     with pytest.raises(ValueError, match="DeleteFilter.collection"):
-        DeleteFilter(namespace="ns", collection="", document_id="doc-1")
+        DeleteFilter(tenant_id="ns", collection="", document_id="doc-1")
 
 
 def test_delete_filter_requires_collection_or_document() -> None:
-    """Bare ``DeleteFilter(namespace=...)`` would clear the namespace."""
+    """Bare ``DeleteFilter(tenant_id=...)`` would clear the tenant_id."""
     with pytest.raises(ValueError, match="at least one of collection or document_id"):
-        DeleteFilter(namespace="ns")
+        DeleteFilter(tenant_id="ns")
 
 
 def test_delete_filter_accepts_collection_only_for_explicit_collection_wide_delete() -> None:
     """The deliberate collection-wide path stays open via explicit None."""
-    f = DeleteFilter(namespace="ns", collection="c")
+    f = DeleteFilter(tenant_id="ns", collection="c")
     assert f.document_id is None
     assert f.collection == "c"
 
 
 def test_delete_filter_accepts_document_with_collection_for_per_doc_delete() -> None:
-    f = DeleteFilter(namespace="ns", collection="c", document_id="doc-1")
+    f = DeleteFilter(tenant_id="ns", collection="c", document_id="doc-1")
     assert f.document_id == "doc-1"
 
 
 # --- CollectionPolicy enforcement ----------------------------------------------
 
 
-def test_collection_policy_validates_bound_namespace() -> None:
-    policy = CollectionPolicy(bound_namespace="workspace-alpha")
-    policy.validate_namespace("workspace-alpha")  # ok
-    with pytest.raises(CollectionPolicyViolation, match="bound to namespace"):
-        policy.validate_namespace("workspace-beta")
+def test_collection_policy_validates_bound_tenant_id() -> None:
+    policy = CollectionPolicy(bound_tenant_id="workspace-alpha")
+    policy.validate_tenant_id("workspace-alpha")  # ok
+    with pytest.raises(CollectionPolicyViolation, match="bound to tenant_id"):
+        policy.validate_tenant_id("workspace-beta")
 
 
 def test_collection_policy_validates_allowed_collections() -> None:
@@ -97,8 +97,8 @@ def test_collection_policy_refuses_none_collections_when_allowlist_set() -> None
 
 
 def test_collection_policy_rejects_invalid_construction() -> None:
-    with pytest.raises(ValueError, match="bound_namespace"):
-        CollectionPolicy(bound_namespace="   ")
+    with pytest.raises(ValueError, match="bound_tenant_id"):
+        CollectionPolicy(bound_tenant_id="   ")
     with pytest.raises(ValueError, match="allowed_collections"):
         CollectionPolicy(allowed_collections=frozenset({""}))
 
@@ -143,7 +143,7 @@ def test_search_facade_refuses_none_collections() -> None:
             with pytest.raises(ValueError, match="collection or collections"):
                 await core.search(
                     query="q",
-                    namespace="ns",
+                    tenant_id="ns",
                     collections=None,
                 )
         finally:
@@ -157,7 +157,7 @@ def test_search_facade_refuses_empty_collections() -> None:
         core, _ = _make_core()
         try:
             with pytest.raises(ValueError, match="collections must not be empty"):
-                await core.search(query="q", namespace="ns", collections=[])
+                await core.search(query="q", tenant_id="ns", collections=[])
         finally:
             await core.close()
 
@@ -171,7 +171,7 @@ def test_retrieve_context_facade_refuses_none_collections() -> None:
             with pytest.raises(ValueError, match="collection or collections"):
                 await core.context(
                     query="q",
-                    namespace="ns",
+                    tenant_id="ns",
                     collections=None,
                 )
         finally:
@@ -183,15 +183,15 @@ def test_retrieve_context_facade_refuses_none_collections() -> None:
 # --- CollectionPolicy wired through the engine ---------------------------------
 
 
-def test_pipeline_runner_refuses_cross_namespace_request_under_bound_policy() -> None:
+def test_pipeline_runner_refuses_cross_tenant_request_under_bound_policy() -> None:
     async def _run() -> None:
-        policy = CollectionPolicy(bound_namespace="workspace-alpha")
+        policy = CollectionPolicy(bound_tenant_id="workspace-alpha")
         core, _ = _make_core_with_policy(policy)
         try:
-            with pytest.raises(CollectionPolicyViolation, match="bound to namespace"):
+            with pytest.raises(CollectionPolicyViolation, match="bound to tenant_id"):
                 await core.search(
                     query="q",
-                    namespace="workspace-beta",
+                    tenant_id="workspace-beta",
                     collections=["public"],
                 )
         finally:
@@ -208,7 +208,7 @@ def test_pipeline_runner_refuses_disallowed_collection_under_bound_policy() -> N
             with pytest.raises(CollectionPolicyViolation, match="refused collection"):
                 await core.search(
                     query="q",
-                    namespace="ws",
+                    tenant_id="ws",
                     collections=["restricted"],
                 )
         finally:
@@ -217,15 +217,15 @@ def test_pipeline_runner_refuses_disallowed_collection_under_bound_policy() -> N
     asyncio.run(_run())
 
 
-def test_indexer_delete_refuses_cross_namespace_under_bound_policy() -> None:
+def test_indexer_delete_refuses_cross_tenant_under_bound_policy() -> None:
     async def _run() -> None:
-        policy = CollectionPolicy(bound_namespace="workspace-alpha")
+        policy = CollectionPolicy(bound_tenant_id="workspace-alpha")
         core, _ = _make_core_with_policy(policy)
         try:
-            with pytest.raises(CollectionPolicyViolation, match="bound to namespace"):
+            with pytest.raises(CollectionPolicyViolation, match="bound to tenant_id"):
                 await core.delete_document(
                     document_id="doc-1",
-                    namespace="workspace-beta",
+                    tenant_id="workspace-beta",
                     collection="public",
                 )
         finally:
@@ -234,7 +234,7 @@ def test_indexer_delete_refuses_cross_namespace_under_bound_policy() -> None:
     asyncio.run(_run())
 
 
-# --- delete_collection / delete_namespace helpers ------------------------------
+# --- delete_collection / delete_tenant helpers ------------------------------
 
 
 def test_delete_collection_helper_routes_through_explicit_seam() -> None:
@@ -245,11 +245,11 @@ def test_delete_collection_helper_routes_through_explicit_seam() -> None:
                 file_bytes=b"alpha",
                 filename="a.txt",
                 mime_type="text/plain",
-                namespace="ws",
+                tenant_id="ws",
                 collection="c",
                 path="/a.txt",
             )
-            await core.delete_collection(namespace="ws", collection="c")
+            await core.delete_collection(tenant_id="ws", collection="c")
         finally:
             await core.close()
 
@@ -263,13 +263,13 @@ def test_delete_collection_helper_routes_through_explicit_seam() -> None:
     asyncio.run(_run())
 
 
-def test_delete_namespace_is_explicitly_reserved() -> None:
-    """The namespace-wide path is not a silent default; it must be claimed."""
+def test_delete_tenant_is_explicitly_reserved() -> None:
+    """The tenant-wide path is not a silent default; it must be claimed."""
     async def _run() -> None:
         core, _ = _make_core()
         try:
             with pytest.raises(NotImplementedError, match="tenant offboarding"):
-                await core.delete_namespace(namespace="ws")
+                await core.delete_tenant(tenant_id="ws")
         finally:
             await core.close()
 
@@ -284,7 +284,7 @@ def test_indexer_delete_document_refuses_empty_document_id() -> None:
             with pytest.raises(ValueError, match="document_id is required"):
                 await core.delete_document(
                     document_id="",
-                    namespace="ws",
+                    tenant_id="ws",
                     collection="c",
                 )
         finally:

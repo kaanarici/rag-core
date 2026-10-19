@@ -1,44 +1,35 @@
-"""Search, rerank, sidecar, and stage-error event records."""
+"""Search, rerank, and stage-error event records."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from rag_core.events.record import EventRecord
 from typing import Literal
 
 from rag_core.events.event_types import (
-    LEXICAL_SIDECAR_BOUND_EXCEEDED_EVENT,
-    NEIGHBOR_EXPAND_SKIPPED_EVENT,
     RERANK_APPLIED_EVENT,
     SEARCH_COMPLETED_EVENT,
     SEARCH_PLANNED_EVENT,
     SEARCH_STAGE_COMPLETED_EVENT,
     SEARCH_STARTED_EVENT,
-    SIDECAR_APPLIED_EVENT,
     STAGE_ERROR_EVENT,
 )
 from rag_core.events.trace_payload_fields import TRACE_ABSENT_LABEL
 from rag_core.events.trace_payload_fields import RETRIEVE_SEARCH_STAGE
 
 # Audit lines should not be unbounded. SearchCompleted carries up to this many
-# document_ids inline; use SearchStageCompleted (retrieve stage) or the OTel
-# sink for the full list when callers need it.
+# document_ids inline. Applications needing all IDs should use search results.
 RETURNED_DOCUMENT_IDS_CAP: int = 64
 
 
 @dataclass(frozen=True)
-class SearchStarted:
-    namespace: str = ""
+class SearchStarted(EventRecord):
+    tenant_id: str = ""
     collections: tuple[str, ...] = ()
     query_length: int = 0
     limit: int = 0
     collection_count: int = 0
-    search_id: str = ""
     event_type: Literal["search.started"] = SEARCH_STARTED_EVENT
-    emitted_at_ns: int = 0
-    wall_clock_ns: int = 0
-    actor: str = ""
-    request_id: str = ""
-    ingest_id: str = ""
 
     def __post_init__(self) -> None:
         if self.collection_count == 0 and self.collections:
@@ -46,38 +37,23 @@ class SearchStarted:
 
 
 @dataclass(frozen=True)
-class SearchPlanned:
-    namespace: str = ""
+class SearchPlanned(EventRecord):
+    tenant_id: str = ""
     collections: tuple[str, ...] = ()
     limit: int = 0
-    final_limit: int = 0
     collection_count: int = 0
     channels: tuple[str, ...] = ()
-    prefetch_limits: tuple[int, ...] = ()
-    search_profile: str = ""
+    mode: str = ""
+    candidate_limit: int = 0
+    rerank_enabled: bool = False
     fusion: str = ""
-    plan_rerank: str = ""
-    boost: str = ""
     metadata_filter: str = ""
     content_type_count: int = 0
     document_id_count: int = 0
-    rerank_candidate_count: int = 0
     rerank_timeout_ms: float = 0.0
     rerank_max_output: int = 0
     rerank_fallback_on_error: bool = False
-    use_lexical_search: bool = False
-    query_transforms: tuple[str, ...] = ()
-    retrieve_stage: str = ""
-    fuse_stage: str = ""
-    rerank_stage: str = ""
-    postprocesses: tuple[str, ...] = ()
-    search_id: str = ""
     event_type: Literal["search.planned"] = SEARCH_PLANNED_EVENT
-    emitted_at_ns: int = 0
-    wall_clock_ns: int = 0
-    actor: str = ""
-    request_id: str = ""
-    ingest_id: str = ""
 
     def __post_init__(self) -> None:
         if self.collection_count == 0 and self.collections:
@@ -85,13 +61,10 @@ class SearchPlanned:
 
 
 @dataclass(frozen=True)
-class SearchStageCompleted:
+class SearchStageCompleted(EventRecord):
     stage: Literal[
-        "query_transform",
         "retrieve",
-        "fuse",
         "rerank",
-        "postprocess",
         "context_pack",
     ] = RETRIEVE_SEARCH_STAGE
     stage_name: str = ""
@@ -106,47 +79,30 @@ class SearchStageCompleted:
     citation_count: int = 0
     source_preview_count: int = 0
     duration_ms: float = 0.0
-    search_id: str = ""
     event_type: Literal["search.stage.completed"] = SEARCH_STAGE_COMPLETED_EVENT
-    emitted_at_ns: int = 0
-    wall_clock_ns: int = 0
-    actor: str = ""
-    request_id: str = ""
-    ingest_id: str = ""
 
 
 @dataclass(frozen=True)
-class SearchCompleted:
-    namespace: str = ""
+class SearchCompleted(EventRecord):
+    tenant_id: str = ""
     result_count: int = 0
     requested_rerank: bool = False
-    requested_sidecar: bool = False
     attempted_rerank: bool = False
-    attempted_sidecar: bool = False
     applied_rerank: bool = False
-    applied_sidecar: bool = False
     succeeded: bool = True
     duration_ms: float = 0.0
-    search_id: str = ""
     # Tier scope that was searched. Required for audit ("which tier was hit")
     # Kept on the same event as the duration/result_count so a single audit
     # row captures the answer to "who searched what tier and got how many
     # results in how long".
     collections: tuple[str, ...] = ()
-    # Document IDs returned, capped to avoid unbounded audit lines. Callers
-    # needing the full list should subscribe to SearchStageCompleted on the
-    # retrieve stage or the OTel sink. Capped to RETURNED_DOCUMENT_IDS_CAP.
+    # Document IDs returned, capped to RETURNED_DOCUMENT_IDS_CAP.
     returned_document_ids: tuple[str, ...] = ()
     event_type: Literal["search.completed"] = SEARCH_COMPLETED_EVENT
-    emitted_at_ns: int = 0
-    wall_clock_ns: int = 0
-    actor: str = ""
-    request_id: str = ""
-    ingest_id: str = ""
 
 
 @dataclass(frozen=True)
-class RerankApplied:
+class RerankApplied(EventRecord):
     provider: str = ""
     model: str = ""
     input_count: int = 0
@@ -170,85 +126,11 @@ class RerankApplied:
     provider_score_max: float | None = 0.0
     search_score_min: float | None = 0.0
     search_score_max: float | None = 0.0
-    search_id: str = ""
-    emitted_at_ns: int = 0
-    wall_clock_ns: int = 0
-    actor: str = ""
-    request_id: str = ""
-    ingest_id: str = ""
 
 
 @dataclass(frozen=True)
-class SidecarApplied:
-    provider: str = ""
-    input_count: int = 0
-    provider_result_count: int = 0
-    accepted_count: int = 0
-    dropped_count: int = 0
-    result_count: int = 0
-    duration_ms: float = 0.0
-    succeeded: bool = True
-    fallback_reason: str = ""
-    search_id: str = ""
-    event_type: Literal["sidecar.applied"] = SIDECAR_APPLIED_EVENT
-    emitted_at_ns: int = 0
-    wall_clock_ns: int = 0
-    actor: str = ""
-    request_id: str = ""
-    ingest_id: str = ""
-
-
-@dataclass(frozen=True)
-class NeighborExpandSkipped:
-    reason: str = ""
-    input_count: int = 0
-    result_count: int = 0
-    search_id: str = ""
-    event_type: Literal[
-        "neighbor_expand.skipped"
-    ] = NEIGHBOR_EXPAND_SKIPPED_EVENT
-    emitted_at_ns: int = 0
-    wall_clock_ns: int = 0
-    actor: str = ""
-    request_id: str = ""
-    ingest_id: str = ""
-
-
-@dataclass(frozen=True)
-class LexicalSidecarBoundExceeded:
-    """Emitted when an upsert would exceed the lexical sidecar's bounds.
-
-    The sidecar refuses the overflow rather than silently OOMing. ``reason``
-    is one of ``"max_entries"`` or ``"max_bytes"``; ``rejected_count`` is how
-    many records in the incoming batch were dropped.
-    """
-
-    provider: str = ""
-    reason: str = ""
-    rejected_count: int = 0
-    current_entries: int = 0
-    max_entries: int = 0
-    current_bytes: int = 0
-    max_bytes: int = 0
-    event_type: Literal[
-        "lexical_sidecar.bound_exceeded"
-    ] = LEXICAL_SIDECAR_BOUND_EXCEEDED_EVENT
-    emitted_at_ns: int = 0
-    wall_clock_ns: int = 0
-    actor: str = ""
-    request_id: str = ""
-    ingest_id: str = ""
-
-
-@dataclass(frozen=True)
-class StageError:
+class StageError(EventRecord):
     stage: str = ""
     error_type: str = ""
     message: str = ""
-    search_id: str = ""
     event_type: Literal["stage.error"] = STAGE_ERROR_EVENT
-    emitted_at_ns: int = 0
-    wall_clock_ns: int = 0
-    actor: str = ""
-    request_id: str = ""
-    ingest_id: str = ""

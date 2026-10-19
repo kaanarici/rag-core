@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
+from rag_core._async import run_sync
+
 import logging
 from typing import Any, Dict, List
 
-from rag_core.config.env_access import get_env_int
+from . import converter_settings
 
 from .base import BaseConverter, ConversionResult, score_text_quality
 from .converter_keys import XLSX_CONVERTER_KEY
@@ -30,17 +31,13 @@ class XlsxConverter(BaseConverter):
         *,
         max_rows: int = 0,
         max_cols: int = 0,
+        max_total_rows: int = 0,
         include_formulas: bool = False,
     ) -> None:
-        self._rows_per_chunk = max(
-            1, max_rows or get_env_int("LOCAL_PARSE_XLSX_MAX_ROWS", 500)
-        )
-        self._max_total_rows = max(
-            1, get_env_int("LOCAL_PARSE_XLSX_MAX_TOTAL_ROWS", 5000)
-        )
-        self._max_cols = max(
-            1, max_cols or get_env_int("LOCAL_PARSE_XLSX_MAX_COLS", 50)
-        )
+        settings = converter_settings("xlsx")
+        self._rows_per_chunk = max(1, max_rows or settings["max_rows"])
+        self._max_total_rows = max(1, max_total_rows or settings["max_total_rows"])
+        self._max_cols = max(1, max_cols or settings["max_cols"])
         self._include_formulas = include_formulas
 
     async def convert(
@@ -132,4 +129,4 @@ class XlsxConverter(BaseConverter):
                 quality=quality,
             )
 
-        return await asyncio.to_thread(_extract)
+        return await run_sync(_extract)

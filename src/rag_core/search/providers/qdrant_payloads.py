@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import math
 from collections import deque
-from collections.abc import Sequence
 from typing import Any, Optional
 from uuid import UUID
 
@@ -19,6 +18,7 @@ from qdrant_client import AsyncQdrantClient
 from qdrant_client import models as rest
 
 from rag_core.search.document_records import (
+    document_record_fields,
     resolve_document_id_from_payload,
     stored_document_record_from_payload,
     validate_document_lookup_inputs,
@@ -28,15 +28,12 @@ from rag_core.search.request_models import StoredDocumentRecord
 from rag_core.search.sparse_channels import (
     KNOWN_SPARSE_CHANNELS,
     PRIMARY_SPARSE_CHANNEL,
-    SECONDARY_SPARSE_CHANNEL,
 )
 from rag_core.search.stored_payload import payload_to_result
 from rag_core.search.stored_payload import validate_json_payload as _validate_json_payload
 from rag_core.search.vector_models import SearchResult, VectorPoint
 
-from .chunk_lookup import validate_chunk_lookup_inputs
 from .qdrant_filters import (
-    build_chunk_index_lookup_filter,
     build_document_count_filter,
     build_document_lookup_filter,
 )
@@ -44,11 +41,9 @@ from .qdrant_filters import (
 
 _DENSE_VECTOR_NAME = ""  # Qdrant default vector name
 _PRIMARY_SPARSE_VECTOR_NAME = PRIMARY_SPARSE_CHANNEL
-_SECONDARY_SPARSE_VECTOR_NAME = SECONDARY_SPARSE_CHANNEL
 _KNOWN_SPARSE_VECTOR_NAMES = KNOWN_SPARSE_CHANNELS
 _PREFETCH_LIMIT = 200
 _MAX_SPLIT_DEPTH = 6
-_SPLIT_PAUSE_SECONDS = 0.2
 _SLOW_WRITE_THRESHOLD_SECONDS = 5.0
 _LATENCY_WINDOW_SIZE = 100
 
@@ -106,21 +101,8 @@ def _build_point(
     | set[str] = _KNOWN_SPARSE_VECTOR_NAMES,
 ) -> rest.PointStruct:
     point_id = _qdrant_point_id(point.id)
-    all_sparse_vectors = point.all_sparse_vectors()
-    missing_sparse_vectors = sorted(
-        name
-        for name, vector in all_sparse_vectors.items()
-        if name in _KNOWN_SPARSE_VECTOR_NAMES
-        and name not in available_sparse_vector_names
-        and (vector.indices or vector.values)
-    )
-    if missing_sparse_vectors:
-        available = ", ".join(sorted(available_sparse_vector_names)) or "none"
-        missing = ", ".join(missing_sparse_vectors)
-        raise ValueError(
-            "Qdrant collection is missing sparse vector channels required by "
-            f"points: {missing}; available sparse channels: {available}"
-        )
+    all_sparse_vectors = point.sparse_vectors
+    validate_point_channels(point, available_sparse_vector_names)
     sparse_dict = {
         name: rest.SparseVector(indices=vector.indices, values=vector.values)
         for name, vector in all_sparse_vectors.items()
@@ -210,14 +192,15 @@ async def get_qdrant_document_record(
     *,
     client: AsyncQdrantClient,
     collection_name: str,
-    namespace: str,
+    tenant_id: str,
     collection: str,
     document_id: str | None,
     document_key: str | None,
     policy: VectorStorePolicy,
+    consistency: rest.ReadConsistency | None = None,
 ) -> StoredDocumentRecord | None:
-    namespace_scoped, collection_scoped = validate_document_lookup_inputs(
-        namespace=namespace,
+    tenant_id_scoped, collection_scoped = validate_document_lookup_inputs(
+        tenant_id=tenant_id,
         collection=collection,
         document_id=document_id,
         document_key=document_key,
@@ -226,15 +209,16 @@ async def get_qdrant_document_record(
     records, _ = await client.scroll(
         collection_name=collection_name,
         scroll_filter=build_document_lookup_filter(
-            namespace=namespace_scoped,
+            tenant_id=tenant_id_scoped,
             collection=collection_scoped,
             document_id=document_id,
             document_key=document_key,
             policy=policy,
         ),
         limit=1,
-        with_payload=True,
+        with_payload=rest.PayloadSelectorInclude(include=document_record_fields(policy)),
         with_vectors=False,
+        consistency=consistency,
     )
     if not records:
         return None
@@ -254,7 +238,7 @@ async def get_qdrant_document_record(
     chunk_count = await client.count(
         collection_name=collection_name,
         count_filter=build_document_count_filter(
-            namespace=namespace_scoped,
+            tenant_id=tenant_id_scoped,
             collection=collection_scoped,
             document_id=resolved_document_id,
             policy=policy,
@@ -263,7 +247,7 @@ async def get_qdrant_document_record(
     )
     return stored_document_record_from_payload(
         payload=payload,
-        namespace=namespace_scoped,
+        tenant_id=tenant_id_scoped,
         collection=collection_scoped,
         document_id=resolved_document_id,
         chunk_count=_count_result_value(getattr(chunk_count, "count", None)),
@@ -274,39 +258,18 @@ async def get_qdrant_document_record(
     )
 
 
-async def get_qdrant_chunks_by_index(
-    *,
-    client: AsyncQdrantClient,
-    collection_name: str,
-    namespace: str,
-    collection: str,
-    document_id: str,
-    chunk_indices: Sequence[int],
-    policy: VectorStorePolicy,
-) -> list[SearchResult]:
-    namespace_scoped, collection_scoped, document_scoped, indices = (
-        validate_chunk_lookup_inputs(
-            namespace=namespace,
-            collection=collection,
-            document_id=document_id,
-            chunk_indices=chunk_indices,
-        )
-    )
-    if not indices:
-        return []
 
-    records, _ = await client.scroll(
-        collection_name=collection_name,
-        scroll_filter=build_chunk_index_lookup_filter(
-            namespace=namespace_scoped,
-            collection=collection_scoped,
-            document_id=document_scoped,
-            chunk_indices=indices,
-            policy=policy,
-        ),
-        limit=len(indices),
-        with_payload=True,
-        with_vectors=False,
+
+def validate_point_channels(point: VectorPoint, available_sparse_vector_names: frozenset[str] | set[str]) -> None:
+    missing_sparse_vectors = sorted(
+        name
+        for name, vector in point.sparse_vectors.items()
+        if name not in available_sparse_vector_names
+        and (vector.indices or vector.values)
     )
-    results = [_record_to_result(record, policy=policy) for record in records]
-    return sorted(results, key=lambda result: result.chunk_index or 0)
+    if missing_sparse_vectors:
+        available = ", ".join(sorted(available_sparse_vector_names)) or "none"
+        missing = ", ".join(missing_sparse_vectors)
+        raise ValueError(
+            f"Qdrant collection is missing required sparse vector channels: {missing}; available sparse channels: {available}"
+        )

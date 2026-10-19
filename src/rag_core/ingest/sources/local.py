@@ -7,8 +7,15 @@ import stat
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Protocol
 
-from rag_core.documents.converters.format_support import is_local_ingest_extension
+from rag_core.config import INGEST_SOURCE_TYPE_FILE
+from rag_core.core_models import IngestedDocument
+from rag_core.documents.formats import is_local_ingest_extension
+from rag_core.file_io import detect_local_mime_type, read_file_bytes, validate_document_size
+
+if TYPE_CHECKING:
+    from rag_core.events.types import AuditContext
 
 
 @dataclass(frozen=True)
@@ -17,32 +24,6 @@ class LocalSourceItem:
     document_key: str
     content_sha256: str | None
     source_error: str = ""
-
-    def to_payload(
-        self,
-        *,
-        manifest_status: str | None = None,
-        manifest_reason: str | None = None,
-        include_private: bool = False,
-    ) -> dict[str, object]:
-        if include_private:
-            payload: dict[str, object] = {
-                "path": str(self.path),
-                "document_key": self.document_key,
-                "content_sha256": self.content_sha256,
-                "source_error": self.source_error,
-            }
-        else:
-            payload = {
-                "path": "<local-file>",
-                "filename": self.path.name,
-                "content_sha256_available": self.content_sha256 is not None,
-                "source_error": "source read failed" if self.source_error else "",
-            }
-        if manifest_status is not None:
-            payload["manifest_status"] = manifest_status
-            payload["manifest_reason"] = manifest_reason or ""
-        return payload
 
 
 @dataclass(frozen=True)
@@ -56,19 +37,17 @@ class LocalSourcePlan:
         return len(self.items)
 
 
-class LocalFileSourceReader:
-    def read(self, source: str | Path) -> LocalSourcePlan:
-        return read_local_source(source)
-
-
 def read_local_source(
     source: str | Path,
     *,
-    hash_file: Callable[[Path], str] | None = None,
+    hash_file: Callable[[Path], str | None] | None = None,
+    hash_content: bool = True,
 ) -> LocalSourcePlan:
     raw = str(source)
     root = local_source_key_root(raw)
-    content_hash = hash_file or file_content_sha256
+    content_hash = hash_file or (
+        file_content_sha256 if hash_content else lambda _: None
+    )
     return LocalSourcePlan(
         source=raw,
         root=root,
@@ -83,7 +62,7 @@ def local_file_source_item(
     path: Path,
     *,
     root: Path,
-    hash_file: Callable[[Path], str] | None = None,
+    hash_file: Callable[[Path], str | None] | None = None,
 ) -> LocalSourceItem:
     reject_local_symlink_path(path)
     reject_local_symlink_path(root)
@@ -166,10 +145,7 @@ def _resolved_path(path: Path) -> Path:
 
 
 def _path_within_root(path: Path, root: Path) -> bool:
-    try:
-        return _resolved_path(path).is_relative_to(root)
-    except OSError:
-        return False
+    return _resolved_path(path).is_relative_to(root)
 
 
 def path_has_symlink_segment(path: Path) -> bool:
@@ -185,10 +161,10 @@ def _path_has_symlink_segment(path: Path) -> bool:
         try:
             if _is_macos_system_alias(candidate):
                 continue
-            if candidate.is_symlink():
+            if stat.S_ISLNK(candidate.lstat().st_mode):
                 return True
-        except OSError:
-            return True
+        except FileNotFoundError:
+            continue
     return False
 
 
@@ -231,18 +207,18 @@ def reject_local_hardlink_path(path: Path) -> None:
 
 
 def is_multi_link_regular_file(path: Path) -> bool:
-    try:
-        path_stat = path.stat(follow_symlinks=False)
-    except OSError:
-        return True
+    path_stat = path.stat(follow_symlinks=False)
     return stat.S_ISREG(path_stat.st_mode) and path_stat.st_nlink > 1
 
 
 def _safe_directory_files(root: Path) -> list[Path]:
+    def read_failed(error: OSError) -> None:
+        raise error
+
     resolved_root = _resolved_path(root)
     files: list[Path] = []
     for current_root, dirnames, filenames in os.walk(
-        root, topdown=True, followlinks=False
+        root, topdown=True, followlinks=False, onerror=read_failed
     ):
         current = Path(current_root)
         dirnames[:] = sorted(
@@ -252,13 +228,12 @@ def _safe_directory_files(root: Path) -> list[Path]:
         )
         for name in sorted(filenames):
             path = current / name
-            if path.is_symlink():
-                continue
-            if is_multi_link_regular_file(path):
+            path_stat = path.stat(follow_symlinks=False)
+            if stat.S_ISLNK(path_stat.st_mode) or path_stat.st_nlink > 1:
                 continue
             if not _path_within_root(path, resolved_root):
                 continue
-            if path.is_file():
+            if stat.S_ISREG(path_stat.st_mode):
                 files.append(path)
     return files
 
@@ -284,8 +259,11 @@ def document_key(root: Path, file_path: Path) -> str:
         relative = Path(lexical_file.name)
     if not str(relative) or str(relative) == ".":
         relative = Path(lexical_file.name)
-    source_hash = hashlib.sha256(str(lexical_root).encode("utf-8")).hexdigest()[:16]
-    return f"local:{relative.as_posix()}#source:{source_hash}"
+    return f"local:{relative.as_posix()}#source:{local_source_id(root)}"
+
+
+def local_source_id(root: Path) -> str:
+    return hashlib.sha256(str(_resolved_path(root)).encode("utf-8")).hexdigest()[:16]
 
 
 def file_content_sha256(path: Path) -> str:
@@ -316,13 +294,96 @@ def is_supported_local_candidate(path: Path) -> bool:
     return not is_ignored_local_file(path) and is_supported_local_file(path)
 
 
+class LocalIngestBytes(Protocol):
+    async def __call__(
+        self,
+        *,
+        file_bytes: bytes,
+        filename: str,
+        mime_type: str,
+        tenant_id: str,
+        collection: str,
+        document_id: str | None = None,
+        document_key: str | None = None,
+        path: str | None = None,
+        metadata: dict[str, str] | None = None,
+        force_reindex: bool = False,
+        source_type: str | None = None,
+        audit_context: "AuditContext | None" = None,
+        ingest_id: str | None = None,
+    ) -> IngestedDocument: ...
+
+
+async def ingest_local_file_source(
+    path: str | Path,
+    *,
+    ingest_bytes: LocalIngestBytes,
+    tenant_id: str,
+    collection: str,
+    document_id: str | None = None,
+    document_key: str | None = None,
+    metadata: dict[str, str] | None = None,
+    force_reindex: bool = False,
+    audit_context: "AuditContext | None" = None,
+    ingest_id: str | None = None,
+    pre_read_bytes: bytes | None = None,
+    max_document_bytes: int | None = None,
+) -> IngestedDocument:
+    file_path = Path(path)
+    reject_local_symlink_path(file_path)
+    reject_local_hardlink_path(file_path)
+    resolved_document_key = _resolve_local_document_key(
+        path=path,
+        file_path=file_path,
+        explicit_key=document_key,
+    )
+    file_bytes = (
+        pre_read_bytes
+        if pre_read_bytes is not None
+        else await read_file_bytes(file_path, max_bytes=max_document_bytes)
+    )
+    if max_document_bytes is not None:
+        validate_document_size(file_bytes, max_bytes=max_document_bytes)
+    return await ingest_bytes(
+        file_bytes=file_bytes,
+        filename=file_path.name,
+        mime_type=detect_local_mime_type(file_path),
+        tenant_id=tenant_id,
+        collection=collection,
+        document_id=document_id,
+        document_key=resolved_document_key,
+        path=str(file_path),
+        metadata=metadata,
+        force_reindex=force_reindex,
+        source_type=INGEST_SOURCE_TYPE_FILE,
+        audit_context=audit_context,
+        ingest_id=ingest_id,
+    )
+
+
+def _resolve_local_document_key(
+    *,
+    path: str | Path,
+    file_path: Path,
+    explicit_key: str | None,
+) -> str:
+    if explicit_key and explicit_key.strip():
+        return explicit_key.strip()
+    if any(part == ".." for part in Path(path).parts):
+        raise ValueError(
+            "document_key is required for single-file ingest when path traversal segments prevent inferring a stable collection root"
+        )
+    return document_key(local_source_key_root(str(path)), file_path)
+
+
 __all__ = [
-    "LocalFileSourceReader",
+    "LocalIngestBytes",
     "LocalSourceItem",
     "LocalSourcePlan",
     "document_key",
     "expand_supported_local_files",
     "file_content_sha256",
+    "ingest_local_file_source",
     "is_ignored_local_file",
     "is_supported_local_candidate",
     "is_supported_local_file",

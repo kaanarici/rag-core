@@ -9,9 +9,8 @@ from rag_core.events import (
     EmbedCompleted,
     EmbeddingTraceSummary,
     OpenTelemetrySink,
-    SearchStageTraceSummary,
     SearchTraceSummary,
-    SidecarApplied,
+    RerankApplied,
     summarize_embedding_trace,
     summarize_search_trace,
 )
@@ -25,11 +24,13 @@ from rag_core.events import SearchTraceSummary as EventsSearchTraceSummary
     [
         ("SearchTraceSummary", SearchTraceSummary),
         ("EmbeddingTraceSummary", EmbeddingTraceSummary),
-        ("SidecarApplied", SidecarApplied),
+        ("RerankApplied", RerankApplied),
         ("OpenTelemetrySink", OpenTelemetrySink),
     ],
 )
-def test_events_symbols_live_under_events_namespace(symbol_name: str, expected: object) -> None:
+def test_events_symbols_live_under_events_namespace(
+    symbol_name: str, expected: object
+) -> None:
     assert symbol_name not in rag_core.__all__
     assert getattr(rag_core.events, symbol_name) is expected
 
@@ -40,15 +41,6 @@ def test_trace_summarizers_live_under_events_namespace() -> None:
     assert EmbeddingTraceSummary is EventsEmbeddingTraceSummary
     assert summarize_search_trace is rag_core.events.summarize_search_trace
     assert summarize_embedding_trace is rag_core.events.summarize_embedding_trace
-
-
-def test_search_trace_summary_payload_round_trip() -> None:
-    assert (
-        SearchStageTraceSummary(stage="retrieve", stage_name="HybridRetrieve").stage
-        == "retrieve"
-    )
-    summary = summarize_search_trace([])
-    assert summary.to_payload()["result_count"] == 0
 
 
 def test_event_types_are_not_root_exports() -> None:
@@ -77,10 +69,8 @@ def test_embedding_trace_summary_payload_round_trip() -> None:
                 model="text-embedding-3-small",
                 text_count=2,
                 role="dense",
-                cache_hits=1,
-                cache_misses=1,
             )
         ]
     )
 
-    assert summary.to_payload()["cache_hits"] == 1
+    assert summary.to_payload()["completed_text_count"] == 2

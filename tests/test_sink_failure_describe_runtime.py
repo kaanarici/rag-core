@@ -32,8 +32,7 @@ from rag_core.events.sinks import (
     describe_event_sink_status,
 )
 from rag_core.events.types import Event, IngestStarted
-from rag_core.runtime.health import readiness_payload
-from rag_core.search.providers.memory_store import InMemoryVectorStore
+from tests.support.local_store import LocalQdrantStore
 
 from tests.support import (
     FakeEmbeddingProvider,
@@ -78,7 +77,7 @@ def test_describe_runtime_includes_event_sink_block_for_noop() -> None:
         make_test_config(embedding_dimensions=4),
         embedding_provider=FakeEmbeddingProvider(),
         sparse_embedder=FakeSparseEmbedder(),
-        vector_store=InMemoryVectorStore(),
+        vector_store=LocalQdrantStore(),
     )
     try:
         payload = core.describe_runtime()
@@ -96,7 +95,7 @@ def test_describe_runtime_event_sink_reports_buffer_kind() -> None:
         make_test_config(embedding_dimensions=4),
         embedding_provider=FakeEmbeddingProvider(),
         sparse_embedder=FakeSparseEmbedder(),
-        vector_store=InMemoryVectorStore(),
+        vector_store=LocalQdrantStore(),
         event_sink=buffer,
     )
     try:
@@ -123,7 +122,7 @@ def test_describe_runtime_event_sink_reports_multi_sink_failures() -> None:
         make_test_config(embedding_dimensions=4),
         embedding_provider=FakeEmbeddingProvider(),
         sparse_embedder=FakeSparseEmbedder(),
-        vector_store=InMemoryVectorStore(),
+        vector_store=LocalQdrantStore(),
         event_sink=multi,
     )
     try:
@@ -133,7 +132,7 @@ def test_describe_runtime_event_sink_reports_multi_sink_failures() -> None:
                 file_bytes=b"hello world",
                 filename="a.txt",
                 mime_type="text/plain",
-                namespace="ns",
+                tenant_id="ns",
                 collection="corp",
                 document_id="doc-1",
             )
@@ -155,7 +154,7 @@ def test_describe_event_sink_status_method_on_core() -> None:
         make_test_config(embedding_dimensions=4),
         embedding_provider=FakeEmbeddingProvider(),
         sparse_embedder=FakeSparseEmbedder(),
-        vector_store=InMemoryVectorStore(),
+        vector_store=LocalQdrantStore(),
         event_sink=buffer,
     )
     try:
@@ -167,42 +166,10 @@ def test_describe_event_sink_status_method_on_core() -> None:
         asyncio.run(core.close())
 
 
-def test_readiness_payload_surfaces_sink_status_without_flipping_ready() -> None:
-    status_clean = {"kind": BUFFER_EVENT_SINK_PROVIDER, "failure_count": 0}
-    payload = readiness_payload(
-        ready=True,
-        checks={"core": {"status": "ok"}},
-        event_sink_status=status_clean,
-    )
-
-    assert payload["ready"] is True
-    assert payload["event_sink"] == status_clean
-    assert "degraded" not in payload
 
 
-def test_readiness_payload_marks_degraded_when_sink_has_failures() -> None:
-    status_degraded = {"kind": MULTI_EVENT_SINK_PROVIDER, "failure_count": 3}
-    payload = readiness_payload(
-        ready=True,
-        checks={"core": {"status": "ok"}},
-        event_sink_status=status_degraded,
-    )
-
-    # Sink failures are observable, not blocking: ``ready`` stays True but
-    # the top-level ``degraded`` flag and the ``event_sink.failure_count``
-    # give the operator a clear signal.
-    assert payload["ready"] is True
-    assert payload["degraded"] is True
-    assert payload["event_sink"] == status_degraded
 
 
-def test_readiness_payload_back_compat_without_sink_status() -> None:
-    """Callers that don't pass ``event_sink_status`` still get the legacy shape."""
-    payload = readiness_payload(ready=True, checks={"core": {"status": "ok"}})
-
-    assert payload["ready"] is True
-    assert "event_sink" not in payload
-    assert "degraded" not in payload
 
 
 def test_noop_sink_provider_name_round_trips() -> None:

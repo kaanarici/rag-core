@@ -25,15 +25,15 @@ def test_payload_to_result_ignores_malformed_optional_ints_without_leaking_value
         point_id="point-1",
         payload=_base_payload(
             chunk_index=f"idx-{SECRET}",
-            chunk_word_count=False,
-            chunk_token_estimate="not-a-number\nTraceback (most recent call last):",
+            start_char=False,
+            end_char="not-a-number\nTraceback (most recent call last):",
         ),
         score=0.5,
     )
 
     assert result.chunk_index is None
-    assert result.chunk_word_count is None
-    assert result.chunk_token_estimate is None
+    assert result.start_char is None
+    assert result.end_char is None
 
 
 @pytest.mark.parametrize(
@@ -69,7 +69,7 @@ def test_payload_to_result_preserves_valid_finite_score() -> None:
 
 def test_build_stored_payload_ignores_non_string_filter_metadata_keys() -> None:
     payload = build_stored_payload(
-        namespace="acme",
+        tenant_id="acme",
         collection="help",
         document_id="doc-1",
         document_key="doc.md",
@@ -80,11 +80,8 @@ def test_build_stored_payload_ignores_non_string_filter_metadata_keys() -> None:
         source_type="file",
         document_path=None,
         chunk_index=0,
-        chunk_text="hello",
-        chunk_token_count=1,
         payload_text="hello",
         content_type=ContentType.DOCUMENT,
-        embedding_model="text-embedding-3-small",
         chunker_strategy="markdown",
         title=None,
         filter_metadata={cast(Any, 1): "bad-key", "category": "guide"},
@@ -96,7 +93,7 @@ def test_build_stored_payload_ignores_non_string_filter_metadata_keys() -> None:
 
 def test_build_stored_payload_preserves_filterable_geo_points() -> None:
     payload = build_stored_payload(
-        namespace="acme",
+        tenant_id="acme",
         collection="help",
         document_id="doc-1",
         document_key="doc.md",
@@ -107,11 +104,8 @@ def test_build_stored_payload_preserves_filterable_geo_points() -> None:
         source_type="file",
         document_path=None,
         chunk_index=0,
-        chunk_text="hello",
-        chunk_token_count=1,
         payload_text="hello",
         content_type=ContentType.DOCUMENT,
-        embedding_model="text-embedding-3-small",
         chunker_strategy="markdown",
         title=None,
         filter_metadata={
@@ -162,7 +156,7 @@ def test_payload_to_result_rejects_malformed_required_string_fields(
 
 def test_build_stored_payload_round_trips_chunk_char_offsets_to_result() -> None:
     payload = build_stored_payload(
-        namespace="acme",
+        tenant_id="acme",
         collection="help",
         document_id="doc-1",
         document_key="doc.md",
@@ -173,13 +167,10 @@ def test_build_stored_payload_round_trips_chunk_char_offsets_to_result() -> None
         source_type="file",
         document_path=None,
         chunk_index=0,
-        chunk_text="hello world",
-        chunk_token_count=2,
         chunk_start_char=42,
         chunk_end_char=53,
         payload_text="hello world",
         content_type=ContentType.DOCUMENT,
-        embedding_model="text-embedding-3-small",
         chunker_strategy="markdown",
         title=None,
     )
@@ -198,7 +189,7 @@ def test_build_stored_payload_round_trips_chunk_char_offsets_to_result() -> None
 
 def test_build_stored_payload_propagates_section_info_span_when_chunk_span_absent() -> None:
     payload = build_stored_payload(
-        namespace="acme",
+        tenant_id="acme",
         collection="help",
         document_id="doc-1",
         document_key="doc.md",
@@ -209,11 +200,8 @@ def test_build_stored_payload_propagates_section_info_span_when_chunk_span_absen
         source_type="file",
         document_path=None,
         chunk_index=0,
-        chunk_text="row block",
-        chunk_token_count=2,
         payload_text="row block",
         content_type=ContentType.DOCUMENT,
-        embedding_model="text-embedding-3-small",
         chunker_strategy="prechunked",
         title=None,
         section_info={"start_char": 7, "end_char": 16, "sheet_name": "Signals"},

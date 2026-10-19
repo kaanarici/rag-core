@@ -5,7 +5,8 @@ Extracts text from slide shapes, tables, and speaker notes.
 
 from __future__ import annotations
 
-import asyncio
+from rag_core._async import run_sync
+
 import io
 import logging
 from dataclasses import dataclass
@@ -13,7 +14,7 @@ from typing import Any, Dict, List
 
 from .base import (
     ConversionResult,
-    HybridConverter,
+    OfficeConverter,
     render_markdown_table,
     score_text_quality,
 )
@@ -52,6 +53,9 @@ def _is_generic_figure_description(value: str) -> bool:
 def _extract_shape_text(shape: Any) -> List[str]:
     """Extract text lines from a PPTX shape (text frames and tables)."""
     lines: List[str] = []
+
+    for child in getattr(shape, "shapes", ()):
+        lines.extend(_extract_shape_text(child))
 
     if shape.has_text_frame:
         for paragraph in shape.text_frame.paragraphs:
@@ -223,20 +227,11 @@ def _rectangle_gap_squared(
     return horizontal * horizontal + vertical * vertical
 
 
-class PptxConverter(HybridConverter):
+class PptxConverter(OfficeConverter):
     """Converts PPTX files to markdown with slide structure and speaker notes."""
 
     format_name = PPTX_CONVERTER_KEY
 
-    async def convert(
-        self,
-        file_bytes: bytes,
-        filename: str,
-        mime_type: str,
-    ) -> ConversionResult:
-        return await self._convert_office(
-            file_bytes, filename, mime_type, parse_label="PPTX"
-        )
 
     async def _try_extract(
         self,
@@ -337,13 +332,24 @@ class PptxConverter(HybridConverter):
                 text_anchors=slide_text_anchors,
                 figure_geometries=figure_geometries,
             )
-            quality = score_text_quality(content)
+            quality = score_text_quality(text_content)
+
+            slide_ranges = []
+            cursor = 0
+            for slide_number, section in enumerate(slide_sections, start=1):
+                slide_ranges.append({
+                    "slide_number": slide_number,
+                    "start_char": cursor,
+                    "end_char": cursor + len(section),
+                })
+                cursor += len(section) + len("\n\n---\n\n")
 
             metadata: Dict[str, Any] = {
                 "parser": "local:python-pptx",
                 "slide_count": len(prs.slides),
                 "needs_ocr": bool(figure_items and not text_content),
                 "text_char_count": len(text_content),
+                "slide_ranges": slide_ranges if content else [],
             }
             if figure_items:
                 metadata["figure_items"] = figure_items
@@ -355,4 +361,4 @@ class PptxConverter(HybridConverter):
                 quality=quality,
             )
 
-        return await asyncio.to_thread(_extract)
+        return await run_sync(_extract)

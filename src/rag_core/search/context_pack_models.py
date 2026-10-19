@@ -245,7 +245,7 @@ class Context:
 
     def as_text(self) -> str:
         """Return app-facing text with stable source ids for traces and UI/debug views."""
-        return render_context_snippets(self.snippets, max_chars=self.max_chars)
+        return render_context_snippets(self.snippets)
 
     def as_prompt_text(
         self,
@@ -253,16 +253,13 @@ class Context:
         context_order: ContextOrder = CONTEXT_ORDER_RANK,
     ) -> str:
         """Return prompt-safe text with rank-local citation ids for model input."""
-        rendered = "\n\n".join(
+        return "\n\n".join(
             snippet.as_prompt_text()
             for snippet in _prompt_snippets_for_order(
                 self.snippets,
                 context_order=context_order,
             )
         )
-        if self.max_chars is not None:
-            return rendered[: self.max_chars]
-        return rendered
 
     def to_payload(self) -> dict[str, object]:
         """Return the app-facing structured payload with stable source identity."""
@@ -355,13 +352,8 @@ def _prompt_safe_source_title(source: Citation) -> str:
     return source.title or source.source_type or source.result_type or "source"
 
 
-def render_context_snippets(
-    snippets: Iterable[ContextSnippet], *, max_chars: int | None
-) -> str:
-    rendered = "\n\n".join(snippet.as_text() for snippet in snippets)
-    if max_chars is not None:
-        return rendered[:max_chars]
-    return rendered
+def render_context_snippets(snippets: Iterable[ContextSnippet]) -> str:
+    return "\n\n".join(snippet.as_text() for snippet in snippets)
 
 
 def _prompt_snippets_for_order(

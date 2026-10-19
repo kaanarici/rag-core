@@ -1,13 +1,8 @@
-"""The easy path: index a folder, ask for context. No config, no async, no scope.
+"""Persistent folder search with local embeddings and BM25, without API keys.
 
-    from rag_core.easy import index
-    idx = index("./my-docs")
-    print(idx.context("how do invoices get paid?"))
-
-This uses real local semantic embeddings (FastEmbed, no API key) over an
-embedded vector store. For production, async, multi-tenant scope, custom
-providers, or agent tools, use ``RAGCore``. Advanced batching, query plans, and
-context packing remain available through ``Engine``.
+from rag_core.easy import index
+with index("./my-docs") as docs:
+    print(docs.context("how do invoices get paid?"))
 """
 
 from __future__ import annotations
@@ -16,54 +11,54 @@ from pathlib import Path
 
 from rag_core._sync import run_coro_blocking
 from rag_core.core import Engine
-from rag_core.core_models import Config
-from rag_core.scope import normalize_namespace
-from rag_core.search.vector_models import SearchResult
-
-_DEFAULT_COLLECTION = "default"
+from rag_core.ingest.local import LocalIngestResult
+from rag_core.local import DEFAULT_LOCAL_TENANT_ID, local_collection, local_config
+from rag_core.rag import RAGCore, RetrievalResult
+from rag_core.scope import normalize_tenant_id
 
 
 class Index:
-    """A ready-to-query index over a folder. Returned by :func:`index`.
+    """A persistent folder index. Use as a context manager or call close()."""
 
-    Use as a context manager (``with index(...) as idx:``) or call
-    :meth:`close` when done so the embedded store releases its resources.
-    """
-
-    def __init__(self, core: Engine, *, namespace: str, collection: str) -> None:
+    def __init__(
+        self, core: Engine, *, path: Path, tenant_id: str, collection: str
+    ) -> None:
         self._core = core
-        self._namespace = namespace
-        self._collection = collection
+        self._path = path
+        self._rag = RAGCore(core, tenant_id=tenant_id, collection=collection)
 
-    def context(self, question: str, *, limit: int = 5) -> str:
-        """Return prompt-ready context plus citations for ``question``."""
-        pack = run_coro_blocking(
-            self._core.context(
-                query=question,
-                namespace=self._namespace,
-                collection=self._collection,
-                limit=limit,
+    @property
+    def persist_dir(self) -> Path:
+        location = self._core._config.vector_store.qdrant.location
+        assert location is not None
+        return Path(location).parent
+
+    def refresh(self) -> LocalIngestResult:
+        """Pick up edits and remove deleted files; unchanged files are skipped."""
+        return run_coro_blocking(
+            self._core.add(
+                self._path,
+                tenant_id=self._rag.tenant_id,
+                collection=self._rag.collection,
+                prune_missing=self._path.is_dir(),
             )
         )
+
+    def search(self, question: str, *, limit: int = 5) -> RetrievalResult:
+        """Return ranked evidence with source identity and locators."""
+        return run_coro_blocking(self._rag.search(question, limit=limit))
+
+    def context(self, question: str, *, limit: int = 5) -> str:
+        """Return prompt-ready context plus citations."""
+        pack = run_coro_blocking(self._rag.context(question, limit=limit))
         text = pack.as_prompt_text()
         summary = pack.prompt_citation_summary
         return f"{text}\n\nCitations:\n{summary}" if summary else text
 
-    def search(self, question: str, *, limit: int = 5) -> list[SearchResult]:
-        """Return ranked hits for ``question`` (for custom prompt assembly)."""
-        return run_coro_blocking(
-            self._core.search(
-                query=question,
-                namespace=self._namespace,
-                collection=self._collection,
-                limit=limit,
-            )
-        )
-
     def close(self) -> None:
-        run_coro_blocking(self._core.close())
+        run_coro_blocking(self._rag.close())
 
-    def __enter__(self) -> "Index":
+    def __enter__(self) -> Index:
         return self
 
     def __exit__(self, *_exc: object) -> None:
@@ -73,30 +68,42 @@ class Index:
 def index(
     folder: str | Path,
     *,
-    collection: str = _DEFAULT_COLLECTION,
-    namespace: str | None = None,
+    persist_dir: str | Path | None = None,
+    hybrid: bool = True,
+    collection: str | None = None,
+    tenant_id: str | None = None,
 ) -> Index:
-    """Index ``folder`` for retrieval and return a queryable :class:`Index`.
+    """Open and refresh a persistent local index over folder.
 
-    Real local semantic embeddings, no API key, embedded store. ``collection``
-    defaults to a single local scope; pass ``namespace`` only for multi-tenant
-    separation.
+    Uses meaning + keyword search by default; hybrid=False selects dense search.
+    Storage is isolated by source path and search mode under persist_dir,
+    RAG_CORE_INDEX_DIR, or ~/.cache/rag-core (respecting XDG_CACHE_HOME).
+    The storage root must be outside the folder being indexed.
     """
-    resolved_namespace = normalize_namespace(namespace)
-    core = Engine(Config.local())
+    config = local_config(folder, persist_dir=persist_dir, hybrid=hybrid)
+    path = Path(folder).expanduser().resolve(strict=True)
+    core = Engine(config)
     try:
-        result = run_coro_blocking(
-            core.add(folder, collection=collection, namespace=resolved_namespace)
+        idx = Index(
+            core,
+            path=path,
+            tenant_id=normalize_tenant_id(
+                DEFAULT_LOCAL_TENANT_ID if tenant_id is None else tenant_id
+            ),
+            collection=collection or local_collection(path),
         )
-    except ValueError as exc:
-        # An empty folder / no-match raises a glob-hint ValueError one layer down;
-        # the day-one facade reports the plain outcome instead of leaking it.
+        result = idx.refresh()
+        if result.failed:
+            raise RuntimeError(
+                f"could not index {result.failed_count} files from {folder}: "
+                f"{result.failed[0].error}"
+            )
+        if result.succeeded_count == 0:
+            raise RuntimeError(f"indexed no files from {folder}")
+        return idx
+    except BaseException:
         run_coro_blocking(core.close())
-        raise RuntimeError(f"indexed no files from {folder}") from exc
-    if result.succeeded_count == 0:
-        run_coro_blocking(core.close())
-        raise RuntimeError(f"indexed no files from {folder}")
-    return Index(core, namespace=resolved_namespace, collection=collection)
+        raise
 
 
 __all__ = ["Index", "index"]

@@ -9,7 +9,6 @@ import pytest
 
 from rag_core.cli.commands.mcp import run_mcp_command
 from rag_core.cli.parser import _build_parser
-from rag_core.config import DEFAULT_VECTOR_STORE_PROVIDER
 from rag_core.core_models import Config
 
 
@@ -19,7 +18,7 @@ def test_mcp_command_parser_reuses_config_and_scope_flags() -> None:
     args = parser.parse_args(
         [
             "mcp",
-            "--namespace",
+            "--tenant-id",
             "acme",
             "--collection",
             "help",
@@ -31,19 +30,16 @@ def test_mcp_command_parser_reuses_config_and_scope_flags() -> None:
             "64",
             "--limit-cap",
             "7",
-            "--rerank",
         ]
     )
 
     assert args.command == "mcp"
-    assert args.namespace == "acme"
+    assert args.tenant_id == "acme"
     assert args.collection == ["help"]
     assert args.qdrant_location == ":memory:"
-    assert args.vector_store == DEFAULT_VECTOR_STORE_PROVIDER
     assert args.embedding_provider == "demo"
     assert args.embedding_dimensions == 64
     assert args.limit_cap == 7
-    assert args.rerank is True
 
 
 def test_mcp_command_reports_missing_extra_before_runtime_setup(
@@ -65,7 +61,7 @@ def test_mcp_command_reports_missing_extra_before_runtime_setup(
     monkeypatch.setattr(builtins, "__import__", patched_import)
     args = argparse.Namespace(
         collection=["help"],
-        namespace="acme",
+        tenant_id="acme",
         limit_cap=5,
         rerank=False,
     )

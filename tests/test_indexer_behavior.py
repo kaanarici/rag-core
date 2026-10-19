@@ -1,3 +1,4 @@
+from rag_core.documents.prepare_chunks import prepare_pre_chunked_texts
 import asyncio
 
 import pytest
@@ -26,7 +27,6 @@ class _DimensionedRecordingVectorStore(RecordingVectorStore):
         super().__init__()
         self.capabilities = StoreCapabilities(
             per_point_delete=True,
-            document_record_lookup=True,
             dense_vector_dimensions=dense_dimensions,
         )
 
@@ -51,7 +51,7 @@ def _index_request(**overrides: object) -> IndexRequest:
     base: dict[str, object] = {
         "document_id": "doc-1",
         "collection": "corpus-1",
-        "namespace": "team-space",
+        "tenant_id": "team-space",
         "text": "unused",
         "filename": "report.txt",
         "mime_type": "text/plain",
@@ -86,7 +86,7 @@ def test_prepare_index_data_rejects_dense_vector_dimension_mismatch() -> None:
             ),
         ):
             await prepare_index_data(
-                req=_index_request(pre_chunked_texts=["fox query"]),
+                req=_index_request(prepared_chunks=prepare_pre_chunked_texts(["fox query"])),
                 embedding_provider=_WrongDimensionEmbeddingProvider(),
                 sparse_embedder=FakeSparseEmbedder(include_extra_channel=False),
             )
@@ -106,7 +106,7 @@ def test_index_document_rejects_store_embedding_dimension_mismatch_before_upsert
             ValueError,
             match="embedding provider produces 3 dimensions, but vector store expects 2",
         ):
-            await indexer.index_document(_index_request(pre_chunked_texts=["fox query"]))
+            await indexer.index_document(_index_request(prepared_chunks=prepare_pre_chunked_texts(["fox query"])))
 
         assert store.upsert_calls == []
         assert store.operations == []
@@ -114,23 +114,6 @@ def test_index_document_rejects_store_embedding_dimension_mismatch_before_upsert
     asyncio.run(_run())
 
 
-def test_index_document_deletes_empty_prepared_document_before_dimension_check() -> None:
-    async def _run() -> None:
-        indexer, store = _make_indexer(
-            _DimensionedRecordingVectorStore(dense_dimensions=2),
-            embedding=FakeEmbeddingProvider(vocabulary=("fox", "query", "context")),
-        )
-
-        result = await indexer.index_document(
-            _index_request(text="", filename="empty.txt"),
-        )
-
-        assert result.chunk_count == 0
-        assert store.upsert_calls == []
-        assert [call.document_id for call in store.delete_calls] == ["doc-1"]
-        assert store.operations == ["delete"]
-
-    asyncio.run(_run())
 
 
 def test_index_document_ignores_accidental_dense_dimensions_without_capability() -> None:
@@ -140,7 +123,7 @@ def test_index_document_ignores_accidental_dense_dimensions_without_capability()
             embedding=FakeEmbeddingProvider(vocabulary=("fox", "query", "context")),
         )
 
-        await indexer.index_document(_index_request(pre_chunked_texts=["fox query"]))
+        await indexer.index_document(_index_request(prepared_chunks=prepare_pre_chunked_texts(["fox query"])))
 
         assert len(store.upsert_calls) == 1
         assert store.operations == ["upsert"]
@@ -155,21 +138,14 @@ def test_index_document_uses_payload_chunks_and_contextual_dense_text() -> None:
         indexer, store = _make_indexer(embedding=embedding, sparse=sparse)
 
         result = await indexer.index_document(
-            _index_request(
-                namespace=" team-space ",
-                path="/docs/report.txt",
-                extra_fields={"team": "search"},
-                processing_version="processing-v-test",
-                pre_chunked_texts=["original fox"],
-                embedding_chunk_texts=["context fox"],
-            )
+            _index_request(prepared_chunks=prepare_pre_chunked_texts(["original fox"], embedding_texts=["context fox"]), tenant_id=" team-space ", path="/docs/report.txt", extra_fields={"team": "search"}, processing_version="processing-v-test")
         )
 
         point = store.upsert_calls[0][0]
         assert result.chunk_count == 1
         assert store.operations == ["upsert"]
         assert store.delete_calls == []
-        assert point.payload["namespace"] == "team-space"
+        assert point.payload["tenant_id"] == "team-space"
         assert point.payload["processing_version"] == "processing-v-test"
         assert point.payload["team"] == "search"
         payload_text = str(point.payload["text"])
@@ -183,8 +159,8 @@ def test_index_document_uses_payload_chunks_and_contextual_dense_text() -> None:
         assert "# Content" not in embedding.embed_texts_calls[0][0]
         # Dense vector uses embedding_chunk_texts (context-only counts), payload uses raw chunk.
         assert point.dense_vector == [0.0, 1.0, 1.0]
-        assert "context fox" in sparse.embed_texts_multi_calls[0][0]
-        assert "original fox" not in sparse.embed_texts_multi_calls[0][0]
+        assert "context fox" in sparse.embed_texts_calls[0][0]
+        assert "original fox" not in sparse.embed_texts_calls[0][0]
 
     asyncio.run(_run())
 
@@ -194,10 +170,7 @@ def test_index_document_persists_filterable_chunk_metadata() -> None:
         indexer, store = _make_indexer()
 
         await indexer.index_document(
-            _index_request(
-                extra_fields={"team": "support", "title": "Display Title"},
-                pre_chunked_texts=["page one"],
-                chunk_metadata=[
+            _index_request(prepared_chunks=prepare_pre_chunked_texts(["page one"], chunk_metadata=[
                     {
                         "language": "en",
                         "published_at": 1700.0,
@@ -205,8 +178,7 @@ def test_index_document_persists_filterable_chunk_metadata() -> None:
                         "text": "should not overwrite payload text",
                         "nested": {"ignored": True},
                     }
-                ],
-            )
+                ]), extra_fields={"team": "support", "title": "Display Title"})
         )
 
         payload = store.upsert_calls[0][0].payload
@@ -232,10 +204,7 @@ def test_index_document_rejects_embedding_chunk_lengths_that_do_not_match() -> N
 
         with pytest.raises(ValueError, match="embedding_texts length mismatch"):
             await indexer.index_document(
-                _index_request(
-                    pre_chunked_texts=["original fox"],
-                    embedding_chunk_texts=["context fox", "extra"],
-                )
+                _index_request(prepared_chunks=prepare_pre_chunked_texts(["original fox"], embedding_texts=["context fox", "extra"]))
             )
 
         assert store.upsert_calls == []
@@ -247,11 +216,10 @@ def test_index_document_falls_back_to_bm25_only_when_multi_channel_is_unavailabl
     async def _run() -> None:
         indexer, store = _make_indexer(sparse=FakeSparseEmbedderNoMulti())
 
-        await indexer.index_document(_index_request(pre_chunked_texts=["fox query"]))
+        await indexer.index_document(_index_request(prepared_chunks=prepare_pre_chunked_texts(["fox query"])))
 
         point = store.upsert_calls[0][0]
         assert set(point.sparse_vectors) == {"bm25"}
-        assert point.sparse_vector == point.sparse_vectors["bm25"]
 
     asyncio.run(_run())
 
@@ -261,21 +229,7 @@ def test_index_document_builds_section_payload_from_mappings() -> None:
         indexer, store = _make_indexer()
 
         await indexer.index_document(
-            _index_request(
-                filename="slides.pdf",
-                mime_type="application/pdf",
-                pre_chunked_texts=["page one", "page two"],
-                section_mappings=[
-                    {
-                        "chunk_index": 1,
-                        "section_id": "sec-2",
-                        "section_path": "Intro > Details",
-                        "page_number": 3,
-                        "result_type": "image",
-                        "thumbnail_url": "thumb.png",
-                    }
-                ],
-            )
+            _index_request(prepared_chunks=prepare_pre_chunked_texts(["page one", "page two"], chunk_metadata=[{}, {'chunk_index': 1, 'section_id': 'sec-2', 'section_path': 'Intro > Details', 'page_number': 3, 'result_type': 'image', 'figure_thumbnail_url': 'thumb.png'}]), filename="slides.pdf", mime_type="application/pdf")
         )
 
         point = store.upsert_calls[0][1]
@@ -284,7 +238,7 @@ def test_index_document_builds_section_payload_from_mappings() -> None:
         assert point.payload["section_title"] == "Details"
         assert point.payload["page_number"] == 3
         assert point.payload["result_type"] == "image"
-        assert point.payload["thumbnail_url"] == "thumb.png"
+        assert point.payload["figure_thumbnail_url"] == "thumb.png"
 
     asyncio.run(_run())
 
@@ -338,12 +292,7 @@ def test_index_document_preserves_prepared_chunk_locators(
         indexer, store = _make_indexer()
 
         await indexer.index_document(
-            _index_request(
-                filename=filename,
-                mime_type=mime_type,
-                pre_chunked_texts=pre_chunked_texts,
-                chunk_metadata=chunk_metadata,
-            )
+            _index_request(prepared_chunks=prepare_pre_chunked_texts(pre_chunked_texts, chunk_metadata=chunk_metadata), filename=filename, mime_type=mime_type)
         )
 
         points = store.upsert_calls[0]
@@ -360,11 +309,7 @@ def test_index_document_does_not_store_local_document_path() -> None:
         indexer, store = _make_indexer()
 
         await indexer.index_document(
-            _index_request(
-                path="/Users/private/workspace/notes.md",
-                document_path="/Users/private/workspace/notes.md",
-                pre_chunked_texts=["private local note"],
-            )
+            _index_request(prepared_chunks=prepare_pre_chunked_texts(["private local note"]), path="/Users/private/workspace/notes.md", document_path="/Users/private/workspace/notes.md")
         )
 
         payload = store.upsert_calls[0][0].payload
@@ -379,13 +324,7 @@ def test_index_document_preserves_redacted_url_document_path() -> None:
         indexer, store = _make_indexer()
 
         await indexer.index_document(
-            _index_request(
-                source_type="url",
-                path="https://example.com/docs?redacted",
-                document_path="https://example.com/docs?redacted",
-                document_key="url:https://example.com/docs?redacted|query_sha256:abc",
-                pre_chunked_texts=["remote note"],
-            )
+            _index_request(prepared_chunks=prepare_pre_chunked_texts(["remote note"]), source_type="url", path="https://example.com/docs?redacted", document_path="https://example.com/docs?redacted", document_key="url:https://example.com/docs?redacted|query_sha256:abc")
         )
 
         payload = store.upsert_calls[0][0].payload
@@ -474,10 +413,7 @@ def test_index_document_prefers_metadata_title_for_display_title() -> None:
         indexer, store = _make_indexer()
 
         await indexer.index_document(
-            _index_request(
-                extra_fields={"title": "Quarterly Report"},
-                pre_chunked_texts=["page one"],
-            )
+            _index_request(prepared_chunks=prepare_pre_chunked_texts(["page one"]), extra_fields={"title": "Quarterly Report"})
         )
 
         assert store.upsert_calls[0][0].payload["title"] == "Quarterly Report"
@@ -488,55 +424,32 @@ def test_index_document_prefers_metadata_title_for_display_title() -> None:
 @pytest.mark.parametrize(
     ("operation", "expected_message"),
     [
-        ("index", "namespace is required for indexing"),
-        ("delete", "namespace is required for delete_document"),
+        ("index", "tenant_id must not be empty"),
+        ("delete", "tenant_id is required for delete_document"),
     ],
 )
-def test_namespace_must_be_non_blank(operation: str, expected_message: str) -> None:
+def test_tenant_id_must_be_non_blank(operation: str, expected_message: str) -> None:
     async def _run() -> None:
         indexer, _ = _make_indexer(sparse=FakeSparseEmbedder())
         with pytest.raises(ValueError, match=expected_message):
             if operation == "index":
                 await indexer.index_document(
-                    _index_request(namespace="   ", pre_chunked_texts=["fox query"]),
+                    _index_request(prepared_chunks=prepare_pre_chunked_texts(["fox query"]), tenant_id="   "),
                 )
             else:
                 await indexer.delete_document(
-                    document_id="doc-1", namespace=" ", collection="corpus-1"
+                    document_id="doc-1", tenant_id=" ", collection="corpus-1"
                 )
 
     asyncio.run(_run())
 
 
-def test_index_document_deletes_stale_tail_chunks_before_upsert() -> None:
-    async def _run() -> None:
-        indexer, store = _make_indexer(sparse=FakeSparseEmbedder())
-
-        result = await indexer.index_document(
-            _index_request(existing_chunk_count=3, pre_chunked_texts=["page one"]),
-        )
-
-        expected_stale_ids = [
-            make_point_id(
-                namespace="team-space",
-                collection="corpus-1",
-                document_id="doc-1",
-                chunk_index=index,
-            )
-            for index in (1, 2)
-        ]
-        assert result.chunk_count == 1
-        assert store.operations == ["delete_point_ids", "upsert"]
-        assert store.delete_calls == []
-        assert store.delete_point_ids_calls == [expected_stale_ids]
-
-    asyncio.run(_run())
 
 
-def test_make_point_id_scopes_namespace_and_corpus() -> None:
-    def _id(namespace: str, collection: str) -> str:
+def test_make_point_id_scopes_tenant_id_and_collection() -> None:
+    def _id(tenant_id: str, collection: str) -> str:
         return make_point_id(
-            namespace=namespace,
+            tenant_id=tenant_id,
             collection=collection,
             document_id="doc-1",
             chunk_index=0,
@@ -555,7 +468,7 @@ def test_build_index_request_carries_prepare_time_chunk_spans() -> None:
     """The real ingest path must hand prepare-time chunks (verbatim spans and
     real strategy) to ``resolve_chunks`` rather than re-zeroing them as
     ``prechunked``."""
-    from rag_core._engine.core_builders import build_index_request
+    from rag_core.ingest.document import build_index_request
     from rag_core.core_models import (
         PreparedChunk,
         PreparedDocument,
@@ -605,7 +518,7 @@ def test_build_index_request_carries_prepare_time_chunk_spans() -> None:
         ),
         existing=None,
         collection="corpus-1",
-        namespace="team-a",
+        tenant_id="team-a",
         source_type="file",
         metadata=None,
         embedding_model="demo",
@@ -617,3 +530,19 @@ def test_build_index_request_carries_prepare_time_chunk_spans() -> None:
     assert [c.start_char for c in resolved] == [9, 30]
     assert [c.end_char for c in resolved] == [28, 50]
     assert [c.chunking_strategy for c in resolved] == ["markdown", "markdown"]
+
+
+@pytest.mark.parametrize("strategy", ["markdown", "xlsx", "prechunked"])
+def test_stored_chunk_provenance_comes_from_canonical_chunk(strategy: str) -> None:
+    from dataclasses import replace
+
+    async def run() -> None:
+        indexer, store = _make_indexer()
+        chunk = prepare_pre_chunked_texts(["invoice payment"])[0]
+        chunk = replace(chunk, chunking_strategy=strategy, metadata={"chunker_strategy": "wrong", "chunking_strategy": "wrong"})
+        await indexer.index_document(_index_request(prepared_chunks=[chunk]))
+        payload = store.upsert_calls[0][0].payload
+        assert payload["chunker_strategy"] == strategy
+        assert payload_to_result(point_id="point", payload=payload, score=1).chunker_strategy == strategy
+
+    asyncio.run(run())

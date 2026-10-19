@@ -10,7 +10,7 @@ from rag_core.events.export import (
     RETRIEVAL_HIT_DOCUMENT_KEY_FIELD,
     RETRIEVAL_HIT_ID_FIELD,
     RETRIEVAL_HIT_METADATA_FIELD,
-    RETRIEVAL_HIT_NAMESPACE_FIELD,
+    RETRIEVAL_HIT_TENANT_ID_FIELD,
     RETRIEVAL_HIT_SCORE_FIELD,
     RETRIEVAL_HIT_SECTION_PATH_FIELD,
     RETRIEVAL_HIT_CHUNK_INDEX_FIELD,
@@ -25,7 +25,7 @@ def test_to_retrieval_hits_maps_search_result_fields() -> None:
         document_id="doc-1",
         document_key="docs/guide.md",
         score=0.91,
-        namespace="acme",
+        tenant_id="acme",
         collection="help",
         title="Guide",
         chunk_index=2,
@@ -43,7 +43,7 @@ def test_to_retrieval_hits_maps_search_result_fields() -> None:
             RETRIEVAL_HIT_DOCUMENT_ID_FIELD: "doc-1",
             RETRIEVAL_HIT_DOCUMENT_KEY_FIELD: "docs/guide.md",
             RETRIEVAL_HIT_COLLECTION_FIELD: "help",
-            RETRIEVAL_HIT_NAMESPACE_FIELD: "acme",
+            RETRIEVAL_HIT_TENANT_ID_FIELD: "acme",
             RETRIEVAL_HIT_TITLE_FIELD: "Guide",
             RETRIEVAL_HIT_CHUNK_INDEX_FIELD: 2,
             RETRIEVAL_HIT_SECTION_PATH_FIELD: "Guide > Billing",
@@ -67,7 +67,7 @@ def test_to_retrieval_hits_omits_empty_optional_fields() -> None:
     assert exported[0][RETRIEVAL_HIT_ID_FIELD] == hit.id
     assert exported[0][RETRIEVAL_HIT_CONTENT_FIELD] == hit.text
     assert RETRIEVAL_HIT_METADATA_FIELD not in exported[0]
-    assert RETRIEVAL_HIT_NAMESPACE_FIELD not in exported[0]
+    assert RETRIEVAL_HIT_TENANT_ID_FIELD not in exported[0]
     assert RETRIEVAL_HIT_COLLECTION_FIELD not in exported[0]
     assert RETRIEVAL_HIT_TITLE_FIELD not in exported[0]
 

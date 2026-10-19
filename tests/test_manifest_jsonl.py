@@ -22,7 +22,7 @@ from rag_core.manifest.jsonl import (
 def _entry(document_id: str) -> CollectionManifestEntry:
     return CollectionManifestEntry(
         document_id=document_id,
-        namespace="acme",
+        tenant_id="acme",
         collection="help",
         document_key=f"{document_id}.md",
         content_sha256=f"sha-{document_id}",

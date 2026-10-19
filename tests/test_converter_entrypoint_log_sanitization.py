@@ -63,8 +63,7 @@ def test_convert_file_quality_summary_log_is_sanitized(
 
     assert converted is result
     assert "stub" in caplog.text
-    assert "good" in caplog.text
-    assert "48" in caplog.text
+    assert "chars=50" in caplog.text
     assert_caplog_omits_private(
         caplog,
         "private-roadmap.md",

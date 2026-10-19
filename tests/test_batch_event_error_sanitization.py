@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import NoReturn
 
 import asyncio
 from pathlib import Path
@@ -9,8 +10,7 @@ import pytest
 from rag_core.core_models import IngestedDocument
 from rag_core.events.sinks import EventBuffer
 from rag_core.events.types import IngestBatchFailed, IngestBatchProgress
-from rag_core.ingest.local import LocalIngestRequest, run_local_ingest
-from rag_core.ingest.urls import RemoteUrlIngestRequest, run_remote_url_ingest
+from rag_core.ingest.local import LocalIngestRequest, run_local_ingest_with_core
 
 
 class FailingLocalIngestCore:
@@ -21,7 +21,7 @@ class FailingLocalIngestCore:
         self,
         file_path: Path,
         *,
-        namespace: str,
+        tenant_id: str,
         collection: str,
         document_key: str,
         metadata: dict[str, str] | None = None,
@@ -32,6 +32,9 @@ class FailingLocalIngestCore:
 
     async def close(self) -> None:
         return None
+
+    async def delete_document(self, *, document_id: str, tenant_id: str, collection: str) -> NoReturn:
+        raise AssertionError("prune_missing is disabled in this test")
 
 
 class UnreadyLocalIngestCore(FailingLocalIngestCore):
@@ -62,9 +65,9 @@ def test_local_ingest_progress_event_uses_error_type_not_exception_text(
         path = tmp_path / "doc.md"
         path.write_text("hello", encoding="utf-8")
         events = EventBuffer()
-        result = await run_local_ingest(
-            LocalIngestRequest(path=path, namespace="acme", collection="help"),
-            core_factory=FailingLocalIngestCore,
+        result = await run_local_ingest_with_core(
+            LocalIngestRequest(path=path, tenant_id="acme", collection="help"),
+            core=FailingLocalIngestCore(),
             event_sink=events,
         )
         [progress] = [
@@ -90,9 +93,9 @@ def test_local_ingest_failed_event_uses_error_type_not_exception_text(
         path.write_text("hello", encoding="utf-8")
         events = EventBuffer()
         with pytest.raises(RuntimeError):
-            await run_local_ingest(
-                LocalIngestRequest(path=path, namespace="acme", collection="help"),
-                core_factory=UnreadyLocalIngestCore,
+            await run_local_ingest_with_core(
+                LocalIngestRequest(path=path, tenant_id="acme", collection="help"),
+                core=UnreadyLocalIngestCore(),
                 event_sink=events,
             )
         [failed] = [
@@ -104,61 +107,3 @@ def test_local_ingest_failed_event_uses_error_type_not_exception_text(
 
     assert failed.error == "RuntimeError"
     assert "secret vector store" not in str(failed)
-
-
-def test_remote_ingest_failed_event_uses_error_type_not_exception_text(
-    tmp_path: Path,
-) -> None:
-    async def run() -> IngestBatchFailed:
-        url_file = tmp_path / "urls.txt"
-        url_file.write_text("https://example.com/docs\n", encoding="utf-8")
-        events = EventBuffer()
-        with pytest.raises(RuntimeError):
-            await run_remote_url_ingest(
-                RemoteUrlIngestRequest(
-                    url_file=url_file,
-                    namespace="acme",
-                    collection="help",
-                ),
-                core_factory=UnreadyRemoteUrlCore,
-                event_sink=events,
-            )
-        [failed] = [
-            event for event in events.events if isinstance(event, IngestBatchFailed)
-        ]
-        return failed
-
-    failed = asyncio.run(run())
-
-    assert failed.error == "RuntimeError"
-    assert "secret remote store" not in str(failed)
-
-
-def test_remote_ingest_progress_event_uses_error_type_not_exception_text(
-    tmp_path: Path,
-) -> None:
-    async def run() -> tuple[object, IngestBatchProgress]:
-        url_file = tmp_path / "urls.txt"
-        url_file.write_text("https://example.com/docs?token=secret\n", encoding="utf-8")
-        events = EventBuffer()
-        result = await run_remote_url_ingest(
-            RemoteUrlIngestRequest(
-                url_file=url_file,
-                namespace="acme",
-                collection="help",
-            ),
-            core_factory=FailingRemoteUrlCore,
-            event_sink=events,
-        )
-        [progress] = [
-            event
-            for event in events.events
-            if isinstance(event, IngestBatchProgress)
-        ]
-        return result.records[0], progress
-
-    record, progress = asyncio.run(run())
-
-    assert "token=secret" not in str(record)
-    assert progress.error == "RuntimeError"
-    assert "token=secret" not in str(progress)

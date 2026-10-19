@@ -5,22 +5,17 @@ import json
 import os
 import traceback
 from pathlib import Path
-from typing import cast
 
 import pytest
 
 from rag_core.core_models import CollectionManifestEntry
-from rag_core._engine.core_ingest_recovery import refreshed_manifest_entry
+from rag_core.ingest.manifest import refreshed_manifest_entry
 from rag_core.manifest.persistence import (
     ManifestCompactionResult,
     ManifestReadError,
-    ManifestSource,
     compact_manifest,
-    manifest_reconciliation_payload,
     manifest_path,
     read_entries,
-    reconcile_entries,
-    summarize_entries,
     write_entry,
     write_entry_if_stale,
 )
@@ -31,7 +26,7 @@ from rag_core.search.request_models import StoredDocumentRecord
 def _entry(
     *,
     document_id: str = "doc-1",
-    namespace: str = "acme",
+    tenant_id: str = "acme",
     collection: str = "help",
     chunk_count: int = 3,
     parser: str | None = "local:converter",
@@ -42,7 +37,7 @@ def _entry(
 ) -> CollectionManifestEntry:
     return CollectionManifestEntry(
         document_id=document_id,
-        namespace=namespace,
+        tenant_id=tenant_id,
         collection=collection,
         document_key=document_key or f"{document_id}.md",
         content_sha256=content_sha256,
@@ -63,7 +58,7 @@ def test_private_file_symlink_guard_allows_macos_system_aliases() -> None:
 def _manifest_payload(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
         "document_id": "doc-1",
-        "namespace": "acme",
+        "tenant_id": "acme",
         "collection": "help",
         "document_key": "doc-1.md",
         "content_sha256": "sha",
@@ -79,19 +74,19 @@ def _manifest_payload(**overrides: object) -> dict[str, object]:
 
 
 def _write_manifest_payload(tmp_path: Path, payload: dict[str, object]) -> Path:
-    path = manifest_path(tmp_path, namespace="acme", collection="help")
+    path = manifest_path(tmp_path, tenant_id="acme", collection="help")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
     return path
 
 
 def test_manifest_path_layout(tmp_path: Path) -> None:
-    path = manifest_path(tmp_path, namespace="acme", collection="help")
+    path = manifest_path(tmp_path, tenant_id="acme", collection="help")
     assert path == tmp_path / "acme" / "help.jsonl"
 
 
 @pytest.mark.parametrize(
-    ("namespace", "collection"),
+    ("tenant_id", "collection"),
     [
         ("../escape", "help"),
         ("acme", "../escape"),
@@ -101,35 +96,54 @@ def test_manifest_path_layout(tmp_path: Path) -> None:
         ("acme", "nested/slash"),
     ],
 )
-def test_manifest_path_rejects_non_segment_scope_values(
-    tmp_path: Path, namespace: str, collection: str
+def test_manifest_path_encodes_scopes_and_rejects_empty_values(
+    tmp_path: Path, tenant_id: str, collection: str
 ) -> None:
-    with pytest.raises(ValueError, match="single non-empty path segment"):
-        manifest_path(tmp_path, namespace=namespace, collection=collection)
+    if not tenant_id.strip() or not collection.strip():
+        with pytest.raises(ValueError, match="non-empty scope identifier"):
+            manifest_path(tmp_path, tenant_id=tenant_id, collection=collection)
+    else:
+        path = manifest_path(tmp_path, tenant_id=tenant_id, collection=collection)
+        assert (
+            path.is_relative_to(tmp_path) and len(path.relative_to(tmp_path).parts) == 2
+        )
+        assert path != tmp_path.parent / "escape.jsonl"
 
 
-@pytest.mark.parametrize(("namespace", "collection"), [("Acme", "help"), ("acme", "Help")])
-def test_manifest_path_rejects_mixed_case_scope_values(
-    tmp_path: Path, namespace: str, collection: str
+@pytest.mark.parametrize(
+    ("tenant_id", "collection"), [("Acme", "help"), ("acme", "Help")]
+)
+def test_manifest_path_preserves_distinct_case_scopes(
+    tmp_path: Path, tenant_id: str, collection: str
 ) -> None:
-    with pytest.raises(ValueError, match="lowercase"):
-        manifest_path(tmp_path, namespace=namespace, collection=collection)
+    path = manifest_path(tmp_path, tenant_id=tenant_id, collection=collection)
+    lower = manifest_path(
+        tmp_path, tenant_id=tenant_id.lower(), collection=collection.lower()
+    )
+    assert path != lower
+    assert str(path).lower() != str(lower).lower()
 
 
-@pytest.mark.parametrize("namespace", ["../escape", "", "acme/slash", " acme"])
-def test_read_entries_rejects_non_segment_namespace(
-    tmp_path: Path, namespace: str
+@pytest.mark.parametrize("tenant_id", ["../escape", "", "acme/slash", " acme"])
+def test_read_entries_encodes_tenant_and_rejects_blank_or_padded_values(
+    tmp_path: Path, tenant_id: str
 ) -> None:
-    with pytest.raises(ValueError, match="single non-empty path segment"):
-        read_entries(tmp_path, namespace=namespace)
+    if not tenant_id.strip() or tenant_id != tenant_id.strip():
+        with pytest.raises(ValueError, match="non-empty scope identifier"):
+            read_entries(tmp_path, tenant_id=tenant_id)
+    else:
+        assert read_entries(tmp_path, tenant_id=tenant_id) == []
 
 
 @pytest.mark.parametrize("collection", ["../escape", "", "nested/slash", "help "])
-def test_read_entries_rejects_non_segment_corpus_even_when_namespace_missing(
+def test_read_entries_encodes_collection_and_rejects_blank_or_padded_values(
     tmp_path: Path, collection: str
 ) -> None:
-    with pytest.raises(ValueError, match="single non-empty path segment"):
-        read_entries(tmp_path, namespace="acme", collection=collection)
+    if not collection.strip() or collection != collection.strip():
+        with pytest.raises(ValueError, match="non-empty scope identifier"):
+            read_entries(tmp_path, tenant_id="acme", collection=collection)
+    else:
+        assert read_entries(tmp_path, tenant_id="acme", collection=collection) == []
 
 
 def test_write_entry_creates_directory_and_file(tmp_path: Path) -> None:
@@ -179,13 +193,13 @@ def test_read_entries_rejects_symlinked_manifest_dir_ancestor(tmp_path: Path) ->
     alias_root.symlink_to(real_root, target_is_directory=True)
 
     with pytest.raises(ValueError, match="path parent must not be a symlink"):
-        read_entries(alias_root, namespace="acme")
+        read_entries(alias_root, tenant_id="acme")
 
 
 def test_write_entry_rejects_entries_that_cannot_be_read_back(tmp_path: Path) -> None:
     invalid = CollectionManifestEntry(
         document_id="doc-1",
-        namespace="acme",
+        tenant_id="acme",
         collection="help",
         document_key="doc-1.md",
         content_sha256="sha",
@@ -197,14 +211,14 @@ def test_write_entry_rejects_entries_that_cannot_be_read_back(tmp_path: Path) ->
     with pytest.raises(ValueError, match="manifest entry"):
         write_entry(tmp_path, invalid)
 
-    assert read_entries(tmp_path, namespace="acme", collection="help") == []
+    assert read_entries(tmp_path, tenant_id="acme", collection="help") == []
 
 
 def test_read_entries_returns_latest_per_document(tmp_path: Path) -> None:
     write_entry(tmp_path, _entry(chunk_count=2))
     write_entry(tmp_path, _entry(chunk_count=5))
 
-    entries = read_entries(tmp_path, namespace="acme", collection="help")
+    entries = read_entries(tmp_path, tenant_id="acme", collection="help")
     assert len(entries) == 1
     assert entries[0].chunk_count == 5
 
@@ -213,34 +227,34 @@ def test_read_entries_per_corpus_isolation(tmp_path: Path) -> None:
     write_entry(tmp_path, _entry(collection="help", document_id="d1"))
     write_entry(tmp_path, _entry(collection="docs", document_id="d2"))
 
-    help_only = read_entries(tmp_path, namespace="acme", collection="help")
+    help_only = read_entries(tmp_path, tenant_id="acme", collection="help")
     assert [e.document_id for e in help_only] == ["d1"]
 
-    docs_only = read_entries(tmp_path, namespace="acme", collection="docs")
+    docs_only = read_entries(tmp_path, tenant_id="acme", collection="docs")
     assert [e.document_id for e in docs_only] == ["d2"]
 
 
-def test_read_entries_namespace_wide_merges_corpora(tmp_path: Path) -> None:
+def test_read_entries_tenant_wide_merges_collections(tmp_path: Path) -> None:
     write_entry(tmp_path, _entry(collection="help", document_id="d1"))
     write_entry(tmp_path, _entry(collection="docs", document_id="d2"))
 
-    merged = read_entries(tmp_path, namespace="acme")
+    merged = read_entries(tmp_path, tenant_id="acme")
     assert sorted(e.document_id for e in merged) == ["d1", "d2"]
 
 
 def test_read_entries_missing_directory_returns_empty(tmp_path: Path) -> None:
-    assert read_entries(tmp_path, namespace="missing") == []
+    assert read_entries(tmp_path, tenant_id="missing") == []
 
 
 def test_read_entries_reports_malformed_json_line_without_payload(
     tmp_path: Path,
 ) -> None:
-    path = manifest_path(tmp_path, namespace="acme", collection="help")
+    path = manifest_path(tmp_path, tenant_id="acme", collection="help")
     path.parent.mkdir(parents=True)
     path.write_text('{"document_id": "private-doc"\n', encoding="utf-8")
 
     with pytest.raises(ManifestReadError) as exc_info:
-        read_entries(tmp_path, namespace="acme", collection="help")
+        read_entries(tmp_path, tenant_id="acme", collection="help")
 
     error = exc_info.value
     assert error.path == path
@@ -254,12 +268,12 @@ def test_read_entries_reports_malformed_json_line_without_payload(
 def test_read_entries_reports_invalid_entry_shape_without_payload(
     tmp_path: Path,
 ) -> None:
-    path = manifest_path(tmp_path, namespace="acme", collection="help")
+    path = manifest_path(tmp_path, tenant_id="acme", collection="help")
     path.parent.mkdir(parents=True)
     path.write_text('{"document_id": "private-doc"}\n', encoding="utf-8")
 
     with pytest.raises(ManifestReadError) as exc_info:
-        read_entries(tmp_path, namespace="acme", collection="help")
+        read_entries(tmp_path, tenant_id="acme", collection="help")
 
     error = exc_info.value
     assert error.path == path
@@ -269,12 +283,12 @@ def test_read_entries_reports_invalid_entry_shape_without_payload(
 
 
 def test_read_entries_reports_non_object_entry(tmp_path: Path) -> None:
-    path = manifest_path(tmp_path, namespace="acme", collection="help")
+    path = manifest_path(tmp_path, tenant_id="acme", collection="help")
     path.parent.mkdir(parents=True)
     path.write_text('"private-doc"\n', encoding="utf-8")
 
     with pytest.raises(ManifestReadError) as exc_info:
-        read_entries(tmp_path, namespace="acme", collection="help")
+        read_entries(tmp_path, tenant_id="acme", collection="help")
 
     error = exc_info.value
     assert error.path == path
@@ -292,7 +306,7 @@ def test_read_entries_suppresses_traceback_payload_for_bad_values(
     )
 
     with pytest.raises(ManifestReadError) as exc_info:
-        read_entries(tmp_path, namespace="acme", collection="help")
+        read_entries(tmp_path, tenant_id="acme", collection="help")
 
     rendered = "".join(
         traceback.format_exception(
@@ -316,7 +330,7 @@ def test_read_entries_rejects_missing_canonical_fields(
     _write_manifest_payload(tmp_path, payload)
 
     with pytest.raises(ManifestReadError) as exc_info:
-        read_entries(tmp_path, namespace="acme", collection="help")
+        read_entries(tmp_path, tenant_id="acme", collection="help")
 
     assert exc_info.value.reason == "invalid_entry"
 
@@ -328,7 +342,7 @@ def test_read_entries_rejects_extra_manifest_fields(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ManifestReadError) as exc_info:
-        read_entries(tmp_path, namespace="acme", collection="help")
+        read_entries(tmp_path, tenant_id="acme", collection="help")
 
     assert exc_info.value.reason == "invalid_entry"
 
@@ -337,7 +351,7 @@ def test_read_entries_rejects_extra_manifest_fields(tmp_path: Path) -> None:
     ("field", "value"),
     [
         ("document_id", []),
-        ("namespace", "nested/slash"),
+        ("tenant_id", "nested/slash"),
         ("collection", " help "),
         ("filename", ""),
         ("mime_type", None),
@@ -352,7 +366,7 @@ def test_read_entries_rejects_malformed_required_string_fields(
     )
 
     with pytest.raises(ManifestReadError) as exc_info:
-        read_entries(tmp_path, namespace="acme", collection="help")
+        read_entries(tmp_path, tenant_id="acme", collection="help")
 
     assert exc_info.value.reason == "invalid_entry"
 
@@ -374,7 +388,7 @@ def test_read_entries_rejects_malformed_optional_string_fields(
     )
 
     with pytest.raises(ManifestReadError) as exc_info:
-        read_entries(tmp_path, namespace="acme", collection="help")
+        read_entries(tmp_path, tenant_id="acme", collection="help")
 
     assert exc_info.value.reason == "invalid_entry"
 
@@ -389,7 +403,7 @@ def test_compact_manifest_sanitizes_bad_rehydrated_identifiers(
     original = path.read_text(encoding="utf-8")
 
     with pytest.raises(ManifestReadError) as exc_info:
-        compact_manifest(tmp_path, namespace="acme", collection="help")
+        compact_manifest(tmp_path, tenant_id="acme", collection="help")
 
     assert exc_info.value.reason == "invalid_entry"
     assert path.read_text(encoding="utf-8") == original
@@ -405,7 +419,7 @@ def test_read_entries_rejects_non_canonical_chunk_count(
     )
 
     with pytest.raises(ManifestReadError) as exc_info:
-        read_entries(tmp_path, namespace="acme", collection="help")
+        read_entries(tmp_path, tenant_id="acme", collection="help")
 
     assert exc_info.value.reason == "invalid_entry"
 
@@ -416,7 +430,7 @@ def test_read_entries_rejects_missing_chunk_count(tmp_path: Path) -> None:
     _write_manifest_payload(tmp_path, payload)
 
     with pytest.raises(ManifestReadError) as exc_info:
-        read_entries(tmp_path, namespace="acme", collection="help")
+        read_entries(tmp_path, tenant_id="acme", collection="help")
 
     assert exc_info.value.reason == "invalid_entry"
 
@@ -431,7 +445,7 @@ def test_read_entries_rejects_non_boolean_needs_ocr(
     )
 
     with pytest.raises(ManifestReadError) as exc_info:
-        read_entries(tmp_path, namespace="acme", collection="help")
+        read_entries(tmp_path, tenant_id="acme", collection="help")
 
     assert exc_info.value.reason == "invalid_entry"
 
@@ -442,7 +456,7 @@ def test_read_entries_rejects_missing_needs_ocr(tmp_path: Path) -> None:
     _write_manifest_payload(tmp_path, payload)
 
     with pytest.raises(ManifestReadError) as exc_info:
-        read_entries(tmp_path, namespace="acme", collection="help")
+        read_entries(tmp_path, tenant_id="acme", collection="help")
 
     assert exc_info.value.reason == "invalid_entry"
 
@@ -453,7 +467,7 @@ def test_read_entries_rejects_missing_metadata(tmp_path: Path) -> None:
     _write_manifest_payload(tmp_path, payload)
 
     with pytest.raises(ManifestReadError) as exc_info:
-        read_entries(tmp_path, namespace="acme", collection="help")
+        read_entries(tmp_path, tenant_id="acme", collection="help")
 
     assert exc_info.value.reason == "invalid_entry"
 
@@ -468,7 +482,7 @@ def test_read_entries_rejects_non_object_metadata(
     )
 
     with pytest.raises(ManifestReadError) as exc_info:
-        read_entries(tmp_path, namespace="acme", collection="help")
+        read_entries(tmp_path, tenant_id="acme", collection="help")
 
     assert exc_info.value.reason == "invalid_entry"
 
@@ -489,13 +503,13 @@ def test_write_entry_drops_unsafe_manifest_metadata(tmp_path: Path) -> None:
         ),
     )
 
-    path = manifest_path(tmp_path, namespace="acme", collection="help")
+    path = manifest_path(tmp_path, tenant_id="acme", collection="help")
     raw = path.read_text(encoding="utf-8")
     assert "raw parser failure" not in raw
     assert "raw parse failure" not in raw
     assert "sk-test-secret" not in raw
 
-    [entry] = read_entries(tmp_path, namespace="acme", collection="help")
+    [entry] = read_entries(tmp_path, tenant_id="acme", collection="help")
     assert entry.metadata == {
         "quality": {
             "details": "public parse quality explanation",
@@ -516,7 +530,7 @@ def test_write_entry_caps_manifest_page_index_metadata(tmp_path: Path) -> None:
         ),
     )
 
-    path = manifest_path(tmp_path, namespace="acme", collection="help")
+    path = manifest_path(tmp_path, tenant_id="acme", collection="help")
     payload = json.loads(path.read_text(encoding="utf-8"))
     metadata = payload["metadata"]
     assert len(metadata["image_only_page_indices"]) == 400
@@ -537,7 +551,7 @@ def test_write_entry_sanitizes_manifest_page_index_metadata_values(
         ),
     )
 
-    path = manifest_path(tmp_path, namespace="acme", collection="help")
+    path = manifest_path(tmp_path, tenant_id="acme", collection="help")
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["metadata"]["ocr_page_indices"] == [2, 0]
 
@@ -549,7 +563,7 @@ def test_read_entries_rejects_unsafe_manifest_metadata(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ManifestReadError) as exc_info:
-        read_entries(tmp_path, namespace="acme", collection="help")
+        read_entries(tmp_path, tenant_id="acme", collection="help")
 
     assert exc_info.value.reason == "unsafe_metadata"
     assert "sk-test-secret" not in str(exc_info.value)
@@ -565,24 +579,24 @@ def test_compact_manifest_rewrites_latest_entry_per_document_id(
         _entry(document_id="doc-1", chunk_count=5, metadata={"revision": "latest"}),
     )
 
-    result = compact_manifest(tmp_path, namespace="acme", collection="help")
+    result = compact_manifest(tmp_path, tenant_id="acme", collection="help")
 
     assert result.before_entry_count == 3
     assert result.after_entry_count == 2
     assert result.removed_entry_count == 1
     assert result.changed is True
-    path = manifest_path(tmp_path, namespace="acme", collection="help")
+    path = manifest_path(tmp_path, tenant_id="acme", collection="help")
     assert len(path.read_text(encoding="utf-8").splitlines()) == 2
 
     entries = {
         entry.document_id: entry
-        for entry in read_entries(tmp_path, namespace="acme", collection="help")
+        for entry in read_entries(tmp_path, tenant_id="acme", collection="help")
     }
     assert entries["doc-1"].chunk_count == 5
     assert entries["doc-1"].metadata == {"revision": "latest"}
     assert entries["doc-2"].chunk_count == 3
 
-    unchanged = compact_manifest(tmp_path, namespace="acme", collection="help")
+    unchanged = compact_manifest(tmp_path, tenant_id="acme", collection="help")
     assert unchanged.before_entry_count == 2
     assert unchanged.after_entry_count == 2
     assert unchanged.removed_entry_count == 0
@@ -601,12 +615,12 @@ def test_compact_manifest_rewrites_latest_entry_per_document_key(
         _entry(document_id="doc-new", document_key="same.md", chunk_count=5),
     )
 
-    result = compact_manifest(tmp_path, namespace="acme", collection="help")
+    result = compact_manifest(tmp_path, tenant_id="acme", collection="help")
 
     assert result.before_entry_count == 2
     assert result.after_entry_count == 1
     assert result.changed is True
-    entries = read_entries(tmp_path, namespace="acme", collection="help")
+    entries = read_entries(tmp_path, tenant_id="acme", collection="help")
     assert [entry.document_id for entry in entries] == ["doc-new"]
     assert entries[0].document_key == "same.md"
 
@@ -618,7 +632,7 @@ def test_compact_manifest_rewrites_healed_null_document_key(
         tmp_path,
         CollectionManifestEntry(
             document_id="doc-1",
-            namespace="acme",
+            tenant_id="acme",
             collection="help",
             document_key=None,
             content_sha256="old-sha",
@@ -637,14 +651,15 @@ def test_compact_manifest_rewrites_healed_null_document_key(
         ),
     )
 
-    result = compact_manifest(tmp_path, namespace="acme", collection="help")
+    result = compact_manifest(tmp_path, tenant_id="acme", collection="help")
 
     assert result.before_entry_count == 2
     assert result.after_entry_count == 1
-    entries = read_entries(tmp_path, namespace="acme", collection="help")
-    assert [(entry.document_id, entry.document_key, entry.content_sha256) for entry in entries] == [
-        ("doc-1", "doc.md", "new-sha")
-    ]
+    entries = read_entries(tmp_path, tenant_id="acme", collection="help")
+    assert [
+        (entry.document_id, entry.document_key, entry.content_sha256)
+        for entry in entries
+    ] == [("doc-1", "doc.md", "new-sha")]
 
 
 def test_compact_manifest_skips_byte_identical_unchanged_write(
@@ -652,7 +667,7 @@ def test_compact_manifest_skips_byte_identical_unchanged_write(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     write_entry(tmp_path, _entry(document_id="doc-1"))
-    path = manifest_path(tmp_path, namespace="acme", collection="help")
+    path = manifest_path(tmp_path, tenant_id="acme", collection="help")
     original = path.read_text(encoding="utf-8")
 
     def fail_write(path: Path, content: str) -> None:
@@ -660,7 +675,7 @@ def test_compact_manifest_skips_byte_identical_unchanged_write(
 
     monkeypatch.setattr("rag_core.manifest.jsonl.atomic_write_text", fail_write)
 
-    result = compact_manifest(tmp_path, namespace="acme", collection="help")
+    result = compact_manifest(tmp_path, tenant_id="acme", collection="help")
 
     assert result.before_entry_count == 1
     assert result.after_entry_count == 1
@@ -669,7 +684,7 @@ def test_compact_manifest_skips_byte_identical_unchanged_write(
 
 
 def test_compact_manifest_missing_path_returns_zero_result(tmp_path: Path) -> None:
-    result = compact_manifest(tmp_path, namespace="missing", collection="help")
+    result = compact_manifest(tmp_path, tenant_id="missing", collection="help")
 
     assert result == ManifestCompactionResult(
         before_entry_count=0,
@@ -684,12 +699,12 @@ def test_compact_manifest_reports_bad_line_number_without_rewriting(
     tmp_path: Path,
 ) -> None:
     write_entry(tmp_path, _entry(document_id="doc-1"))
-    path = manifest_path(tmp_path, namespace="acme", collection="help")
+    path = manifest_path(tmp_path, tenant_id="acme", collection="help")
     original = path.read_text(encoding="utf-8") + '{"document_id": "private-doc"\n'
     path.write_text(original, encoding="utf-8")
 
     with pytest.raises(ManifestReadError) as exc_info:
-        compact_manifest(tmp_path, namespace="acme", collection="help")
+        compact_manifest(tmp_path, tenant_id="acme", collection="help")
 
     error = exc_info.value
     assert error.path == path
@@ -700,7 +715,7 @@ def test_compact_manifest_reports_bad_line_number_without_rewriting(
 
 
 @pytest.mark.parametrize(
-    ("namespace", "collection"),
+    ("tenant_id", "collection"),
     [
         ("../escape", "help"),
         ("acme", "../escape"),
@@ -711,14 +726,21 @@ def test_compact_manifest_reports_bad_line_number_without_rewriting(
     ],
 )
 def test_compact_manifest_rejects_non_segment_scope_values(
-    tmp_path: Path, namespace: str, collection: str
+    tmp_path: Path, tenant_id: str, collection: str
 ) -> None:
-    with pytest.raises(ValueError, match="single non-empty path segment"):
-        compact_manifest(tmp_path, namespace=namespace, collection=collection)
+    if not tenant_id.strip() or not collection.strip():
+        with pytest.raises(ValueError, match="non-empty scope identifier"):
+            compact_manifest(tmp_path, tenant_id=tenant_id, collection=collection)
+    else:
+        path = manifest_path(tmp_path, tenant_id=tenant_id, collection=collection)
+        assert (
+            path.is_relative_to(tmp_path) and len(path.relative_to(tmp_path).parts) == 2
+        )
+        assert path != tmp_path.parent / "escape.jsonl"
 
 
 def test_write_entry_atomic_write_no_partial_file(tmp_path: Path) -> None:
-    path = manifest_path(tmp_path, namespace="acme", collection="help")
+    path = manifest_path(tmp_path, tenant_id="acme", collection="help")
     write_entry(tmp_path, _entry())
     # Locked appends use a sidecar lock file; no payload temp files should remain.
     leftovers = [
@@ -729,7 +751,7 @@ def test_write_entry_atomic_write_no_partial_file(tmp_path: Path) -> None:
 
 def test_round_trip_preserves_metadata(tmp_path: Path) -> None:
     write_entry(tmp_path, _entry(metadata={"team": "search", "env": "test"}))
-    [entry] = read_entries(tmp_path, namespace="acme", collection="help")
+    [entry] = read_entries(tmp_path, tenant_id="acme", collection="help")
     assert entry.metadata == {"team": "search", "env": "test"}
     assert entry.parser == "local:converter"
     assert entry.needs_ocr is False
@@ -747,8 +769,8 @@ def test_write_entry_if_stale_deduplicates_concurrent_unchanged_appends(
         for future in futures:
             future.result()
 
-    entries = read_entries(tmp_path, namespace="acme", collection="help")
-    path = manifest_path(tmp_path, namespace="acme", collection="help")
+    entries = read_entries(tmp_path, tenant_id="acme", collection="help")
+    path = manifest_path(tmp_path, tenant_id="acme", collection="help")
     assert [entry.document_id for entry in entries] == ["doc-1"]
     assert len(path.read_text(encoding="utf-8").splitlines()) == 1
 
@@ -764,9 +786,9 @@ def test_write_entry_if_stale_updates_manifest_visible_changes(
     )
 
     assert changed is True
-    [entry] = read_entries(tmp_path, namespace="acme", collection="help")
+    [entry] = read_entries(tmp_path, tenant_id="acme", collection="help")
     assert entry.metadata == {"quality": "poor"}
-    path = manifest_path(tmp_path, namespace="acme", collection="help")
+    path = manifest_path(tmp_path, tenant_id="acme", collection="help")
     assert len(path.read_text(encoding="utf-8").splitlines()) == 2
 
 
@@ -777,14 +799,14 @@ def test_refreshed_manifest_entry_heals_missing_existing_content_hash(
         previous=None,
         existing=StoredDocumentRecord(
             document_id="doc-1",
-            namespace="acme",
+            tenant_id="acme",
             collection="help",
             document_key="doc-1.md",
             content_sha256=None,
             chunk_count=2,
         ),
         document_id="doc-1",
-        namespace="acme",
+        tenant_id="acme",
         collection="help",
         document_key="doc-1.md",
         content_sha256="fresh-sha",
@@ -794,7 +816,7 @@ def test_refreshed_manifest_entry_heals_missing_existing_content_hash(
     )
 
     assert write_entry_if_stale(tmp_path, entry) is True
-    [stored] = read_entries(tmp_path, namespace="acme", collection="help")
+    [stored] = read_entries(tmp_path, tenant_id="acme", collection="help")
     assert stored.content_sha256 == "fresh-sha"
     assert stored.chunk_count == 2
 
@@ -825,136 +847,49 @@ def test_compact_manifest_rejects_unsafe_manifest_metadata_without_rewrite(
     original = path.read_text(encoding="utf-8")
 
     with pytest.raises(ManifestReadError) as exc_info:
-        compact_manifest(tmp_path, namespace="acme", collection="help")
+        compact_manifest(tmp_path, tenant_id="acme", collection="help")
 
     assert exc_info.value.reason == "unsafe_metadata"
     assert path.read_text(encoding="utf-8") == original
 
 
-def test_summarize_entries_counts_documents_chunks_parsers_and_ocr() -> None:
-    summary = summarize_entries(
-        [
-            _entry(
-                document_id="doc-1", chunk_count=2, parser="local:pdf", needs_ocr=True
-            ),
-            _entry(document_id="doc-2", chunk_count=3, parser="local:pdf"),
-            _entry(document_id="doc-3", chunk_count=5, parser=None),
-        ]
-    )
+def test_external_then_local_append_does_not_certify_a_stale_latest_index(
+    tmp_path: Path,
+) -> None:
+    import subprocess
+    import sys
+    from dataclasses import asdict
+    from rag_core.ingest.manifest import latest_manifest_entry
 
-    assert summary.document_count == 3
-    assert summary.chunk_count == 10
-    assert summary.needs_ocr_count == 1
-    assert summary.parser_counts == {"local:pdf": 2, "unknown": 1}
-
-
-def test_reconcile_entries_explains_unchanged_changed_missing_and_orphaned() -> None:
-    entries = [
-        _entry(document_id="doc-1", metadata={}, chunk_count=1),
-        _entry(document_id="doc-2", chunk_count=1),
-        _entry(document_id="doc-3", chunk_count=1),
-    ]
-    sources = [
-        ManifestSource(document_key="doc-1.md", content_sha256="sha256-stub"),
-        ManifestSource(document_key="doc-2.md", content_sha256="new-sha"),
-        ManifestSource(document_key="doc-4.md", content_sha256="sha4"),
-    ]
-
-    reconciliation = reconcile_entries(entries, sources)
-
-    assert [(item.document_key, item.reason) for item in reconciliation.unchanged] == [
-        ("doc-1.md", "content_sha256_match")
-    ]
-    assert [(item.document_key, item.reason) for item in reconciliation.changed] == [
-        ("doc-2.md", "content_sha256_changed")
-    ]
-    assert [(item.document_key, item.reason) for item in reconciliation.missing] == [
-        ("doc-4.md", "source_not_in_manifest")
-    ]
-    assert [(item.document_key, item.reason) for item in reconciliation.orphaned] == [
-        ("doc-3.md", "manifest_entry_without_source")
-    ]
-    assert [item.document_key for item in reconciliation.needs_reindex] == [
-        "doc-2.md",
-        "doc-4.md",
-    ]
-
-
-def test_manifest_reconciliation_payload_reports_summary_and_items() -> None:
-    reconciliation = reconcile_entries(
-        [_entry(document_id="doc-1", metadata={}, chunk_count=1)],
-        [
-            ManifestSource(document_key="doc-1.md", content_sha256="sha256-stub"),
-            ManifestSource(document_key="doc-2.md", content_sha256="sha2"),
-        ],
-    )
-
-    payload = manifest_reconciliation_payload(reconciliation)
-
-    assert payload["summary"] == {
-        "changed_count": 0,
-        "duplicate_count": 0,
-        "missing_count": 1,
-        "needs_reindex_count": 1,
-        "orphaned_count": 0,
-        "unchanged_count": 1,
-    }
-    items = cast(list[dict[str, object]], payload["items"])
-    assert items == [
-        {
-            "item_index": 0,
-            "status": "unchanged",
-            "reason": "content_sha256_match",
-            "has_document_id": True,
-            "has_manifest_content_sha256": True,
-            "has_source_content_sha256": True,
-        },
-        {
-            "item_index": 1,
-            "status": "missing",
-            "reason": "source_not_in_manifest",
-            "has_document_id": False,
-            "has_manifest_content_sha256": False,
-            "has_source_content_sha256": True,
-        },
-    ]
-    private_payload = manifest_reconciliation_payload(
-        reconciliation,
-        include_private=True,
-    )
-    private_items = cast(list[dict[str, object]], private_payload["items"])
-    assert private_items[0]["document_key"] == "doc-1.md"
-    assert private_items[1]["document_key"] == "doc-2.md"
-
-
-def test_reconcile_entries_marks_duplicate_manifest_document_keys() -> None:
-    entries = [
-        _entry(document_id="doc-a", document_key="same.md", chunk_count=1),
-        _entry(document_id="doc-b", document_key="same.md", chunk_count=1),
-    ]
-
-    reconciliation = reconcile_entries(
-        entries,
-        [ManifestSource(document_key="same.md", content_sha256="source-sha")],
-    )
-
-    assert [item.document_id for item in reconciliation.duplicate] == ["doc-a", "doc-b"]
-    assert all(
-        item.reason == "duplicate_manifest_document_key"
-        for item in reconciliation.duplicate
-    )
-    assert all(
-        item.source_content_sha256 == "source-sha" for item in reconciliation.duplicate
-    )
-    assert reconciliation.missing == ()
-
-
-def test_reconcile_entries_rejects_duplicate_sources() -> None:
-    with pytest.raises(ValueError, match="source document_key must be unique"):
-        reconcile_entries(
-            [],
-            [
-                ManifestSource(document_key="same.md"),
-                ManifestSource(document_key="same.md"),
-            ],
+    def latest(document_id):
+        return latest_manifest_entry(
+            tmp_path, tenant_id="acme", collection="help", document_id=document_id
         )
+
+    write_entry(tmp_path, _entry(document_id="a", content_sha256="old-a"))
+    assert latest("a").content_sha256 == "old-a"
+    external = [
+        _entry(document_id="a", content_sha256="external-new-a"),
+        _entry(document_id="b", content_sha256="external-b"),
+    ]
+    program = "from pathlib import Path;import json,sys;from rag_core.core_models import CollectionManifestEntry;from rag_core.manifest.persistence import write_entry;[write_entry(Path(sys.argv[1]),CollectionManifestEntry(**row)) for row in json.loads(sys.argv[2])]"
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            program,
+            str(tmp_path),
+            json.dumps([asdict(row) for row in external]),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=15,
+        env={
+            **os.environ,
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src"),
+        },
+    )
+    write_entry(tmp_path, _entry(document_id="c", content_sha256="local-c"))
+    assert latest("a").content_sha256 == "external-new-a"
+    assert latest("b").content_sha256 == "external-b"
+    assert latest("c").content_sha256 == "local-c"

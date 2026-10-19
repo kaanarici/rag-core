@@ -3,46 +3,69 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Final, Optional
+from typing import TYPE_CHECKING, Final, Optional
 
-from rag_core.search.policy import VectorStorePolicy
+if TYPE_CHECKING:
+    from rag_core.search.policy import VectorStorePolicy
+
+SECTION_PAYLOAD_KEYS = (
+    "result_type",
+    "figure_id",
+    "figure_thumbnail_url",
+    "figure_caption",
+    "figure_bbox",
+    "page_index",
+    "page_number",
+    "bbox",
+    "page_width",
+    "page_height",
+    "slide_number",
+    "paragraph_index",
+    "sheet_name",
+    "row_range",
+    "line_start",
+    "line_end",
+    "is_full_page",
+    "anchor_chunk_index",
+    "offset_reconstruction",
+)
+
+# Chunker-owned char span keys; always emitted from PreparedChunk regardless of
+# section_info presence so EvidenceSpans round-trip through upsert -> search.
+SPAN_PAYLOAD_KEYS = ("start_char", "end_char")
+
+FIXED_PAYLOAD_KEYS = frozenset(
+    {
+        "ingest_fingerprint",
+        "mime_type",
+        "document_path",
+        "chunker_strategy",
+        "section_id",
+        "section_path",
+        "section_title",
+        *SECTION_PAYLOAD_KEYS,
+        *SPAN_PAYLOAD_KEYS,
+    }
+)
+
 
 SEARCH_RESULT_STORED_METADATA_FIELDS: Final[tuple[str, ...]] = (
     "section_id",
     "section_title",
     "section_path",
     "document_path",
-    "chunk_word_count",
-    "chunk_token_estimate",
     "start_char",
     "end_char",
-    "embedding_model",
     "chunker_strategy",
     "result_type",
     "figure_id",
     "figure_thumbnail_url",
 )
 
-SEARCH_RESULT_FILTER_FIELDS: Final[tuple[str, ...]] = (
-    "namespace",
-    "content_type",
-    "source_type",
-    "document_id",
-    "collection",
-    "document_key",
-    "content_sha256",
-    "title",
-    *SEARCH_RESULT_STORED_METADATA_FIELDS,
-)
-
-SEARCH_RESULT_LEGACY_THUMBNAIL_FIELD: Final[str] = "thumbnail_url"
-
 # Keys consumed into top-level ``SearchResult`` fields and excluded from
 # metadata. Policy-specific keys are added at runtime so renamed fields are
 # still excluded.
-_FIXED_RESULT_KEYS = frozenset(
-    (*SEARCH_RESULT_STORED_METADATA_FIELDS, SEARCH_RESULT_LEGACY_THUMBNAIL_FIELD)
-)
+_FIXED_RESULT_KEYS = frozenset(SEARCH_RESULT_STORED_METADATA_FIELDS)
 
 
 def result_metadata(
@@ -88,7 +111,7 @@ def optional_payload_int(payload: dict[str, object], key: str) -> Optional[int]:
 def _policy_result_keys(policy: VectorStorePolicy) -> frozenset[str]:
     return frozenset(
         {
-            policy.namespace_field,
+            policy.tenant_id_field,
             policy.collection_field,
             policy.document_id_field,
             policy.document_key_field,

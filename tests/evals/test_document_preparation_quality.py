@@ -17,8 +17,8 @@ from typing import cast
 
 import pytest
 
-from rag_core._engine.core_lifecycle import resolve_document_id
-from rag_core._engine.core_archive_ingest import ingest_zip_archive_with_core
+from rag_core.ingest.identity import resolve_document_id
+from rag_core.ingest.archive import ingest_zip_archive_with_core
 from rag_core._engine.core_prepare import prepare_document_bytes
 from rag_core.config import ChunkingConfig
 from rag_core.core_models import IngestedDocument, PreparedDocument
@@ -346,7 +346,7 @@ async def _archive_metrics(tmp_path: Path) -> dict[str, float | int]:
             file_bytes = cast(bytes, kwargs["file_bytes"])
             return IngestedDocument(
                 document_id=f"archive-eval-{self.count}",
-                namespace=cast(str, kwargs["namespace"]),
+                tenant_id=cast(str, kwargs["tenant_id"]),
                 collection=cast(str, kwargs["collection"]),
                 chunk_count=1,
                 filename=cast(str, kwargs["filename"]),
@@ -359,7 +359,7 @@ async def _archive_metrics(tmp_path: Path) -> dict[str, float | int]:
     access_result = await ingest_zip_archive_with_core(
         core=AccessCore(),
         archive_path=access_path,
-        namespace="eval",
+        tenant_id="eval",
         collection="docs",
         max_concurrency=4,
     )
@@ -375,7 +375,7 @@ async def _archive_metrics(tmp_path: Path) -> dict[str, float | int]:
     memory_result = await ingest_zip_archive_with_core(
         core=AccessCore(),
         archive_path=memory_path,
-        namespace="eval",
+        tenant_id="eval",
         collection="docs",
         max_concurrency=4,
     )
@@ -506,14 +506,14 @@ async def collect_document_preparation_metrics(
     duplicate = b"identity fact identical bytes"
     near_duplicate = duplicate + b"."
     same_key_id = resolve_document_id(
-        namespace="eval",
+        tenant_id="eval",
         collection="docs",
         document_key="shared-key",
         document_id=None,
         policy=DEFAULT_POLICY,
     )
     other_key_id = resolve_document_id(
-        namespace="eval",
+        tenant_id="eval",
         collection="docs",
         document_key="other-key",
         document_id=None,
@@ -595,7 +595,7 @@ async def collect_document_preparation_metrics(
         ),
         "same_key_document_identity_stable": same_key_id
         == resolve_document_id(
-            namespace="eval",
+            tenant_id="eval",
             collection="docs",
             document_key="shared-key",
             document_id=None,

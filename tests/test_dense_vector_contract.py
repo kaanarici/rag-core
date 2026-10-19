@@ -17,7 +17,6 @@ def test_vector_point_accepts_finite_dense_vector_values() -> None:
     point = VectorPoint(
         id="point-1",
         dense_vector=[cast(Any, np.float32(0.5)), cast(Any, np.float64(1.5))],
-        sparse_vector=SparseVector(indices=[], values=[]),
         payload={"text": "alpha"},
     )
 
@@ -27,8 +26,8 @@ def test_vector_point_accepts_finite_dense_vector_values() -> None:
 def test_search_query_accepts_sparse_only_empty_dense_vector() -> None:
     query = SearchQuery(
         dense_vector=[],
-        sparse_vector=SparseVector(indices=[1], values=[1.0]),
-        namespace="team-space",
+        sparse_vectors={"bm25": SparseVector(indices=[1], values=[1.0])},
+        tenant_id="team-space",
         collections=["corpus-a"],
     )
 
@@ -44,7 +43,6 @@ def test_vector_point_rejects_malformed_dense_vector_values(value: object) -> No
         VectorPoint(
             id="point-1",
             dense_vector=[cast(Any, value)],
-            sparse_vector=SparseVector(indices=[], values=[]),
             payload={"text": "alpha"},
         )
 
@@ -59,8 +57,7 @@ def test_search_query_rejects_malformed_dense_vector_values(value: object) -> No
     with pytest.raises(ValueError) as exc_info:
         SearchQuery(
             dense_vector=[cast(Any, value)],
-            sparse_vector=SparseVector(indices=[], values=[]),
-            namespace="team-space",
+            tenant_id="team-space",
             collections=["corpus-a"],
         )
 

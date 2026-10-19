@@ -22,7 +22,7 @@ from rag_core.documents.prepare_chunks import (
     prepare_text_chunks_async,
     prepare_text_chunks as prepare_text_chunks,
 )
-from rag_core.documents.converters.registry_maps import is_registered_pdf_document
+from rag_core.documents.formats import is_registered_pdf_document
 from rag_core._engine.core_prepare_contextualizer import (
     apply_contextualizer as _apply_contextualizer,
 )
@@ -46,7 +46,6 @@ if TYPE_CHECKING:
     from rag_core.documents.contextualizer import ChunkContextualizer
     from rag_core.documents.ocr import OcrProvider
     from rag_core.events.sink import EventSink
-    from rag_core.search.providers.chunk_context_cache import ChunkContextCache
 
 
 async def parse_document_bytes(
@@ -93,9 +92,8 @@ async def prepare_document_bytes(
     allow_needs_ocr: bool = False,
     event_sink: "EventSink | None" = None,
     contextualizer: "ChunkContextualizer | None" = None,
-    chunk_context_cache: "ChunkContextCache | None" = None,
     chunking_config: ChunkingConfig | None = None,
-    namespace: str = "",
+    tenant_id: str = "",
     collection: str = "",
     document_id: str = "",
 ) -> PreparedDocument:
@@ -123,6 +121,7 @@ async def prepare_document_bytes(
         mime_type=mime_type,
         filename=filename,
         chunking_config=chunking_config,
+        slide_ranges=parsed.metadata.get("slide_ranges"),
     )
     chunks = _with_figure_locators(chunks=chunks, metadata=parsed.metadata)
     chunking_strategy = chunks[0].chunking_strategy if chunks else "none"
@@ -136,11 +135,10 @@ async def prepare_document_bytes(
         chunks=chunks,
         markdown=parsed.markdown,
         filename=parsed.filename,
-        namespace=namespace,
+        tenant_id=tenant_id,
         collection=collection,
         document_id=document_id,
         contextualizer=contextualizer,
-        chunk_context_cache=chunk_context_cache,
         event_sink=event_sink,
     )
 
@@ -254,6 +252,8 @@ async def apply_ocr(
         merged_metadata["ocr_page_indices"] = processed_pages
     merged_metadata["needs_ocr"] = False
     merged_markdown = merge_markdown(parsed.markdown, ocr_result)
+    # Native offsets cannot describe replacement or merged OCR text.
+    merged_metadata.pop("slide_ranges", None)
     from rag_core.documents.converters.quality import score_text_quality
 
     document_page_count = resolve_document_page_count(

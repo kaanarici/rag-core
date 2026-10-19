@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import asyncio
+from rag_core._async import run_sync
+
 from typing import TYPE_CHECKING, Protocol
 
 from rag_core.core_models import IngestedDocument
@@ -24,7 +25,7 @@ class IngestBytes(Protocol):
         file_bytes: bytes,
         filename: str,
         mime_type: str,
-        namespace: str,
+        tenant_id: str,
         collection: str,
         document_id: str | None = None,
         document_key: str | None = None,
@@ -39,7 +40,7 @@ async def ingest_remote_url(
     url: str,
     *,
     ingest_bytes: IngestBytes,
-    namespace: str,
+    tenant_id: str,
     collection: str,
     event_sink: "EventSink | None" = None,
     document_id: str | None = None,
@@ -48,11 +49,13 @@ async def ingest_remote_url(
     fetch_client: "FetchClient | None" = None,
     fetch_policy: "FetchSecurityPolicy | None" = None,
     fetch_limits: "FetchLimits | None" = None,
+    max_document_bytes: int | None = None,
 ) -> IngestedDocument:
     reader = RemoteUrlSourceReader(
         fetch_client=fetch_client,
         policy=fetch_policy,
         limits=fetch_limits,
+        max_document_bytes=max_document_bytes,
     )
     fetch_started_ms = now_ms()
     redacted_url = _safe_remote_event_url(url, policy=fetch_policy)
@@ -60,17 +63,17 @@ async def ingest_remote_url(
         emit_event(
             event_sink,
             FetchStarted(
-                namespace=namespace,
+                tenant_id=tenant_id,
                 collection=collection,
                 redacted_url=redacted_url,
             ),
         )
-        remote_document = await asyncio.to_thread(reader.read, url)
+        remote_document = await run_sync(reader.read, url)
     except Exception as exc:
         emit_event(
             event_sink,
             FetchFailed(
-                namespace=namespace,
+                tenant_id=tenant_id,
                 collection=collection,
                 redacted_url=redacted_url,
                 error_type=type(exc).__name__,
@@ -82,7 +85,7 @@ async def ingest_remote_url(
     emit_event(
         event_sink,
         FetchCompleted(
-            namespace=namespace,
+            tenant_id=tenant_id,
             collection=collection,
             redacted_url=remote_document.redacted_url,
             status_code=remote_document.status_code,
@@ -98,7 +101,7 @@ async def ingest_remote_url(
         file_bytes=remote_document.file_bytes,
         filename=remote_document.filename,
         mime_type=remote_document.mime_type,
-        namespace=namespace,
+        tenant_id=tenant_id,
         collection=collection,
         document_id=document_id,
         document_key=remote_document.document_key,

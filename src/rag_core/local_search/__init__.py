@@ -1,1 +1,0 @@
-"""Local search command support."""

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from typing import List
 
@@ -21,11 +20,7 @@ from .budget import (
 from .protocol import ChunkConfig
 from .spans import TextSpan, split_text_span
 
-_SHEET_TITLE_RE = re.compile(
-    r"^Sheet:\s+(.+?)(?:\s+\(Rows\s+([1-9]\d*)-([1-9]\d*)\))?$",
-    re.IGNORECASE,
-)
-_SLIDE_TITLE_RE = re.compile(r"^Slide\s+([1-9]\d*)$", re.IGNORECASE)
+
 
 
 @dataclass(frozen=True)
@@ -306,19 +301,4 @@ def _section_metadata(heading_stack: list[tuple[int, str]]) -> dict[str, object]
         "section_path": " > ".join(titles),
         "section_title": titles[-1],
     }
-    for title in titles:
-        slide_match = _SLIDE_TITLE_RE.match(title)
-        if slide_match is not None:
-            metadata["slide_number"] = int(slide_match.group(1))
-            break
-    for title in titles:
-        sheet_match = _SHEET_TITLE_RE.match(title)
-        if sheet_match is None:
-            continue
-        metadata["sheet_name"] = sheet_match.group(1).strip()
-        start_row = sheet_match.group(2)
-        end_row = sheet_match.group(3)
-        if start_row is not None and end_row is not None:
-            metadata["row_range"] = "%s-%s" % (start_row, end_row)
-        break
     return metadata

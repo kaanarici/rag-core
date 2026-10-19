@@ -1,15 +1,33 @@
 from __future__ import annotations
 
-import asyncio
+from rag_core._async import run_sync
+
 import hashlib
 import mimetypes
 from pathlib import Path
 
-from rag_core.documents.converters.format_support import format_support_for_extension
+from rag_core.documents.formats import format_support_for_extension
 
 
-async def read_file_bytes(path: Path) -> bytes:
-    return await asyncio.to_thread(path.read_bytes)
+def validate_document_size(data: bytes | bytearray, *, max_bytes: int) -> None:
+    if len(data) > max_bytes:
+        raise ValueError(f"document exceeds max_document_bytes ({max_bytes})")
+
+
+async def read_file_bytes(path: Path, *, max_bytes: int | None = None) -> bytes:
+    def read() -> bytes:
+        with path.open("rb") as source:
+            if max_bytes is None:
+                return source.read()
+            data = bytearray()
+            while True:
+                chunk = source.read(min(64 * 1024, max_bytes + 1 - len(data)))
+                if not chunk:
+                    return bytes(data)
+                data.extend(chunk)
+                validate_document_size(data, max_bytes=max_bytes)
+
+    return await run_sync(read)
 
 
 def compute_content_sha256(file_bytes: bytes) -> str:

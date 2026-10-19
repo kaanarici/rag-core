@@ -48,7 +48,7 @@ def test_ingest_then_search_ranks_relevant_document_above_decoys() -> None:
                     file_bytes=body,
                     filename=f"{document_id}.txt",
                     mime_type="text/plain",
-                    namespace="golden",
+                    tenant_id="golden",
                     collection="docs",
                     document_id=document_id,
                     document_key=f"{document_id}.txt",
@@ -56,7 +56,7 @@ def test_ingest_then_search_ranks_relevant_document_above_decoys() -> None:
 
             hits = await core.search(
                 query="How can invoices be paid?",
-                namespace="golden",
+                tenant_id="golden",
                 collections=["docs"],
                 limit=3,
                 rerank=False,
@@ -76,7 +76,7 @@ def test_golden_path_uses_full_integration_corpus() -> None:
                     file_bytes=doc["markdown"].encode("utf-8"),
                     filename=f"{doc['document_id']}.md",
                     mime_type="text/markdown",
-                    namespace="golden",
+                    tenant_id="golden",
                     collection="docs",
                     document_id=doc["document_id"],
                     document_key=f"{doc['document_id']}.md",
@@ -84,7 +84,7 @@ def test_golden_path_uses_full_integration_corpus() -> None:
 
             hits = await core.search(
                 query="webhook hmac signature header",
-                namespace="golden",
+                tenant_id="golden",
                 collections=["docs"],
                 limit=3,
                 rerank=False,

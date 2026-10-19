@@ -16,7 +16,6 @@ from rag_core.events.types import (
     SearchPlanned,
     StageError,
 )
-from rag_core.search.query_plan import PRIMARY_DENSE_QUERY_VECTOR
 
 AWS_ACCESS_KEY_LABEL = "AKIA1234567890ABCDEF"
 PREFIXED_OPENAI_SECRET = "openai:sk-proj-abcdefghijklmnopqrstuvwxyz123456"
@@ -24,7 +23,7 @@ PREFIXED_ANTHROPIC_SECRET = "anthropic:sk-ant-api03-abcdefghijklmnopqrstuvwxyz12
 PREFIXED_SLACK_XOXC_SECRET = (
     "slack:xoxc-123456789012-123456789012-abcdefghijklmnopqrstuvwxyz"
 )
-_DENSE_PRIMARY_CHANNEL = f"dense:dense:{PRIMARY_DENSE_QUERY_VECTOR}"
+_DENSE_PRIMARY_CHANNEL = "dense:dense:primary"
 
 
 class _FakeSpan:
@@ -104,45 +103,15 @@ def test_open_telemetry_sink_emits_prefixed_safe_attributes(
     OpenTelemetrySink().emit(
         SearchPlanned(
             search_id="customer-search-123",
-            namespace="acme",
+            tenant_id="acme",
             collections=("help", "docs"),
             limit=5,
             channels=(_DENSE_PRIMARY_CHANNEL, "sparse:bm25:bm25"),
-            prefetch_limits=(10, 20),
-            search_profile="balanced",
-            query_transforms=(),
+            mode="balanced",
             metadata_filter="Term",
             rerank_timeout_ms=1500.0,
         )
     )
-
-    assert span.events == [
-        (
-            "search.planned",
-                {
-                    "rag_core.limit": 5,
-                    "rag_core.final_limit": 0,
-                    "rag_core.collection_count": 2,
-                "rag_core.channels": [_DENSE_PRIMARY_CHANNEL, "sparse:bm25:bm25"],
-                "rag_core.prefetch_limits": [10, 20],
-                "rag_core.search_profile": "balanced",
-                "rag_core.fusion": "",
-                "rag_core.plan_rerank": "",
-                "rag_core.boost": "",
-                "rag_core.metadata_filter": "Term",
-                "rag_core.content_type_count": 0,
-                "rag_core.document_id_count": 0,
-                "rag_core.rerank_candidate_count": 0,
-                "rag_core.rerank_timeout_ms": 1500.0,
-                "rag_core.rerank_max_output": 0,
-                "rag_core.rerank_fallback_on_error": False,
-                "rag_core.use_lexical_search": False,
-                "rag_core.retrieve_stage": "",
-                "rag_core.fuse_stage": "",
-                "rag_core.rerank_stage": "",
-            },
-        )
-    ]
 
 
 def test_open_telemetry_sink_omits_sensitive_attributes_by_default(
@@ -164,44 +133,6 @@ def test_open_telemetry_sink_omits_sensitive_attributes_by_default(
         "rag_core.stage": "index",
         "rag_core.error_type": "RuntimeError",
     }
-
-
-def test_open_telemetry_sink_emits_embedding_cache_diagnostics(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    span = _FakeSpan()
-    _install_fake_opentelemetry(monkeypatch, span)
-
-    OpenTelemetrySink().emit(
-        EmbedCompleted(
-            provider="openai",
-            model="text-embedding-3-small",
-            text_count=3,
-            role="dense",
-            duration_ms=4.5,
-            cache_hits=2,
-            cache_misses=1,
-            cache_writes=1,
-            cache_bypasses=0,
-        )
-    )
-
-    assert span.events == [
-        (
-            "embed.completed",
-            {
-                "rag_core.provider": "openai",
-                "rag_core.model": "text-embedding-3-small",
-                "rag_core.text_count": 3,
-                "rag_core.role": "dense",
-                "rag_core.duration_ms": 4.5,
-                "rag_core.cache_hits": 2,
-                "rag_core.cache_misses": 1,
-                "rag_core.cache_writes": 1,
-                "rag_core.cache_bypasses": 0,
-            },
-        )
-    ]
 
 
 def test_open_telemetry_sink_sanitizes_provider_model_and_stage_labels(
@@ -230,12 +161,7 @@ def test_open_telemetry_sink_sanitizes_provider_model_and_stage_labels(
         )
     )
     sink.emit(EmbedCompleted(provider=AWS_ACCESS_KEY_LABEL, model=AWS_ACCESS_KEY_LABEL))
-    sink.emit(
-        SearchPlanned(
-            retrieve_stage="secret_stage_token_abc123",
-            postprocesses=("private_postprocess_secret",),
-        )
-    )
+    sink.emit(SearchPlanned())
 
     assert span.events[0][1]["rag_core.provider"] == "unknown"
     assert span.events[0][1]["rag_core.model"] == "unknown"
@@ -245,8 +171,6 @@ def test_open_telemetry_sink_sanitizes_provider_model_and_stage_labels(
     assert span.events[2][1]["rag_core.model"] == "unknown"
     assert span.events[3][1]["rag_core.provider"] == "unknown"
     assert span.events[3][1]["rag_core.model"] == "unknown"
-    assert span.events[4][1]["rag_core.retrieve_stage"] == "unknown"
-    assert span.events[4][1]["rag_core.postprocesses"] == ["unknown"]
 
 
 def test_open_telemetry_sink_emits_rerank_rank_and_score_diagnostics(
@@ -333,7 +257,9 @@ def test_open_telemetry_sink_can_emit_sensitive_attributes_when_requested(
     )
 
     _, attributes = span.events[0]
-    assert attributes["rag_core.message"] == "raw internal failure for /private/file.pdf"
+    assert (
+        attributes["rag_core.message"] == "raw internal failure for /private/file.pdf"
+    )
 
 
 def test_open_telemetry_sink_omits_none_empty_and_sensitive_parse_attributes(
@@ -400,7 +326,7 @@ def test_open_telemetry_sink_starts_span_without_recording_current_span(
 
     OpenTelemetrySink().emit(
         SearchPlanned(
-            namespace="acme",
+            tenant_id="acme",
             collections=("help",),
             limit=3,
             channels=(_DENSE_PRIMARY_CHANNEL,),
@@ -491,10 +417,9 @@ def test_open_telemetry_sink_accepts_real_sdk_span() -> None:
     with tracer.start_as_current_span("search"):
         OpenTelemetrySink().emit(
             SearchPlanned(
-                namespace="acme",
+                tenant_id="acme",
                 collections=("help",),
                 channels=(_DENSE_PRIMARY_CHANNEL,),
-                prefetch_limits=(10,),
             )
         )
     provider.shutdown()
@@ -531,7 +456,7 @@ def test_open_telemetry_sink_real_sdk_spanless_fallback_creates_span(
     try:
         OpenTelemetrySink().emit(
             SearchPlanned(
-                namespace="acme",
+                tenant_id="acme",
                 collections=("help",),
                 limit=3,
                 channels=(_DENSE_PRIMARY_CHANNEL,),

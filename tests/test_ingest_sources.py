@@ -8,16 +8,16 @@ from typing import Any
 import pytest
 
 from rag_core.core_models import IngestedDocument
-from rag_core.facade.ingest_sources import ingest_local_file_source
-from rag_core.ingest.sources.local import LocalFileSourceReader
+from rag_core.ingest.sources.local import read_local_source
 from rag_core.ingest.sources.local import document_key as local_document_key
+from rag_core.ingest.sources.local import ingest_local_file_source
 
 
 def _ingested_document(*, document_id: str, document_key: str) -> IngestedDocument:
     return IngestedDocument(
         document_id=document_id,
         collection="help",
-        namespace="acme",
+        tenant_id="acme",
         chunk_count=1,
         filename="single.md",
         mime_type="text/markdown",
@@ -48,19 +48,19 @@ def test_ingest_local_file_source_defaults_document_key_to_canonical_path_across
         await ingest_local_file_source(
             "docs/single.md",
             ingest_bytes=fake_ingest_bytes,
-            namespace="acme",
+            tenant_id="acme",
             collection="help",
         )
         await ingest_local_file_source(
             "./docs/single.md",
             ingest_bytes=fake_ingest_bytes,
-            namespace="acme",
+            tenant_id="acme",
             collection="help",
         )
         await ingest_local_file_source(
             file_path.resolve(),
             ingest_bytes=fake_ingest_bytes,
-            namespace="acme",
+            tenant_id="acme",
             collection="help",
         )
 
@@ -98,13 +98,13 @@ def test_ingest_local_file_source_default_document_key_does_not_collide_on_basen
         await ingest_local_file_source(
             left_file,
             ingest_bytes=fake_ingest_bytes,
-            namespace="acme",
+            tenant_id="acme",
             collection="help",
         )
         await ingest_local_file_source(
             right_file,
             ingest_bytes=fake_ingest_bytes,
-            namespace="acme",
+            tenant_id="acme",
             collection="help",
         )
 
@@ -139,21 +139,21 @@ def test_ingest_local_file_source_nested_path_matches_local_source_reader_key(
         await ingest_local_file_source(
             "docs/nested/item.md",
             ingest_bytes=fake_ingest_bytes,
-            namespace="acme",
+            tenant_id="acme",
             collection="help",
         )
         await ingest_local_file_source(
             file_path.resolve(),
             ingest_bytes=fake_ingest_bytes,
-            namespace="acme",
+            tenant_id="acme",
             collection="help",
         )
 
     asyncio.run(scenario())
 
     assert [call["document_key"] for call in captured] == [
-        LocalFileSourceReader().read("docs/nested/item.md").items[0].document_key,
-        LocalFileSourceReader().read(file_path.resolve()).items[0].document_key,
+        read_local_source("docs/nested/item.md").items[0].document_key,
+        read_local_source(file_path.resolve()).items[0].document_key,
     ]
 
 
@@ -170,7 +170,7 @@ def test_ingest_local_file_source_respects_explicit_document_key(tmp_path: Path)
         ingest_local_file_source(
             file_path,
             ingest_bytes=fake_ingest_bytes,
-            namespace="acme",
+            tenant_id="acme",
             collection="help",
             document_key=" explicit-key ",
         )
@@ -200,7 +200,7 @@ def test_ingest_local_file_source_requires_document_key_when_path_has_parent_tra
             ingest_local_file_source(
                 "../shared.md",
                 ingest_bytes=fake_ingest_bytes,
-                namespace="acme",
+                tenant_id="acme",
                 collection="help",
             )
         )
@@ -229,7 +229,7 @@ def test_ingest_local_file_source_rejects_symlink_file_path(
             ingest_local_file_source(
                 alias,
                 ingest_bytes=fake_ingest_bytes,
-                namespace="acme",
+                tenant_id="acme",
                 collection="help",
             )
         )
@@ -256,7 +256,7 @@ def test_ingest_local_file_source_rejects_symlink_parent_path(
             ingest_local_file_source(
                 alias_dir / "external.md",
                 ingest_bytes=fake_ingest_bytes,
-                namespace="acme",
+                tenant_id="acme",
                 collection="help",
             )
         )
@@ -286,7 +286,7 @@ def test_ingest_local_file_source_rejects_hardlinked_file_path(
             ingest_local_file_source(
                 alias,
                 ingest_bytes=fake_ingest_bytes,
-                namespace="acme",
+                tenant_id="acme",
                 collection="help",
             )
         )

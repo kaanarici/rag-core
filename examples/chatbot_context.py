@@ -17,14 +17,14 @@ async def seed_help_center(core: Engine) -> None:
         ),
         filename="billing.txt",
         mime_type="text/plain",
-        namespace="acme",
+        tenant_id="acme",
         collection="help-center",
     )
     await core.add_bytes(
         file_bytes=b"Shipping usually takes 3-5 business days after fulfillment.",
         filename="shipping.txt",
         mime_type="text/plain",
-        namespace="acme",
+        tenant_id="acme",
         collection="help-center",
     )
 
@@ -32,7 +32,7 @@ async def seed_help_center(core: Engine) -> None:
 async def build_chatbot_context(core: Engine, query: str) -> Context:
     return await core.context(
         query=query,
-        namespace="acme",
+        tenant_id="acme",
         collections=["help-center"],
         limit=4,
         rerank=False,

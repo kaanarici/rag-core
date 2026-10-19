@@ -1,8 +1,8 @@
-{"query": "when does billing run", "namespace": "baseline", "collections": ["docs"], "expected_ids": ["billing"]}
-{"query": "international shipping customs", "namespace": "baseline", "collections": ["docs"], "expected_ids": ["shipping"]}
-{"query": "single sign on authentication", "namespace": "baseline", "collections": ["docs"], "expected_ids": ["auth"]}
-{"query": "webhook hmac signature", "namespace": "baseline", "collections": ["docs"], "expected_ids": ["webhook"]}
-{"query": "api rate limit retry header", "namespace": "baseline", "collections": ["docs"], "expected_ids": ["rate_limit"]}
-{"query": "data encryption at rest aes", "namespace": "baseline", "collections": ["docs"], "expected_ids": ["encryption"]}
-{"query": "cursor pagination next page", "namespace": "baseline", "collections": ["docs"], "expected_ids": ["pagination"]}
-{"query": "audit log retention export", "namespace": "baseline", "collections": ["docs"], "expected_ids": ["audit_log", "export"], "expected_grades": {"audit_log": 3, "export": 1}}
+{"query": "when does billing run", "tenant_id": "baseline", "collections": ["docs"], "expected_ids": ["billing"]}
+{"query": "international shipping customs", "tenant_id": "baseline", "collections": ["docs"], "expected_ids": ["shipping"]}
+{"query": "single sign on authentication", "tenant_id": "baseline", "collections": ["docs"], "expected_ids": ["auth"]}
+{"query": "webhook hmac signature", "tenant_id": "baseline", "collections": ["docs"], "expected_ids": ["webhook"]}
+{"query": "api rate limit retry header", "tenant_id": "baseline", "collections": ["docs"], "expected_ids": ["rate_limit"]}
+{"query": "data encryption at rest aes", "tenant_id": "baseline", "collections": ["docs"], "expected_ids": ["encryption"]}
+{"query": "cursor pagination next page", "tenant_id": "baseline", "collections": ["docs"], "expected_ids": ["pagination"]}
+{"query": "audit log retention export", "tenant_id": "baseline", "collections": ["docs"], "expected_ids": ["audit_log", "export"], "expected_grades": {"audit_log": 3, "export": 1}}

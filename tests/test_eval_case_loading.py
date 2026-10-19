@@ -14,7 +14,7 @@ def test_load_cases_validates_and_loads_jsonl_rows(tmp_path: Path) -> None:
         json.dumps(
             {
                 "query": "billing policy",
-                "namespace": "acme",
+                "tenant_id": "acme",
                 "collections": ["help"],
                 "expected_ids": ["doc-a#chunk-1", "doc-a#chunk-2"],
                 "expected_grades": {"doc-a#chunk-1": 3, "doc-a#chunk-2": 1},
@@ -27,7 +27,7 @@ def test_load_cases_validates_and_loads_jsonl_rows(tmp_path: Path) -> None:
     assert load_cases(path) == [
         EvalCase(
             query="billing policy",
-            namespace="acme",
+            tenant_id="acme",
             collections=("help",),
             expected_ids=("doc-a#chunk-1", "doc-a#chunk-2"),
             expected_grades={"doc-a#chunk-1": 3, "doc-a#chunk-2": 1},
@@ -42,7 +42,7 @@ def test_load_cases_accepts_context_level_expectations(tmp_path: Path) -> None:
         json.dumps(
             {
                 "query": "billing policy",
-                "namespace": "acme",
+                "tenant_id": "acme",
                 "collections": ["help"],
                 "expected_ids": ["billing.md"],
                 "expected_context_contains": ["ACH", "card"],
@@ -74,7 +74,7 @@ def test_load_cases_rejects_removed_expected_chunk_ids(tmp_path: Path) -> None:
         json.dumps(
             {
                 "query": "billing policy",
-                "namespace": "acme",
+                "tenant_id": "acme",
                 "collections": ["help"],
                 "expected_chunk_ids": ["doc-a"],
             }
@@ -92,7 +92,7 @@ def test_load_cases_accepts_scoped_no_answer_controls(tmp_path: Path) -> None:
         json.dumps(
             {
                 "query": "missing answer",
-                "namespace": "acme",
+                "tenant_id": "acme",
                 "collections": ["help"],
                 "document_ids": ["internal-doc"],
                 "expected_ids": [],
@@ -118,7 +118,7 @@ def test_load_cases_strips_stable_identifier_fields(tmp_path: Path) -> None:
             {
                 "case_id": " case-1 ",
                 "query": " billing policy ",
-                "namespace": " acme ",
+                "tenant_id": " acme ",
                 "collections": [" help "],
                 "expected_ids": [" doc-a#chunk-1 "],
                 "expected_grades": {" doc-a#chunk-1 ": 3},
@@ -132,7 +132,7 @@ def test_load_cases_strips_stable_identifier_fields(tmp_path: Path) -> None:
     assert case == EvalCase(
         case_id="case-1",
         query="billing policy",
-        namespace="acme",
+        tenant_id="acme",
         collections=("help",),
         expected_ids=("doc-a#chunk-1",),
         expected_grades={"doc-a#chunk-1": 3},
@@ -148,7 +148,7 @@ def test_load_cases_rejects_duplicate_case_id_after_stripping(tmp_path: Path) ->
                     {
                         "case_id": "case-1",
                         "query": "q1",
-                        "namespace": "acme",
+                        "tenant_id": "acme",
                         "collections": ["help"],
                         "expected_ids": ["doc"],
                     }
@@ -157,7 +157,7 @@ def test_load_cases_rejects_duplicate_case_id_after_stripping(tmp_path: Path) ->
                     {
                         "case_id": " case-1 ",
                         "query": "q2",
-                        "namespace": "acme",
+                        "tenant_id": "acme",
                         "collections": ["help"],
                         "expected_ids": ["doc"],
                     }
@@ -178,7 +178,7 @@ def test_load_cases_rejects_duplicate_case_id_after_stripping(tmp_path: Path) ->
         (
             {
                 "query": "",
-                "namespace": "acme",
+                "tenant_id": "acme",
                 "collections": ["help"],
                 "expected_ids": ["doc"],
             },
@@ -187,7 +187,7 @@ def test_load_cases_rejects_duplicate_case_id_after_stripping(tmp_path: Path) ->
         (
             {
                 "query": "q",
-                "namespace": "acme",
+                "tenant_id": "acme",
                 "collections": "help",
                 "expected_ids": ["doc"],
             },
@@ -196,7 +196,7 @@ def test_load_cases_rejects_duplicate_case_id_after_stripping(tmp_path: Path) ->
         (
             {
                 "query": "q",
-                "namespace": "acme",
+                "tenant_id": "acme",
                 "collections": ["help"],
                 "expected_ids": [],
             },
@@ -205,7 +205,7 @@ def test_load_cases_rejects_duplicate_case_id_after_stripping(tmp_path: Path) ->
         (
             {
                 "query": "q",
-                "namespace": "acme",
+                "tenant_id": "acme",
                 "collections": ["help"],
                 "expected_ids": ["doc-a#chunk-secret", " doc-a#chunk-secret "],
             },
@@ -214,7 +214,7 @@ def test_load_cases_rejects_duplicate_case_id_after_stripping(tmp_path: Path) ->
         (
             {
                 "query": "q",
-                "namespace": "acme",
+                "tenant_id": "acme",
                 "collections": ["help"],
                 "expected_ids": ["doc"],
                 "expected_grades": {"doc-a#chunk-secret": True},
@@ -224,7 +224,7 @@ def test_load_cases_rejects_duplicate_case_id_after_stripping(tmp_path: Path) ->
         (
             {
                 "query": "q",
-                "namespace": "acme",
+                "tenant_id": "acme",
                 "collections": ["help"],
                 "expected_ids": ["doc"],
                 "expected_grades": {"other-doc": 1},
@@ -234,7 +234,7 @@ def test_load_cases_rejects_duplicate_case_id_after_stripping(tmp_path: Path) ->
         (
             {
                 "query": "q",
-                "namespace": "acme",
+                "tenant_id": "acme",
                 "collections": ["help"],
                 "expected_ids": ["doc"],
                 "expected_grades": {"doc": 0},
@@ -293,7 +293,7 @@ def test_load_cases_rejects_all_blank_lines(tmp_path: Path) -> None:
 def test_load_cases_rejects_duplicate_json_object_keys(tmp_path: Path) -> None:
     path = tmp_path / "cases.jsonl"
     path.write_text(
-        '{"query":"q1","query":"q2","namespace":"acme","collections":["help"],"expected_ids":["doc"]}',
+        '{"query":"q1","query":"q2","tenant_id":"acme","collections":["help"],"expected_ids":["doc"]}',
         encoding="utf-8",
     )
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
 
 import pytest
 
@@ -13,7 +12,6 @@ from rag_core.config import (
     QdrantConfig,
     VectorStoreConfig,
 )
-from rag_core.config.env_config import build_config_from_env
 from rag_core.core import Engine
 from rag_core.demo import DemoEmbeddingProvider, build_demo_core
 from rag_core.search.policy import CollectionPolicy
@@ -66,7 +64,9 @@ def test_rag_core_binds_scope_across_ingest_search_and_delete() -> None:
                 )
             )
             await rag.search("How can invoices be paid?", document_ids=("doc-1",))
-            with pytest.raises(ValueError, match="outside the configured retrieval scope"):
+            with pytest.raises(
+                ValueError, match="outside the configured retrieval scope"
+            ):
                 await rag.search("private", document_ids=("doc-2",))
             with pytest.raises(ValueError, match="Document.id is required"):
                 await rag.ingest(
@@ -82,60 +82,40 @@ def test_rag_core_binds_scope_across_ingest_search_and_delete() -> None:
 
         assert ingested.document_id == "doc-1"
         assert ingested.status == "created"
-        assert deleted.namespace == "acme"
+        assert deleted.tenant_id == "acme"
         assert deleted.collection == "company-docs"
         return store
 
     store = asyncio.run(scenario())
 
     point = store.upsert_calls[0][0]
-    assert point.payload["namespace"] == "acme"
+    assert point.payload["tenant_id"] == "acme"
     assert point.payload["collection"] == "company-docs"
-    assert store.search_calls[0].namespace == "acme"
+    assert store.search_calls[0].tenant_id == "acme"
     assert store.search_calls[0].collections == ["company-docs"]
     assert store.search_calls[0].document_ids == ["doc-1"]
     assert len(store.search_calls) == 1
-    assert store.delete_calls[0].namespace == "acme"
+    assert store.delete_calls[0].tenant_id == "acme"
     assert store.delete_calls[0].collection == "company-docs"
     assert store.delete_calls[0].document_id == "doc-1"
 
 
-def test_rag_core_tool_reuses_bound_openai_agents_adapter(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: dict[str, Any] = {}
-    sentinel = object()
+def test_rag_core_tool_is_a_plain_scope_bound_function() -> None:
+    import inspect
 
-    def fake_builder(core: object, **kwargs: Any) -> object:
-        captured["core"] = core
-        captured.update(kwargs)
-        return sentinel
-
-    monkeypatch.setattr(
-        "rag_core.integrations.openai_agents.build_retrieve_context_tool",
-        fake_builder,
-    )
     rag = _make_rag(RecordingVectorStore())
-
-    assert rag.tool() is sentinel
-    assert captured["namespace"] == "acme"
-    assert captured["collection"] == "company-docs"
-    assert captured["document_ids"] == ("doc-1",)
-    assert captured["default_rerank"] is False
-    assert captured["default_use_lexical_search"] is False
-    assert captured["expose_strategy_options"] is False
-    assert not hasattr(rag, "context")
-    assert not hasattr(rag, "delete_collection")
-
-    asyncio.run(rag.close())
+    tool = rag.tool()
+    assert set(inspect.signature(tool).parameters) == {"query", "limit"}
+    with pytest.raises(TypeError):
+        tool("invoices", tenant_id="another-tenant")
 
 
 def test_rag_core_rejects_scope_widening_before_engine_calls() -> None:
-    with pytest.raises(ValueError, match="namespace='other'"):
+    with pytest.raises(ValueError, match="tenant_id='other'"):
         RAGCore(
             Engine(
                 make_test_config().__class__(
-                    collection_policy=CollectionPolicy(bound_namespace="other")
+                    collection_policy=CollectionPolicy(bound_tenant_id="other")
                 ),
                 embedding_provider=FakeEmbeddingProvider(),
                 sparse_embedder=FakeSparseEmbedder(),
@@ -184,7 +164,7 @@ def test_rag_core_collapses_exact_duplicate_evidence_deterministically() -> None
         id="chunk-a",
         text="Invoices can be paid by ACH.",
         score=0.8,
-        namespace="acme",
+        tenant_id="acme",
         collection="company-docs",
         document_id="doc-a",
         document_key="a.md",
@@ -193,7 +173,7 @@ def test_rag_core_collapses_exact_duplicate_evidence_deterministically() -> None
         id="chunk-b",
         text="Invoices can be paid by ACH.",
         score=0.8,
-        namespace="acme",
+        tenant_id="acme",
         collection="company-docs",
         document_id="doc-b",
         document_key="b.md",
@@ -202,7 +182,7 @@ def test_rag_core_collapses_exact_duplicate_evidence_deterministically() -> None
         id="chunk-c",
         text="Card payments are also supported.",
         score=0.7,
-        namespace="acme",
+        tenant_id="acme",
         collection="company-docs",
         document_id="doc-c",
         document_key="c.md",
@@ -262,7 +242,9 @@ def test_rag_core_duplicate_collapsing_is_exact_and_type_aware() -> None:
     asyncio.run(scenario())
 
 
-def test_rag_core_ingest_is_idempotent_and_collapses_duplicate_sources_on_qdrant() -> None:
+def test_rag_core_ingest_is_idempotent_and_collapses_duplicate_sources_on_qdrant() -> (
+    None
+):
     class CountingEmbeddingProvider(DemoEmbeddingProvider):
         def __init__(self) -> None:
             super().__init__(dimensions=64)
@@ -276,11 +258,13 @@ def test_rag_core_ingest_is_idempotent_and_collapses_duplicate_sources_on_qdrant
         embedding = CountingEmbeddingProvider()
         engine = Engine(
             Config(
-                vector_store=VectorStoreConfig(qdrant=QdrantConfig(
-                    location=":memory:",
-                    store_collection="rag_core_idempotency_integration",
-                    dimension_aware_collection=False,
-                )),
+                vector_store=VectorStoreConfig(
+                    qdrant=QdrantConfig(
+                        location=":memory:",
+                        store_collection="rag_core_idempotency_integration",
+                        dimension_aware_collection=False,
+                    )
+                ),
                 embedding=EmbeddingConfig(
                     provider=DEMO_EMBEDDING_PROVIDER,
                     model=DEMO_EMBEDDING_MODEL,
@@ -325,7 +309,7 @@ def test_rag_core_ingest_is_idempotent_and_collapses_duplicate_sources_on_qdrant
         assert unchanged.document_id == first.document_id
         assert unchanged.content_hash == first.content_hash
         assert embedding.embedded_text_count == embedded_after_first + 1
-        assert health_after_unchanged["points_count"] == 1
+        assert health_after_unchanged["points_count"] == 2
         assert second_source.status == "created"
         assert len(retrieved.evidence) == 1
         source_ids = {
@@ -355,11 +339,13 @@ def test_rag_core_reindexes_payload_metadata_changes_on_qdrant() -> None:
         rag = RAGCore(
             Engine(
                 Config(
-                    vector_store=VectorStoreConfig(qdrant=QdrantConfig(
-                        location=":memory:",
-                        store_collection="rag_core_metadata_update_integration",
-                        dimension_aware_collection=False,
-                    )),
+                    vector_store=VectorStoreConfig(
+                        qdrant=QdrantConfig(
+                            location=":memory:",
+                            store_collection="rag_core_metadata_update_integration",
+                            dimension_aware_collection=False,
+                        )
+                    ),
                     embedding=EmbeddingConfig(
                         provider=DEMO_EMBEDDING_PROVIDER,
                         model=DEMO_EMBEDDING_MODEL,
@@ -405,20 +391,7 @@ def test_rag_core_reindexes_payload_metadata_changes_on_qdrant() -> None:
     asyncio.run(scenario())
 
 
-def test_rag_core_tool_uses_the_same_duplicate_collapsing_path(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def fake_function_tool(**kwargs: object) -> object:
-        def decorate(function: object) -> object:
-            return function
-
-        return decorate
-
-    monkeypatch.setattr(
-        "rag_core.integrations.openai_agents.import_agents_function_tool",
-        lambda: fake_function_tool,
-    )
-
+def test_rag_core_tool_uses_the_same_duplicate_collapsing_path() -> None:
     async def scenario() -> None:
         rag = RAGCore(
             build_demo_core(store_collection="rag_core_tool_dedup_integration"),
@@ -456,11 +429,13 @@ def test_rag_core_tool_uses_the_same_duplicate_collapsing_path(
 def test_rag_core_scope_does_not_rename_an_app_owned_physical_collection() -> None:
     rag = RAGCore(
         Config(
-            vector_store=VectorStoreConfig(qdrant=QdrantConfig(
-                location=":memory:",
-                store_collection="app_owned_index",
-                dimension_aware_collection=False,
-            )),
+            vector_store=VectorStoreConfig(
+                qdrant=QdrantConfig(
+                    location=":memory:",
+                    store_collection="app_owned_index",
+                    dimension_aware_collection=False,
+                )
+            ),
             embedding=EmbeddingConfig(
                 provider=DEMO_EMBEDDING_PROVIDER,
                 model=DEMO_EMBEDDING_MODEL,
@@ -473,7 +448,7 @@ def test_rag_core_scope_does_not_rename_an_app_owned_physical_collection() -> No
     try:
         assert rag._engine._collection_name == "app_owned_index"
         assert rag._engine._config.collection_policy is not None
-        assert rag._engine._config.collection_policy.bound_namespace == "acme"
+        assert rag._engine._config.collection_policy.bound_tenant_id == "acme"
         assert rag._engine._config.collection_policy.allowed_collections is None
     finally:
         asyncio.run(rag.close())
@@ -494,8 +469,8 @@ def test_from_env_builds_scoped_dense_qdrant_facade(
         assert rag.tenant_id == "acme"
         assert rag.collection == "company-docs"
         assert rag._engine._sparse is None
-        assert rag._engine._store.capabilities.query_plan.dense is True
-        assert rag._engine._store.capabilities.query_plan.sparse is False
+        assert rag._engine._store.capabilities.dense_vector_dimensions == rag._engine._embedding.dimensions
+        assert rag._engine._store.capabilities.lexical is False
     finally:
         asyncio.run(rag.close())
 
@@ -512,22 +487,6 @@ def test_from_env_fails_closed_without_tenant_or_store_target(
     monkeypatch.delenv("RAG_CORE_QDRANT_LOCATION", raising=False)
     with pytest.raises(ValueError, match="requires exactly one"):
         RAGCore.from_env(collection="company-docs")
-
-
-def test_from_env_maps_existing_pgvector_and_turbopuffer_configuration(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("RAG_CORE_VECTOR_STORE", "pgvector")
-    monkeypatch.setenv("RAG_CORE_PGVECTOR_DSN", "postgresql://db/rag")
-    pgvector = build_config_from_env()
-    assert pgvector.vector_store.provider == "pgvector"
-    assert pgvector.vector_store.pgvector.dsn == "postgresql://db/rag"
-
-    monkeypatch.setenv("RAG_CORE_VECTOR_STORE", "turbopuffer")
-    monkeypatch.setenv("RAG_CORE_TURBOPUFFER_NAMESPACE", "company-docs")
-    turbopuffer = build_config_from_env()
-    assert turbopuffer.vector_store.provider == "turbopuffer"
-    assert turbopuffer.vector_store.turbopuffer.namespace == "company-docs"
 
 
 def test_default_config_does_not_construct_sparse_machinery(

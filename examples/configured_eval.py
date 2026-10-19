@@ -11,30 +11,37 @@ from pathlib import Path
 
 from rag_core import Config
 from rag_core.core import Engine
-from rag_core.config import EmbeddingConfig, LOCAL_EMBEDDING_MODEL, QdrantConfig, VectorStoreConfig
+from rag_core.config import (
+    EmbeddingConfig,
+    LOCAL_EMBEDDING_MODEL,
+    QdrantConfig,
+    VectorStoreConfig,
+)
 from rag_core.evals import (
     eval_report,
     load_cases,
     run_eval,
 )
-from rag_core.search import search_profile
 
-NAMESPACE, COLLECTION = "acme", "help-center"
+TENANT_ID, COLLECTION = "acme", "help-center"
 
 
 def _config(provider: str) -> tuple[Config, str]:
     if provider == "local":
-        return Config.local(), LOCAL_EMBEDDING_MODEL
+        return Config.local(hybrid=True), LOCAL_EMBEDDING_MODEL
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is required for --provider openai.")
     return (
         Config(
-            vector_store=VectorStoreConfig(qdrant=QdrantConfig(
-                location=":memory:",
-                store_collection="rag_core_configured_eval",
-                dimension_aware_collection=False,
-            )),
+            hybrid=True,
+            vector_store=VectorStoreConfig(
+                qdrant=QdrantConfig(
+                    location=":memory:",
+                    store_collection="rag_core_configured_eval",
+                    dimension_aware_collection=False,
+                )
+            ),
             embedding=EmbeddingConfig(
                 provider="openai",
                 model="text-embedding-3-small",
@@ -45,7 +52,9 @@ def _config(provider: str) -> tuple[Config, str]:
     )
 
 
-async def run(corpus_dir: Path, cases_jsonl: Path, *, provider: str) -> dict[str, object]:
+async def run(
+    corpus_dir: Path, cases_jsonl: Path, *, provider: str
+) -> dict[str, object]:
     config, embedding_model = _config(provider)
     files = sorted(path for path in corpus_dir.rglob("*") if path.is_file())
     if not files:
@@ -53,18 +62,38 @@ async def run(corpus_dir: Path, cases_jsonl: Path, *, provider: str) -> dict[str
     async with Engine(config) as core:
         for path in files:
             document_key = path.relative_to(corpus_dir).as_posix()
-            mime_type = "text/markdown" if path.suffix.lower() == ".md" else "text/plain"
-            await core.add_bytes(file_bytes=path.read_bytes(), filename=document_key, mime_type=mime_type, namespace=NAMESPACE, collection=COLLECTION, document_id=document_key, document_key=document_key)
-        results = await run_eval(core, load_cases(cases_jsonl), rerank=False, query_plan=search_profile("balanced", limit=10))
+            mime_type = (
+                "text/markdown" if path.suffix.lower() == ".md" else "text/plain"
+            )
+            await core.add_bytes(
+                file_bytes=path.read_bytes(),
+                filename=document_key,
+                mime_type=mime_type,
+                tenant_id=TENANT_ID,
+                collection=COLLECTION,
+                document_id=document_key,
+                document_key=document_key,
+            )
+        results = await run_eval(
+            core, load_cases(cases_jsonl), rerank=False, mode="hybrid"
+        )
     report = eval_report(
         results,
-        run={"mode": provider, "vector_store": "embedded_qdrant", "embedding_model": embedding_model, "search_profile": "balanced", "rerank": False},
+        run={
+            "mode": provider,
+            "vector_store": "embedded_qdrant",
+            "embedding_model": embedding_model,
+            "retrieval_mode": "hybrid",
+            "rerank": False,
+        },
     )
     return report
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run real-embedding retrieval eval over a local folder.")
+    parser = argparse.ArgumentParser(
+        description="Run real-embedding retrieval eval over a local folder."
+    )
     parser.add_argument("corpus_dir", type=Path)
     parser.add_argument("cases_jsonl", type=Path)
     parser.add_argument("--provider", choices=("local", "openai"), default="local")
@@ -74,7 +103,9 @@ def main(argv: list[str] | None = None) -> int:
     if not args.cases_jsonl.is_file():
         parser.error(f"cases_jsonl must be a JSONL file: {args.cases_jsonl}")
     try:
-        report = asyncio.run(run(args.corpus_dir, args.cases_jsonl, provider=args.provider))
+        report = asyncio.run(
+            run(args.corpus_dir, args.cases_jsonl, provider=args.provider)
+        )
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1

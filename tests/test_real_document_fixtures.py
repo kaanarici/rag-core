@@ -223,23 +223,7 @@ async def _build_real_document_context_pack(
     )
 
     await indexer.index_document(
-        IndexRequest(
-            document_id=filename,
-            collection="real-documents",
-            namespace="fixture",
-            text=prepared.markdown,
-            filename=filename,
-            mime_type=mime_type,
-            source_type="file",
-            document_key=f"file:{filename}",
-            content_sha256=f"sha256:{filename}",
-            processing_version="test-real-document-context",
-            document_metadata=prepared.metadata,
-            pre_chunked_texts=[chunk.text for chunk in prepared.chunks],
-            embedding_chunk_texts=[chunk.embedding_text for chunk in prepared.chunks],
-            chunk_metadata=[dict(chunk.metadata) for chunk in prepared.chunks],
-            prepared_chunks=list(prepared.chunks),
-        )
+        IndexRequest(document_id=filename, collection="real-documents", tenant_id="fixture", text=prepared.markdown, filename=filename, mime_type=mime_type, source_type="file", document_key=f"file:{filename}", content_sha256=f"sha256:{filename}", processing_version="test-real-document-context", document_metadata=prepared.metadata, prepared_chunks=list(prepared.chunks))
     )
 
     [points] = store.upsert_calls

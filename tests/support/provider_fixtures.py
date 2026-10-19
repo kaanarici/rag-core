@@ -68,11 +68,3 @@ def cohere_embed_response_from_fixture(payload: dict[str, Any]) -> SimpleNamespa
     return SimpleNamespace(
         embeddings=SimpleNamespace(float_=embeddings["float"]),
     )
-
-
-def zeroentropy_embed_response_from_fixture(payload: dict[str, Any]) -> SimpleNamespace:
-    rows = [
-        SimpleNamespace(embedding=row["embedding"])
-        for row in payload["results"]
-    ]
-    return SimpleNamespace(results=rows)

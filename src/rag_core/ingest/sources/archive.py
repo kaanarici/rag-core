@@ -42,8 +42,9 @@ class ArchiveSourceItem:
     document_key: str
     filename: str
     mime_type: str
-    content_sha256: str
+    content_sha256: str | None
     byte_count: int
+    crc32: int | None = None
     _limits: ArchiveLimits = field(
         default_factory=ArchiveLimits,
         repr=False,
@@ -71,7 +72,8 @@ class ArchiveSourceItem:
         )
         if (
             len(payload) != self.byte_count
-            or hashlib.sha256(payload).hexdigest() != self.content_sha256
+            or self.content_sha256 is not None
+            and hashlib.sha256(payload).hexdigest() != self.content_sha256
         ):
             raise ValueError(
                 f"archive member changed after planning: {self.member_path!r}"
@@ -161,10 +163,13 @@ class ZipArchiveReadSession:
                 entry,
                 max_entry_bytes=self._limits.max_entry_bytes,
             )
+            if item.crc32 is not None and entry.CRC != item.crc32:
+                raise ValueError("archive member changed after planning")
             payload = archive.read(entry)
         if (
             len(payload) != item.byte_count
-            or hashlib.sha256(payload).hexdigest() != item.content_sha256
+            or item.content_sha256 is not None
+            and hashlib.sha256(payload).hexdigest() != item.content_sha256
         ):
             raise ValueError(
                 f"archive member changed after planning: {item.member_path!r}"
@@ -172,41 +177,43 @@ class ZipArchiveReadSession:
         return payload
 
 
-class ZipArchiveSourceReader:
-    def read(
-        self,
-        archive_path: str | Path,
-        *,
-        limits: ArchiveLimits | None = None,
-    ) -> ArchiveSourcePlan:
-        resolved_limits = limits or ArchiveLimits()
-        path = Path(archive_path)
-        _reject_archive_file_path(path)
-        items: list[ArchiveSourceItem] = []
-        try:
-            with zipfile.ZipFile(path) as archive:
-                entries = _validated_archive_member_index(
-                    archive,
-                    resolved_limits,
-                )
-                for member_path, entry in entries.items():
-                    if not is_supported_archive_member_path(member_path):
-                        continue
-                    items.append(
-                        ArchiveSourceItem(
-                            archive_path=path,
-                            member_path=member_path,
-                            document_key=archive_document_key(path, member_path),
-                            filename=PurePosixPath(member_path).name,
-                            mime_type=detect_mime_type_for_name(member_path),
-                            content_sha256=archive_member_sha256(archive, entry),
-                            byte_count=entry.file_size,
-                            _limits=resolved_limits,
-                        )
+def read_zip_archive(
+    archive_path: str | Path,
+    *,
+    limits: ArchiveLimits | None = None,
+    hash_content: bool = True,
+) -> ArchiveSourcePlan:
+    resolved_limits = limits or ArchiveLimits()
+    path = Path(archive_path)
+    _reject_archive_file_path(path)
+    items: list[ArchiveSourceItem] = []
+    try:
+        with zipfile.ZipFile(path) as archive:
+            entries = _validated_archive_member_index(
+                archive,
+                resolved_limits,
+            )
+            for member_path, entry in entries.items():
+                if not is_supported_archive_member_path(member_path):
+                    continue
+                items.append(
+                    ArchiveSourceItem(
+                        archive_path=path,
+                        member_path=member_path,
+                        document_key=archive_document_key(path, member_path),
+                        filename=PurePosixPath(member_path).name,
+                        mime_type=detect_mime_type_for_name(member_path),
+                        content_sha256=archive_member_sha256(archive, entry)
+                        if hash_content
+                        else None,
+                        crc32=entry.CRC,
+                        byte_count=entry.file_size,
+                        _limits=resolved_limits,
                     )
-        except zipfile.BadZipFile as exc:
-            raise ValueError(f"archive is not a valid ZIP file: {str(path)!r}") from exc
-        return ArchiveSourcePlan(archive_path=path, items=tuple(items))
+                )
+    except zipfile.BadZipFile as exc:
+        raise ValueError(f"archive is not a valid ZIP file: {str(path)!r}") from exc
+    return ArchiveSourcePlan(archive_path=path, items=tuple(items))
 
 
 def read_zip_member_bytes(
@@ -241,9 +248,7 @@ def _archive_member_index(
             continue
         safe_path = safe_archive_member_path(entry.filename)
         if safe_path in entries:
-            raise ValueError(
-                f"archive contains duplicate member path: {safe_path!r}"
-            )
+            raise ValueError(f"archive contains duplicate member path: {safe_path!r}")
         entries[safe_path] = entry
     return entries
 
@@ -283,7 +288,7 @@ __all__ = [
     "ArchiveSourceItem",
     "ArchiveSourcePlan",
     "ZipArchiveReadSession",
-    "ZipArchiveSourceReader",
+    "read_zip_archive",
     "archive_document_key",
     "is_supported_archive_member_path",
     "read_zip_member_bytes",

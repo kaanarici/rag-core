@@ -6,17 +6,8 @@ from types import SimpleNamespace
 import pytest
 
 from rag_core.search.providers.embedding import OpenAIEmbeddingProvider
-from rag_core.search.providers.cached_embedding import CachedEmbeddingProvider
-from rag_core.search.providers.embedding_cache import (
-    InMemoryCache,
-)
-from rag_core.search.providers.embedding_cache_models import (
-    EmbedCacheKey,
-    sha256_text,
-)
 from rag_core.search.providers.embedding_results import (
     safe_indexed_embedding_vectors,
-    safe_ordered_embedding_vectors,
 )
 
 SECRET = "sk-test-secret"
@@ -92,18 +83,6 @@ def test_indexed_embedding_validation_errors_are_sanitized(
     assert "_DangerousVector" not in text
 
 
-def test_ordered_embedding_validation_rejects_wrong_dimensions_safely() -> None:
-    with pytest.raises(ValueError) as exc_info:
-        safe_ordered_embedding_vectors(
-            rows=[[0.1], [0.2, 0.3, 0.4]],
-            expected_count=2,
-            expected_dimensions=2,
-            provider_name="FakeEmbeddingProvider",
-        )
-
-    text = str(exc_info.value)
-    assert "embedding dimension mismatch" in text
-    assert "expected 2 dimensions, got 1" in text
 
 
 def test_openai_embedding_provider_validates_indexed_results(
@@ -143,37 +122,3 @@ def test_openai_embedding_provider_errors_are_sanitized(
     assert "OpenAIEmbeddingProvider returned invalid embedding index" in text
     assert SECRET not in text
     assert "Traceback" not in text
-
-
-def test_openai_embedding_provider_rejects_wrong_dimensions_before_cache_write(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    api = _FakeEmbeddingsAPI(
-        [
-            SimpleNamespace(index=0, embedding=[0.2]),
-        ]
-    )
-    _patch_async_openai(monkeypatch, api)
-    cache = InMemoryCache()
-    provider = OpenAIEmbeddingProvider(model="text-embedding-3-small", dimensions=2)
-    cached = CachedEmbeddingProvider(provider, cache)
-
-    with pytest.raises(ValueError) as exc_info:
-        asyncio.run(cached.embed_texts(["alpha"]))
-
-    text = str(exc_info.value)
-    assert "OpenAIEmbeddingProvider returned embedding dimension mismatch" in text
-    assert asyncio.run(
-        cache.get(
-            EmbedCacheKey(
-                provider="openai",
-                provider_config_fingerprint="",
-                model="text-embedding-3-small",
-                dimensions=2,
-                input_type="document",
-                normalization="text_sha256_utf8",
-                processing_fingerprint="",
-                content_sha256=sha256_text("alpha"),
-            )
-        )
-    ) is None

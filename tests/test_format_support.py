@@ -8,18 +8,18 @@ import pytest
 import rag_core.documents.converters as converters_module
 from rag_core.file_io import detect_mime_type_for_name
 from rag_core.documents.converters import get_converter
-from rag_core.documents.converters.format_support import (
+from rag_core.documents.formats import (
     FORMAT_SUPPORT_MATRIX,
     UNSUPPORTED_BINARY_MIME_TYPES,
     format_support_for_extension,
     format_support_for_mime_type,
 )
-from rag_core.documents.converters.registry_maps import (
+from rag_core.documents.formats import (
     EXTENSION_MAP,
     MIME_TYPE_MAP,
     is_registered_pdf_document,
 )
-from rag_core.documents.converters.registry_specs import CONVERTER_SPEC_BY_KEY
+from rag_core.documents.formats import FORMATS
 from rag_core.ingest.local import validate_supported_local_file
 from rag_core.ingest.sources.remote import _extension_for_mime_type
 from rag_core.ingest.sources.local import is_supported_local_file
@@ -27,9 +27,7 @@ from rag_core.ingest.sources.local import is_supported_local_file
 
 def test_format_support_converter_keys_are_registered() -> None:
     for entry in FORMAT_SUPPORT_MATRIX:
-        if entry.converter_key is None:
-            continue
-        assert entry.converter_key in CONVERTER_SPEC_BY_KEY
+        assert entry.converter_key in FORMATS
 
 
 def test_format_support_covers_registry_maps() -> None:
@@ -112,15 +110,15 @@ def test_known_mapped_binary_formats_do_not_fall_back_to_text_when_converter_mis
     filename: str,
     mime_type: str,
 ) -> None:
-    text_converter = get_converter(filename="notes.txt", mime_type="text/plain")
-    monkeypatch.setattr(
-        converters_module,
-        "get_registered_converters",
-        lambda: {"text": text_converter},
-    )
-
-    with pytest.raises(RuntimeError, match="mapped.*unavailable"):
-        converters_module.get_converter(filename=filename, mime_type=mime_type)
+    def fail_import(module_name: str, package: str | None = None) -> object:
+        raise ModuleNotFoundError("private dependency path")
+    converters_module._converter.cache_clear()
+    monkeypatch.setattr(converters_module, "import_module", fail_import)
+    try:
+        with pytest.raises(RuntimeError, match="Failed to initialize"):
+            converters_module.get_converter(filename=filename, mime_type=mime_type)
+    finally:
+        converters_module._converter.cache_clear()
 
 
 def test_validate_supported_local_file_rejects_hardlinked_path(tmp_path: Path) -> None:
@@ -148,7 +146,7 @@ def test_unsupported_local_file_message_is_actionable(tmp_path: Path) -> None:
     image_message = str(image_error.value)
     assert "Images require an injected OCR provider" in image_message
     assert "Default local ingest supports:" in image_message
-    assert "https://kaanarici.github.io/rag-core/docs/formats" in image_message
+    assert "https://github.com/kaanarici/rag-core/blob/main/docs/formats.md" in image_message
 
     binary_office = tmp_path / "sample.xls"
     binary_office.write_bytes(b"not real xls")
@@ -158,7 +156,7 @@ def test_unsupported_local_file_message_is_actionable(tmp_path: Path) -> None:
 
     binary_office_message = str(binary_office_error.value)
     assert "unsupported extension '.xls'" in binary_office_message
-    assert "https://kaanarici.github.io/rag-core/docs/formats" in binary_office_message
+    assert "https://github.com/kaanarici/rag-core/blob/main/docs/formats.md" in binary_office_message
 
 
 def test_tsv_mime_support_without_extension_resolves_to_csv_converter() -> None:
@@ -203,12 +201,12 @@ def test_jsonl_alias_mime_types_route_to_json_converter(mime_type: str) -> None:
 
 
 def test_format_support_docs_cover_matrix() -> None:
-    docs = Path("docs-site/content/docs/formats.mdx").read_text(encoding="utf-8")
+    docs = Path("docs/formats.md").read_text(encoding="utf-8")
 
     # Docs explain that converters emit parser metadata and that extraction
     # quality (not "parser quality") is observable in traces, payloads, and
     # context snippets.
-    assert "converter registry" in docs
+    assert "format table" in docs
     assert "parser metadata under" in docs
     assert '`metadata["parser"]`' in docs
     assert "trace events" in docs
@@ -225,7 +223,7 @@ def test_format_support_docs_cover_matrix() -> None:
 
 
 def test_format_support_docs_name_known_gaps_and_locators() -> None:
-    docs = Path("docs-site/content/docs/formats.mdx").read_text(encoding="utf-8")
+    docs = Path("docs/formats.md").read_text(encoding="utf-8")
     normalized = " ".join(docs.split())
 
     # Honesty guardrail: docs must name the real per-format gaps rather than

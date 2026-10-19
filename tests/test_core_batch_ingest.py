@@ -1,4 +1,5 @@
 from __future__ import annotations
+from rag_core.events.sink import EventSink
 
 import asyncio
 import json
@@ -10,9 +11,8 @@ from rag_core.core import Engine
 from rag_core.config import SKIP_UNCHANGED_MATERIALIZE
 from rag_core.core_models import IngestedDocument, PreparedDocument
 from rag_core.events import EventBuffer
-from rag_core.ingest.local.models import LocalIngestResult
+from rag_core.ingest.local import LocalIngestResult
 from rag_core.events import IngestBatchCompleted, IngestBatchStarted
-from rag_core.search.providers.embedding_cache_models import EmbedCacheKey
 from rag_core.ingest.sources.local import document_key as local_document_key
 
 from tests.support import (
@@ -23,17 +23,6 @@ from tests.support import (
 )
 
 
-class RecordingEmbeddingCache:
-    def __init__(self) -> None:
-        self.get_keys: list[EmbedCacheKey] = []
-        self.put_keys: list[EmbedCacheKey] = []
-
-    async def get(self, key: EmbedCacheKey) -> list[float] | None:
-        self.get_keys.append(key)
-        return None
-
-    async def put(self, key: EmbedCacheKey, vector: list[float]) -> None:
-        self.put_keys.append(key)
 
 
 def test_rag_core_ingest_files_reuses_local_batch_ingest_without_closing(
@@ -59,7 +48,7 @@ def test_rag_core_ingest_files_reuses_local_batch_ingest_without_closing(
         )
         result = await core.add(
             docs,
-            namespace="acme",
+            tenant_id="acme",
             collection="help",
             max_concurrency=2,
         )
@@ -82,50 +71,6 @@ def test_rag_core_ingest_files_reuses_local_batch_ingest_without_closing(
     assert isinstance(events.events[-1], IngestBatchCompleted)
 
 
-def test_rag_core_ingest_files_uses_file_source_type_when_runtime_default_differs(
-    tmp_path: Path,
-) -> None:
-    docs = tmp_path / "docs"
-    docs.mkdir()
-    (docs / "billing.md").write_text("Billing is paid by card or ACH.", encoding="utf-8")
-
-    async def scenario() -> tuple[RecordingVectorStore, RecordingEmbeddingCache]:
-        store = RecordingVectorStore()
-        embedding_cache = RecordingEmbeddingCache()
-        core = Engine(
-            make_test_config(
-                qdrant_collection="rag_core_batch_ingest_source_guard",
-                embedding_dimensions=4,
-                source_type="url",
-            ),
-            embedding_provider=FakeEmbeddingProvider(),
-            sparse_embedder=FakeSparseEmbedder(),
-            vector_store=store,
-            embedding_cache=embedding_cache,
-        )
-        try:
-            await core.add(
-                docs,
-                namespace="acme",
-                collection="help",
-            )
-        finally:
-            await core.close()
-        return store, embedding_cache
-
-    store, embedding_cache = asyncio.run(scenario())
-
-    points = [point for call in store.upsert_calls for point in call]
-    assert {point.payload["source_type"] for point in points} == {"file"}
-    assert {
-        json.loads(str(point.payload["processing_version"]))["source_type"]
-        for point in points
-    } == {"file"}
-    assert embedding_cache.get_keys
-    assert {
-        json.loads(key.processing_fingerprint)["source_type"]
-        for key in embedding_cache.get_keys
-    } == {"file"}
 
 
 def test_rag_core_ingest_file_uses_file_source_type_fingerprint(tmp_path: Path) -> None:
@@ -147,7 +92,7 @@ def test_rag_core_ingest_file_uses_file_source_type_fingerprint(tmp_path: Path) 
         try:
             await core.add_file(
                 doc,
-                namespace="acme",
+                tenant_id="acme",
                 collection="help",
             )
         finally:
@@ -182,7 +127,7 @@ def test_unchanged_ingest_uses_fast_skip_without_reparsing(tmp_path: Path) -> No
             vector_store=store,
         )
         try:
-            first = await core.add_file(doc, namespace="acme", collection="help")
+            first = await core.add_file(doc, tenant_id="acme", collection="help")
 
             async def fail_prepare(
                 *,
@@ -190,14 +135,15 @@ def test_unchanged_ingest_uses_fast_skip_without_reparsing(tmp_path: Path) -> No
                 filename: str,
                 mime_type: str,
                 path: str | None = None,
-                namespace: str = "",
+                tenant_id: str = "",
                 collection: str = "",
                 document_id: str = "",
+                event_sink: EventSink | None = None,
             ) -> NoReturn:
                 raise AssertionError("fast skip should not parse unchanged content")
 
             core._ingest._prepare_bytes = fail_prepare
-            second = await core.add_file(doc, namespace="acme", collection="help")
+            second = await core.add_file(doc, tenant_id="acme", collection="help")
             return (first, second), store
         finally:
             await core.close()
@@ -234,7 +180,7 @@ def test_materialized_skip_mode_preserves_previous_prepare_behavior(tmp_path: Pa
             vector_store=store,
         )
         try:
-            await core.add_file(doc, namespace="acme", collection="help")
+            await core.add_file(doc, tenant_id="acme", collection="help")
             prepare_calls = 0
             original_prepare = core._ingest._prepare_bytes
 
@@ -244,9 +190,10 @@ def test_materialized_skip_mode_preserves_previous_prepare_behavior(tmp_path: Pa
                 filename: str,
                 mime_type: str,
                 path: str | None = None,
-                namespace: str = "",
+                tenant_id: str = "",
                 collection: str = "",
                 document_id: str = "",
+                event_sink: EventSink | None = None,
             ) -> PreparedDocument:
                 nonlocal prepare_calls
                 prepare_calls += 1
@@ -255,13 +202,14 @@ def test_materialized_skip_mode_preserves_previous_prepare_behavior(tmp_path: Pa
                     filename=filename,
                     mime_type=mime_type,
                     path=path,
-                    namespace=namespace,
+                    tenant_id=tenant_id,
                     collection=collection,
                     document_id=document_id,
+                    event_sink=event_sink,
                 )
 
             core._ingest._prepare_bytes = count_prepare
-            await core.add_file(doc, namespace="acme", collection="help")
+            await core.add_file(doc, tenant_id="acme", collection="help")
             return prepare_calls
         finally:
             await core.close()

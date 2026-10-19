@@ -1,52 +1,34 @@
 from __future__ import annotations
-
 import argparse
+from pathlib import Path
 import tarfile
 import zipfile
-from pathlib import Path
-
-REQUIRED_WHEEL_MEMBERS = frozenset(
-    {
-        "rag_core/py.typed",
-        "rag_core/__init__.pyi",
-        "rag_core/config/__init__.pyi",
-        "rag_core/contracts/__init__.pyi",
-        "rag_core/events/__init__.pyi",
-        "rag_core/integrations/__init__.pyi",
-        "rag_core/integrations/langchain.pyi",
-        "rag_core/integrations/mcp_server.pyi",
-        "rag_core/search/__init__.pyi",
-        "rag_core/search/providers/__init__.pyi",
-    }
-)
 
 REQUIRED_SDIST_SUFFIXES = frozenset(
     {
         "README.md",
-        "compose.yaml",
-        "Dockerfile",
         ".env.example",
         "docs/release.md",
-        "docs/self-host/openapi.yaml",
+        "docs/api.md",
+        "docs/architecture.md",
+        "docs/cli.md",
+        "docs/dependability.md",
+        "docs/evaluation.md",
+        "docs/formats.md",
+        "docs/migration.md",
+        "docs/tracing.md",
+        "examples/README.md",
         "examples/configured_retrieval.py",
         "examples/configured_eval.py",
-        "examples/embedded_service.py",
         "examples/minimal_app.py",
-        "examples/search_endpoint.py",
         "examples/retrieval_eval.py",
-        "examples/source_ingest.py",
-        "examples/vercel_ai_sdk_search_tool.ts",
         "examples/demo_corpus/corpus_lifecycle.md",
-        "scripts/ci_self_host_smoke.sh",
         "scripts/dx_smoke.sh",
         "scripts/github_install_smoke.sh",
         "scripts/landing_check.sh",
         "scripts/public_checkout_smoke.sh",
-        "scripts/self_host_smoke.sh",
         "scripts/validate_provider_fixtures.sh",
-        "scripts/verify_vercel_ai_sdk_example.sh",
         "scripts/wheel_smoke.py",
-        "scripts/worktree_slices.py",
     }
 )
 
@@ -75,48 +57,92 @@ FORBIDDEN_SDIST_SUFFIXES = frozenset(
     }
 )
 
+REQUIRED_WHEEL_MEMBERS = {
+    "rag_core/py.typed",
+    "rag_core/__init__.pyi",
+    "rag_core/search/__init__.pyi",
+}
+FORBIDDEN_FRAGMENTS = (
+    "_engine/core_config_cli.py",
+    "cli/core_runtime.py",
+    "cli/defaults.py",
+    "cli/output.py",
+    "config/__init__.pyi",
+    "events/__init__.pyi",
+    "providers/chunk_lookup.py",
+    "providers/rerank_results.py",
+    "providers/reranker.py",
+    "pdf_inspector",
+    "converters/registry_",
+    "converters/format_support",
+    "manifest/preview/",
+    "manifest/reconciliation/",
+    "licensed_source_registry.py",
+    "embedding_input_types.py",
+    "provider_package_names.py",
+    "documents/http_errors.py",
+    "ingest/lifecycle.py",
+    "ingest/progress.py",
+    "ingest/payloads.py",
+    "rag_core/runtime/",
+    "rag_core/search/pipeline/",
+    "query_plan",
+    "lexical_sidecar",
+    "embedding_cache",
+    "chunk_context_cache",
+    "cached_embedding",
+    "pgvector",
+    "memory_store",
+    "langchain",
+    "openai_agents",
+    "zeroentropy",
+    "providers/registry.py",
+    "chunking/semantic.py",
+    "chunking/code.py",
+)
+
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Check built rag-core wheel and sdist public artifacts."
-    )
+    parser = argparse.ArgumentParser()
     parser.add_argument("--dist-dir", type=Path, default=Path("dist"))
     args = parser.parse_args()
-
-    dist_dir = args.dist_dir
-    wheel = _single(dist_dir, "*.whl")
-    sdist = _single(dist_dir, "*.tar.gz")
-
-    _check_wheel(wheel)
-    _check_sdist(sdist)
-
-
-def _single(dist_dir: Path, pattern: str) -> Path:
-    matches = sorted(dist_dir.glob(pattern))
-    if len(matches) != 1:
-        raise SystemExit(
-            f"expected exactly one {pattern} artifact in {dist_dir}, found {len(matches)}"
-        )
-    return matches[0]
-
-
-def _check_wheel(path: Path) -> None:
-    with zipfile.ZipFile(path) as archive:
-        members = set(archive.namelist())
-    missing = sorted(REQUIRED_WHEEL_MEMBERS - members)
-    if missing:
-        raise SystemExit(f"wheel is missing required typed artifacts: {missing}")
-
-
-def _check_sdist(path: Path) -> None:
-    with tarfile.open(path, "r:gz") as archive:
-        suffixes = {"/".join(member.name.split("/")[1:]) for member in archive.getmembers()}
-    missing = sorted(REQUIRED_SDIST_SUFFIXES - suffixes)
-    if missing:
-        raise SystemExit(f"sdist is missing required public artifacts: {missing}")
-    forbidden = sorted(FORBIDDEN_SDIST_SUFFIXES & suffixes)
-    if forbidden:
-        raise SystemExit(f"sdist includes local-only artifacts: {forbidden}")
+    wheels = list(args.dist_dir.glob("*.whl"))
+    sdists = list(args.dist_dir.glob("*.tar.gz"))
+    if len(wheels) != 1 or len(sdists) != 1:
+        raise SystemExit("Expected one wheel and one source archive")
+    with zipfile.ZipFile(wheels[0]) as archive:
+        names = set(archive.namelist())
+        assert REQUIRED_WHEEL_MEMBERS <= names
+        assert not [n for n in names if any(part in n for part in FORBIDDEN_FRAGMENTS)]
+        root = Path(__file__).resolve().parents[1] / "src"
+        expected = {
+            p.relative_to(root).as_posix()
+            for p in (root / "rag_core").rglob("*")
+            if p.suffix in {".py", ".pyi"}
+        }
+        actual = {
+            n
+            for n in names
+            if n.startswith("rag_core/") and n.endswith((".py", ".pyi"))
+        }
+        assert actual == expected, (actual - expected, expected - actual)
+        assert all(archive.read(n) == (root / n).read_bytes() for n in actual)
+    with tarfile.open(sdists[0]) as archive:
+        members = {
+            "/".join(member.name.split("/")[1:]): member
+            for member in archive.getmembers()
+        }
+        names = set(members)
+        assert REQUIRED_SDIST_SUFFIXES <= names
+        assert not (FORBIDDEN_SDIST_SUFFIXES & names)
+        for name in REQUIRED_SDIST_SUFFIXES:
+            member = archive.extractfile(members[name])
+            assert member is not None
+            with member:
+                assert member.read() == (root.parent / name).read_bytes(), name
+    print(
+        "Wheel source, retired-module exclusions, typing artifacts, and source archive passed"
+    )
 
 
 if __name__ == "__main__":

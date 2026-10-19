@@ -1,6 +1,6 @@
 """Per-document concurrency fence.
 
-Two concurrent operations on the same ``(namespace, collection, document_id)``
+Two concurrent operations on the same ``(tenant_id, collection, document_id)``
 triple must serialize; different triples run concurrently. The fence's job
 is to prevent ingest and delete from interleaving on the same document, not
 to throttle the whole engine.
@@ -20,7 +20,7 @@ pytestmark = [pytest.mark.plumbing]
 async def _hold(
     fence: DocumentFence,
     *,
-    namespace: str,
+    tenant_id: str,
     collection: str,
     document_id: str,
     log: list[str],
@@ -30,7 +30,7 @@ async def _hold(
     release: asyncio.Event,
 ) -> None:
     async with fence.acquire(
-        namespace=namespace, collection=collection, document_id=document_id,
+        tenant_id=tenant_id, collection=collection, document_id=document_id,
     ):
         log.append(enter_tag)
         gate.set()
@@ -50,7 +50,7 @@ def test_fence_serializes_same_triple() -> None:
         first = asyncio.create_task(
             _hold(
                 fence,
-                namespace="acme", collection="public", document_id="doc-1",
+                tenant_id="acme", collection="public", document_id="doc-1",
                 log=log,
                 enter_tag="A-enter", exit_tag="A-exit",
                 gate=first_in, release=first_release,
@@ -61,7 +61,7 @@ def test_fence_serializes_same_triple() -> None:
         second = asyncio.create_task(
             _hold(
                 fence,
-                namespace="acme", collection="public", document_id="doc-1",
+                tenant_id="acme", collection="public", document_id="doc-1",
                 log=log,
                 enter_tag="B-enter", exit_tag="B-exit",
                 gate=second_in, release=second_release,
@@ -96,7 +96,7 @@ def test_fence_runs_different_triples_in_parallel() -> None:
         a = asyncio.create_task(
             _hold(
                 fence,
-                namespace="acme", collection="public", document_id="doc-1",
+                tenant_id="acme", collection="public", document_id="doc-1",
                 log=log,
                 enter_tag="A-enter", exit_tag="A-exit",
                 gate=a_in, release=a_release,
@@ -105,7 +105,7 @@ def test_fence_runs_different_triples_in_parallel() -> None:
         b = asyncio.create_task(
             _hold(
                 fence,
-                namespace="acme", collection="public", document_id="doc-2",
+                tenant_id="acme", collection="public", document_id="doc-2",
                 log=log,
                 enter_tag="B-enter", exit_tag="B-exit",
                 gate=b_in, release=b_release,
@@ -127,7 +127,7 @@ def test_fence_drops_entries_after_release() -> None:
     async def _run() -> None:
         fence = DocumentFence()
         async with fence.acquire(
-            namespace="acme", collection="public", document_id="doc-1",
+            tenant_id="acme", collection="public", document_id="doc-1",
         ):
             assert fence.active_keys() == (("acme", "public", "doc-1"),)
         # After the last holder releases, the registry is empty so we don't leak
@@ -149,7 +149,7 @@ def test_fence_drops_entry_only_when_no_waiters_remain() -> None:
         a = asyncio.create_task(
             _hold(
                 fence,
-                namespace="acme", collection="public", document_id="doc-x",
+                tenant_id="acme", collection="public", document_id="doc-x",
                 log=log, enter_tag="A", exit_tag="A-done",
                 gate=enter_a, release=release_a,
             )
@@ -158,7 +158,7 @@ def test_fence_drops_entry_only_when_no_waiters_remain() -> None:
         b = asyncio.create_task(
             _hold(
                 fence,
-                namespace="acme", collection="public", document_id="doc-x",
+                tenant_id="acme", collection="public", document_id="doc-x",
                 log=log, enter_tag="B", exit_tag="B-done",
                 gate=enter_b, release=release_b,
             )
@@ -189,7 +189,7 @@ def test_fence_does_not_leak_entry_when_acquire_is_cancelled() -> None:
         holder = asyncio.create_task(
             _hold(
                 fence,
-                namespace="acme", collection="public", document_id="doc-1",
+                tenant_id="acme", collection="public", document_id="doc-1",
                 log=[], enter_tag="H", exit_tag="H-done",
                 gate=holder_in, release=holder_release,
             )
@@ -198,7 +198,7 @@ def test_fence_does_not_leak_entry_when_acquire_is_cancelled() -> None:
 
         async def _waiter() -> None:
             async with fence.acquire(
-                namespace="acme", collection="public", document_id="doc-1",
+                tenant_id="acme", collection="public", document_id="doc-1",
             ):
                 pass
 
@@ -220,7 +220,7 @@ def test_fence_does_not_leak_entry_when_acquire_is_cancelled() -> None:
 
         # A subsequent acquire of the same triple still succeeds.
         async with fence.acquire(
-            namespace="acme", collection="public", document_id="doc-1",
+            tenant_id="acme", collection="public", document_id="doc-1",
         ):
             assert fence.active_keys() == (key,)
         assert fence.active_keys() == ()
@@ -237,14 +237,14 @@ def test_fence_lock_released_on_exception() -> None:
 
         with pytest.raises(_Boom):
             async with fence.acquire(
-                namespace="acme", collection="public", document_id="doc-1",
+                tenant_id="acme", collection="public", document_id="doc-1",
             ):
                 raise _Boom
 
         # After the exception unwinds the context, the lock is released and the
         # entry is dropped. The next acquire on the same triple proceeds.
         async with fence.acquire(
-            namespace="acme", collection="public", document_id="doc-1",
+            tenant_id="acme", collection="public", document_id="doc-1",
         ):
             assert fence.active_keys() == (("acme", "public", "doc-1"),)
 

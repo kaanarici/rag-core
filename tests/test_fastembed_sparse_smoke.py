@@ -18,7 +18,7 @@ def test_fastembed_sparse_embedder_initialization_is_lazy(monkeypatch: pytest.Mo
 
     monkeypatch.setattr(sparse_module, "_import_sparse_text_embedding", fail_import)
 
-    embedder = FastEmbedSparseEmbedder(enable_splade=False)
+    embedder = FastEmbedSparseEmbedder()
 
     assert embedder.diagnostics()["bm25_load_status"] == "not_loaded"
     assert embedder.model_name == "Qdrant/bm25"
@@ -30,7 +30,7 @@ def test_fastembed_sparse_embedder_returns_non_empty_indices() -> None:
 
     from rag_core.search.providers.sparse import FastEmbedSparseEmbedder
 
-    embedder = FastEmbedSparseEmbedder(enable_splade=False)
+    embedder = FastEmbedSparseEmbedder()
     vectors = embedder.embed_texts(["invoice billing webhook", "pagination cursor limit"])
 
     assert len(vectors) == 2

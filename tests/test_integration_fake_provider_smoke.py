@@ -31,14 +31,14 @@ def test_local_ingest_and_search_smoke() -> None:
                 file_bytes=b"rag smoke tests keep the fox easy to find",
                 filename="smoke.txt",
                 mime_type="text/plain",
-                namespace="test-space",
+                tenant_id="test-space",
                 collection="test-corpus",
             )
             assert ingested.chunk_count > 0
 
             hits = await core.search(
                 query="fox smoke",
-                namespace="test-space",
+                tenant_id="test-space",
                 collections=["test-corpus"],
                 limit=3,
                 rerank=False,

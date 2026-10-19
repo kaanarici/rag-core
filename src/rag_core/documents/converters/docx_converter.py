@@ -6,7 +6,8 @@ table extraction, and quality scoring.
 
 from __future__ import annotations
 
-import asyncio
+from rag_core._async import run_sync
+
 import io
 import logging
 import re
@@ -16,7 +17,7 @@ from typing import Any, Dict, List, Optional
 
 from .base import (
     ConversionResult,
-    HybridConverter,
+    OfficeConverter,
     render_markdown_table,
     score_text_quality,
 )
@@ -57,15 +58,24 @@ def _format_paragraph(para: Any) -> Optional[str]:
     return text
 
 
-def _format_table_with_figure_offsets(
-    table: Any,
-) -> tuple[str, dict[str, int]]:
+def _render_table_with_figure_markers(table: Any) -> str:
+    from docx.oxml.table import CT_Tbl
+    from docx.oxml.text.paragraph import CT_P
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
     rows: List[List[str]] = []
     for row in table.rows:
         cells: list[str] = []
         for cell in row.cells:
-            paragraphs: list[str] = []
-            for paragraph in cell.paragraphs:
+            parts: list[str] = []
+            for child in cell._tc.iterchildren():
+                if isinstance(child, CT_Tbl):
+                    parts.append(_render_table_with_figure_markers(Table(child, cell)))
+                    continue
+                if not isinstance(child, CT_P):
+                    continue
+                paragraph = Paragraph(child, cell)
                 text = str(getattr(paragraph, "text", "") or "")
                 for doc_pr_id, offset in sorted(
                     _raw_paragraph_figure_offsets(paragraph).items(),
@@ -74,11 +84,17 @@ def _format_table_with_figure_offsets(
                 ):
                     marker = f"\ufdd0{doc_pr_id}\ufdd1"
                     text = f"{text[:offset]}{marker}{text[offset:]}"
-                paragraphs.append(text)
-            cells.append("\n".join(paragraphs).strip())
+                parts.append(text)
+            cells.append("\n".join(parts).strip())
         rows.append(cells)
 
-    rendered = render_markdown_table(rows)
+    return render_markdown_table(rows)
+
+
+def _format_table_with_figure_offsets(
+    table: Any,
+) -> tuple[str, dict[str, int]]:
+    rendered = _render_table_with_figure_markers(table)
     clean_parts: list[str] = []
     offsets: dict[str, int] = {}
     cursor = 0
@@ -280,20 +296,11 @@ def _attach_docx_figure_locators(
         item["metadata"] = metadata
 
 
-class DocxConverter(HybridConverter):
+class DocxConverter(OfficeConverter):
     """Converts DOCX files to markdown with heading style detection."""
 
     format_name = DOCX_CONVERTER_KEY
 
-    async def convert(
-        self,
-        file_bytes: bytes,
-        filename: str,
-        mime_type: str,
-    ) -> ConversionResult:
-        return await self._convert_office(
-            file_bytes, filename, mime_type, parse_label="DOCX"
-        )
 
     async def _try_extract(
         self,
@@ -347,4 +354,4 @@ class DocxConverter(HybridConverter):
                 quality=quality,
             )
 
-        return await asyncio.to_thread(_extract)
+        return await run_sync(_extract)

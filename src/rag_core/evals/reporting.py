@@ -15,7 +15,7 @@ def eval_result_payload(result: EvalResult) -> EvalReport:
     payload: EvalReport = {
         "case_id": case.case_id,
         "query": case.query,
-        "namespace": case.namespace,
+        "tenant_id": case.tenant_id,
         "collections": list(case.collections),
         "expected_ids": list(case.expected_ids),
         "ok": result.error_type is None,

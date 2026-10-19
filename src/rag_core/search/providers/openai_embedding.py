@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import hashlib
 import importlib
-import json
 from typing import Any
 from typing import Callable
 from typing import cast
@@ -24,16 +22,6 @@ from rag_core.search.providers.provider_retry import retry_provider_call
 _BATCH_SIZE = 100
 
 
-def fingerprint_provider_config(**values: str | None) -> str:
-    payload = {
-        key: normalized
-        for key, value in values.items()
-        if (normalized := normalize_optional_provider_config_value(value))
-    }
-    if not payload:
-        return ""
-    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 def import_async_openai() -> type[Any]:

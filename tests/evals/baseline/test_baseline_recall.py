@@ -66,7 +66,7 @@ async def _run_baseline_eval() -> None:
                 file_bytes=doc["markdown"].encode("utf-8"),
                 filename=f"{doc['document_id']}.md",
                 mime_type="text/markdown",
-                namespace="baseline",
+                tenant_id="baseline",
                 collection="docs",
                 document_id=doc["document_id"],
                 document_key=f"{doc['document_id']}.md",

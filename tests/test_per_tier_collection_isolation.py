@@ -8,33 +8,22 @@ in-memory lexical sidecar refuses to silently exhaust the heap.
 """
 
 from __future__ import annotations
+from rag_core.search.providers.qdrant_store import QdrantVectorStore
 
-import logging
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
-from rag_core.events.search_events import LexicalSidecarBoundExceeded
 from rag_core.events.sink import EventSink
 from rag_core.events.types import Event
 from rag_core._engine.core_runtime import (
     resolve_collection_name,
 )
-from rag_core.search.lexical_sidecar import (
-    DEFAULT_LEXICAL_SIDECAR_MAX_BYTES,
-    DEFAULT_LEXICAL_SIDECAR_MAX_ENTRIES,
-    LexicalSidecarRecord,
-    PortableLexicalSidecar,
-)
 from rag_core.search.providers.qdrant_store import (
     EMBEDDING_DIMENSIONS_METADATA_KEY,
     EMBEDDING_MODEL_METADATA_KEY,
     EmbeddingIdentityMismatch,
-    QdrantAdapterConfig,
-    QdrantCollectionState,
     assert_embedding_identity_matches,
-    create_qdrant_collection,
-    ensure_qdrant_collection_ready,
     extract_collection_metadata,
     pack_embedding_identity_metadata,
 )
@@ -130,17 +119,15 @@ def test_assert_embedding_identity_matches_refuses_dim_swap() -> None:
         )
 
 
-def test_assert_embedding_identity_matches_tolerates_legacy_collection() -> None:
-    # Legacy collection: no sentinel metadata. Assert_collection_compatible
-    # still catches dimension mismatch upstream; identity check must not
-    # break existing deployments.
-    assert_embedding_identity_matches(
-        collection_name="legacy",
-        expected_model="m",
-        expected_dimensions=3,
-        collection_metadata={},
-        mismatch_cls=EmbeddingIdentityMismatch,
-    )
+def test_assert_embedding_identity_matches_refuses_unknown_legacy_space() -> None:
+    with pytest.raises(EmbeddingIdentityMismatch, match="no embedding model identity"):
+        assert_embedding_identity_matches(
+            collection_name="legacy",
+            expected_model="m",
+            expected_dimensions=3,
+            collection_metadata={},
+            mismatch_cls=EmbeddingIdentityMismatch,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -228,21 +215,17 @@ class _FakeQdrantClientForLifecycle:
         self.create_payload_index_calls.append(kwargs)
 
 
-def _adapter_config(
-    *,
-    collection_name: str = "docs",
-    embedding_model: str | None = None,
-    dimensions: int = 3,
-) -> QdrantAdapterConfig:
-    return QdrantAdapterConfig(
-        collection_name=collection_name,
-        dimensions=dimensions,
-        quantization_enabled=False,
-        is_local=True,
-        max_concurrent=1,
-        max_batch_size=1,
+def _store(client: object, *, embedding_model: str | None = None) -> QdrantVectorStore:
+    store = QdrantVectorStore(
+        url=None,
+        api_key=None,
+        location=":memory:",
+        collection_name="docs",
+        dense_dimensions=3,
         embedding_model=embedding_model,
     )
+    store._client = cast(Any, client)
+    return store
 
 
 def test_ensure_ready_refuses_collection_with_mismatched_embedding_model() -> None:
@@ -255,18 +238,10 @@ def test_ensure_ready_refuses_collection_with_mismatched_embedding_model() -> No
             EMBEDDING_DIMENSIONS_METADATA_KEY: 3,
         },
     )
-    config = _adapter_config(embedding_model="new_embedder")
-    state = QdrantCollectionState()
+    store = _store(client, embedding_model="new_embedder")
     with pytest.raises(EmbeddingIdentityMismatch):
-        asyncio.run(
-            ensure_qdrant_collection_ready(
-                client=client,  # type: ignore[arg-type]
-                config=config,
-                state=state,
-                logger=logging.getLogger("test"),
-            )
-        )
-    assert not state.ready
+        asyncio.run(store.ensure_collection())
+    assert not store._ready
 
 
 def test_ensure_ready_binds_when_embedding_identity_matches() -> None:
@@ -279,52 +254,28 @@ def test_ensure_ready_binds_when_embedding_identity_matches() -> None:
             EMBEDDING_DIMENSIONS_METADATA_KEY: 3,
         },
     )
-    config = _adapter_config(embedding_model="text-embedding-3-large")
-    state = QdrantCollectionState()
-    asyncio.run(
-        ensure_qdrant_collection_ready(
-            client=client,  # type: ignore[arg-type]
-            config=config,
-            state=state,
-            logger=logging.getLogger("test"),
-        )
-    )
-    assert state.ready
+    store = _store(client, embedding_model="text-embedding-3-large")
+    asyncio.run(store.ensure_collection())
+    assert store._ready
     assert client.create_calls == []
 
 
-def test_ensure_ready_tolerates_legacy_collection_without_sentinel() -> None:
+def test_ensure_ready_refuses_legacy_collection_without_sentinel() -> None:
     import asyncio
 
-    # No metadata field. Pre-sentinel deployment. Identity check should
-    # accept it; dimension check still catches genuine shape problems.
-    client = _FakeQdrantClientForLifecycle(
-        existing_names=["docs"], metadata=None
-    )
-    state = QdrantCollectionState()
-    asyncio.run(
-        ensure_qdrant_collection_ready(
-            client=client,  # type: ignore[arg-type]
-            config=_adapter_config(embedding_model="some_embedder"),
-            state=state,
-            logger=logging.getLogger("test"),
-        )
-    )
-    assert state.ready
+    client = _FakeQdrantClientForLifecycle(existing_names=["docs"], metadata=None)
+    store = _store(client, embedding_model="some_embedder")
+    with pytest.raises(EmbeddingIdentityMismatch, match="no embedding model identity"):
+        asyncio.run(store.ensure_collection())
+    assert not store._ready
 
 
 def test_create_collection_persists_identity_sentinel() -> None:
     import asyncio
 
     client = _FakeQdrantClientForLifecycle(existing_names=[])
-    config = _adapter_config(embedding_model="text-embedding-3-large")
-    asyncio.run(
-        create_qdrant_collection(
-            client=client,  # type: ignore[arg-type]
-            config=config,
-            logger=logging.getLogger("test"),
-        )
-    )
+    store = _store(client, embedding_model="text-embedding-3-large")
+    asyncio.run(store.ensure_collection())
     assert len(client.create_calls) == 1
     metadata = client.create_calls[0].get("metadata")
     assert metadata == {
@@ -337,14 +288,8 @@ def test_create_collection_omits_metadata_when_no_embedding_model() -> None:
     import asyncio
 
     client = _FakeQdrantClientForLifecycle(existing_names=[])
-    config = _adapter_config(embedding_model=None)
-    asyncio.run(
-        create_qdrant_collection(
-            client=client,  # type: ignore[arg-type]
-            config=config,
-            logger=logging.getLogger("test"),
-        )
-    )
+    store = _store(client, embedding_model=None)
+    asyncio.run(store.ensure_collection())
     assert "metadata" not in client.create_calls[0]
 
 
@@ -366,16 +311,9 @@ def test_create_collection_falls_through_on_409_race() -> None:
             EMBEDDING_DIMENSIONS_METADATA_KEY: 3,
         },
     )
-    state = QdrantCollectionState()
-    asyncio.run(
-        ensure_qdrant_collection_ready(
-            client=client,  # type: ignore[arg-type]
-            config=_adapter_config(embedding_model="m"),
-            state=state,
-            logger=logging.getLogger("test"),
-        )
-    )
-    assert state.ready
+    store = _store(client, embedding_model="m")
+    asyncio.run(store.ensure_collection())
+    assert store._ready
     # The lifecycle should have rebound to the now-existing collection.
     assert "docs" in client.get_collection_calls
 
@@ -398,16 +336,8 @@ def test_create_collection_race_still_enforces_identity() -> None:
             EMBEDDING_DIMENSIONS_METADATA_KEY: 3,
         },
     )
-    state = QdrantCollectionState()
     with pytest.raises(EmbeddingIdentityMismatch):
-        asyncio.run(
-            ensure_qdrant_collection_ready(
-                client=client,  # type: ignore[arg-type]
-                config=_adapter_config(embedding_model="new_embedder"),
-                state=state,
-                logger=logging.getLogger("test"),
-            )
-        )
+        asyncio.run(_store(client, embedding_model="new_embedder").ensure_collection())
 
 
 def test_create_collection_propagates_non_race_unexpected_response() -> None:
@@ -424,16 +354,8 @@ def test_create_collection_propagates_non_race_unexpected_response() -> None:
         existing_names=[],
         create_raises=other,
     )
-    state = QdrantCollectionState()
     with pytest.raises(UnexpectedResponse):
-        asyncio.run(
-            ensure_qdrant_collection_ready(
-                client=client,  # type: ignore[arg-type]
-                config=_adapter_config(embedding_model="m"),
-                state=state,
-                logger=logging.getLogger("test"),
-            )
-        )
+        asyncio.run(_store(client, embedding_model="m").ensure_collection())
 
 
 def test_extract_collection_metadata_returns_empty_on_missing() -> None:
@@ -461,129 +383,10 @@ def _make_result(point_id: str, *, text: str = "hello") -> SearchResult:
         score=0.5,
         content_type="document",
         source_type="file",
-        namespace="ns",
+        tenant_id="ns",
         collection="corpus",
         document_id="doc-" + point_id,
         document_key="key-" + point_id,
         chunk_index=0,
         title="t",
     )
-
-
-def test_lexical_sidecar_defaults_match_documented_bounds() -> None:
-    assert DEFAULT_LEXICAL_SIDECAR_MAX_ENTRIES == 100_000
-    assert DEFAULT_LEXICAL_SIDECAR_MAX_BYTES == 256 * 1024 * 1024
-
-
-def test_lexical_sidecar_rejects_overflow_entries_and_emits_event() -> None:
-    sink = _RecordingSink()
-    sidecar = PortableLexicalSidecar(
-        [], max_entries=2, max_bytes=10_000_000, event_sink=sink
-    )
-    sidecar.upsert_records(
-        [
-            LexicalSidecarRecord(namespace="ns", result=_make_result("a")),
-            LexicalSidecarRecord(namespace="ns", result=_make_result("b")),
-            LexicalSidecarRecord(namespace="ns", result=_make_result("c")),
-            LexicalSidecarRecord(namespace="ns", result=_make_result("d")),
-        ]
-    )
-    assert sidecar.entry_count == 2
-    assert len(sink.events) == 1
-    event = sink.events[0]
-    assert isinstance(event, LexicalSidecarBoundExceeded)
-    assert event.reason == "max_entries"
-    assert event.rejected_count == 2
-    assert event.current_entries == 2
-    assert event.max_entries == 2
-
-
-def test_lexical_sidecar_rejects_overflow_bytes_and_emits_event() -> None:
-    sink = _RecordingSink()
-    # Bound sized to fit exactly one record (text/title overhead ~262 bytes).
-    sidecar = PortableLexicalSidecar(
-        [], max_entries=100, max_bytes=300, event_sink=sink
-    )
-    sidecar.upsert_records(
-        [
-            LexicalSidecarRecord(namespace="ns", result=_make_result("a")),
-            LexicalSidecarRecord(namespace="ns", result=_make_result("b")),
-        ]
-    )
-    assert sidecar.entry_count == 1
-    assert sink.events
-    event = sink.events[0]
-    assert isinstance(event, LexicalSidecarBoundExceeded)
-    assert event.reason == "max_bytes"
-    assert event.rejected_count == 1
-
-
-def test_lexical_sidecar_no_event_when_no_overflow() -> None:
-    sink = _RecordingSink()
-    sidecar = PortableLexicalSidecar(
-        [], max_entries=10, max_bytes=10_000_000, event_sink=sink
-    )
-    sidecar.upsert_records(
-        [
-            LexicalSidecarRecord(namespace="ns", result=_make_result("a")),
-            LexicalSidecarRecord(namespace="ns", result=_make_result("b")),
-        ]
-    )
-    assert sink.events == []
-    assert sidecar.entry_count == 2
-
-
-def test_lexical_sidecar_updates_existing_key_in_place() -> None:
-    sink = _RecordingSink()
-    sidecar = PortableLexicalSidecar(
-        [], max_entries=1, max_bytes=10_000_000, event_sink=sink
-    )
-    sidecar.upsert_records(
-        [LexicalSidecarRecord(namespace="ns", result=_make_result("a", text="old"))]
-    )
-    # Re-upserting the same (namespace, id) must not breach the entries cap.
-    sidecar.upsert_records(
-        [LexicalSidecarRecord(namespace="ns", result=_make_result("a", text="newtext"))]
-    )
-    assert sidecar.entry_count == 1
-    assert sink.events == []
-
-
-def test_lexical_sidecar_delete_releases_byte_quota() -> None:
-    sidecar = PortableLexicalSidecar([], max_entries=100, max_bytes=10_000_000)
-    sidecar.upsert_records(
-        [
-            LexicalSidecarRecord(namespace="ns", result=_make_result("a")),
-            LexicalSidecarRecord(namespace="ns", result=_make_result("b")),
-        ]
-    )
-    before = sidecar.byte_usage
-    sidecar.delete_document(namespace="ns", document_id="doc-a")
-    assert sidecar.byte_usage < before
-    assert sidecar.entry_count == 1
-
-
-def test_lexical_sidecar_rejects_non_positive_bounds() -> None:
-    with pytest.raises(ValueError):
-        PortableLexicalSidecar([], max_entries=0)
-    with pytest.raises(ValueError):
-        PortableLexicalSidecar([], max_bytes=0)
-
-
-def test_lexical_sidecar_event_is_in_audit_event_types_or_known_set() -> None:
-    # The new event type string is a stable label used by the caller's
-    # event consumer; assert its literal so the contract doesn't drift.
-    sink = _RecordingSink()
-    sidecar = PortableLexicalSidecar(
-        [], max_entries=1, max_bytes=10_000_000, event_sink=sink
-    )
-    sidecar.upsert_records(
-        [
-            LexicalSidecarRecord(namespace="ns", result=_make_result("a")),
-            LexicalSidecarRecord(namespace="ns", result=_make_result("b")),
-        ]
-    )
-    assert sink.events
-    event = sink.events[0]
-    assert isinstance(event, LexicalSidecarBoundExceeded)
-    assert event.event_type == "lexical_sidecar.bound_exceeded"

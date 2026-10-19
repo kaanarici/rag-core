@@ -51,7 +51,7 @@ def test_logging_sink_omits_identifiers_while_preserving_safe_ingest_context(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     event = IngestStarted(
-        namespace=f"tenant-acme-{SECRET}",
+        tenant_id=f"tenant-acme-{SECRET}",
         collection=f"corpus-finance-{SECRET}",
         document_id=f"doc-payroll-{SECRET}",
         filename=f"/private/customer/report.pdf-{SECRET}",
@@ -65,7 +65,7 @@ def test_logging_sink_omits_identifiers_while_preserving_safe_ingest_context(
     message = _messages(caplog)
     assert message.startswith("ingest.started")
     assert "mime_type='application/pdf'" in message
-    assert "namespace=" not in message
+    assert "tenant_id=" not in message
     assert "collection=" not in message
     assert "document_id=" not in message
     assert "filename=" not in message
@@ -77,7 +77,7 @@ def test_logging_sink_omits_search_scope_but_keeps_shape(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     event = SearchStarted(
-        namespace=f"tenant-acme-{SECRET}",
+        tenant_id=f"tenant-acme-{SECRET}",
         collections=(f"corpus-finance-{SECRET}",),
         query_length=42,
         limit=5,
@@ -90,7 +90,7 @@ def test_logging_sink_omits_search_scope_but_keeps_shape(
     assert message.startswith("search.started")
     assert "query_length=42" in message
     assert "limit=5" in message
-    assert "namespace=" not in message
+    assert "tenant_id=" not in message
     assert "collections=" not in message
     assert_caplog_omits_private(caplog, *_PRIVATE_LOG_FORBIDDEN)
 
@@ -101,7 +101,7 @@ def test_logging_sink_omits_error_messages_urls_and_quality_details(
     with caplog.at_level(logging.INFO, logger=LOGGER_NAME):
         LoggingSink().emit(
             FetchFailed(
-                namespace=f"tenant-acme-{SECRET}",
+                tenant_id=f"tenant-acme-{SECRET}",
                 collection=f"corpus-finance-{SECRET}",
                 redacted_url=f"https://docs.example.com/private?token={SECRET}",
                 error_type="TimeoutError",
@@ -144,7 +144,7 @@ def test_logging_sink_reports_omitted_fields_when_only_sensitive_values_exist(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     event = IndexDeleted(
-        namespace=f"tenant-acme-{SECRET}",
+        tenant_id=f"tenant-acme-{SECRET}",
         collection=f"corpus-finance-{SECRET}",
         document_id=f"doc-payroll-{SECRET}",
     )
@@ -163,7 +163,7 @@ def test_logging_sink_keeps_known_safe_normalized_labels(
     with caplog.at_level(logging.INFO, logger=LOGGER_NAME):
         LoggingSink().emit(
             IngestSkipped(
-                namespace=f"tenant-acme-{SECRET}",
+                tenant_id=f"tenant-acme-{SECRET}",
                 collection=f"corpus-finance-{SECRET}",
                 document_id=f"doc-payroll-{SECRET}",
                 reason="content_unchanged",
@@ -171,10 +171,9 @@ def test_logging_sink_keeps_known_safe_normalized_labels(
         )
         LoggingSink().emit(
             SearchPlanned(
-                namespace=f"tenant-acme-{SECRET}",
+                tenant_id=f"tenant-acme-{SECRET}",
                 collections=(f"corpus-finance-{SECRET}",),
-                search_profile="balanced",
-                boost="linear_decay",
+                mode="balanced",
                 metadata_filter="Term",
             )
         )
@@ -182,10 +181,9 @@ def test_logging_sink_keeps_known_safe_normalized_labels(
     message = _messages(caplog)
     assert "ingest.skipped reason='content_unchanged'" in message
     assert "search.planned" in message
-    assert "search_profile='balanced'" in message
-    assert "boost='linear_decay'" in message
+    assert "mode='balanced'" in message
     assert "metadata_filter='Term'" in message
-    assert "namespace=" not in message
+    assert "tenant_id=" not in message
     assert "collection=" not in message
     assert "collections=" not in message
     assert "document_id=" not in message
@@ -199,8 +197,7 @@ def test_logging_sink_omits_unrecognized_sensitive_labels(
         LoggingSink().emit(IngestSkipped(reason=SECRET))
         LoggingSink().emit(
             SearchPlanned(
-                search_profile=SECRET,
-                boost=SECRET,
+                mode=SECRET,
                 metadata_filter=SECRET,
             )
         )
@@ -208,8 +205,7 @@ def test_logging_sink_omits_unrecognized_sensitive_labels(
     message = _messages(caplog)
     assert SECRET not in message
     assert "reason=" not in message
-    assert "search_profile='unknown'" in message
-    assert "boost=" not in message
+    assert "mode='unknown'" in message
     assert "metadata_filter=" not in message
     assert all(record.exc_info is None for record in caplog.records)
 
@@ -237,12 +233,7 @@ def test_logging_sink_sanitizes_provider_model_and_stage_labels(
         LoggingSink().emit(
             EmbedRequested(provider=AWS_ACCESS_KEY_LABEL, model=AWS_ACCESS_KEY_LABEL)
         )
-        LoggingSink().emit(
-            SearchPlanned(
-                retrieve_stage="secret_stage_token_abc123",
-                postprocesses=("private_postprocess_secret",),
-            )
-        )
+        LoggingSink().emit(SearchPlanned())
 
     message = _messages(caplog)
     assert SECRET not in message
@@ -255,15 +246,20 @@ def test_logging_sink_sanitizes_provider_model_and_stage_labels(
     assert "private_postprocess_secret" not in message
     assert "provider='unknown'" in message
     assert "model='unknown'" in message
-    assert "retrieve_stage='unknown'" in message
-    assert "postprocesses=['unknown']" in message
 
 
 def test_jsonl_sink_redacts_private_fields_and_sanitizes_labels(tmp_path: Path) -> None:
     log = tmp_path / "events.jsonl"
     sink = JsonlSink(log)
 
-    sink.emit(IngestStarted(namespace="tenant", collection="corp", document_id="doc", filename="/private/file.pdf"))
+    sink.emit(
+        IngestStarted(
+            tenant_id="tenant",
+            collection="corp",
+            document_id="doc",
+            filename="/private/file.pdf",
+        )
+    )
     sink.emit(
         EmbedRequested(
             provider=PREFIXED_OPENAI_SECRET,
@@ -278,9 +274,10 @@ def test_jsonl_sink_redacts_private_fields_and_sanitizes_labels(tmp_path: Path) 
     )
     sink.emit(EmbedRequested(provider=TOKEN_SHAPED_SECRET, model=TOKEN_SHAPED_SECRET))
     sink.emit(EmbedRequested(provider=AWS_ACCESS_KEY_LABEL, model=AWS_ACCESS_KEY_LABEL))
-    sink.emit(SearchPlanned(retrieve_stage="secret_stage_token_abc123"))
 
-    payloads = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    payloads = [
+        json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()
+    ]
     rendered = repr(payloads)
     assert "tenant" not in rendered
     assert "collection" not in payloads[0]
@@ -294,10 +291,11 @@ def test_jsonl_sink_redacts_private_fields_and_sanitizes_labels(tmp_path: Path) 
     assert PREFIXED_OPENAI_SECRET not in rendered
     assert PREFIXED_ANTHROPIC_SECRET not in rendered
     assert PREFIXED_SLACK_XOXC_SECRET not in rendered
-    embedded_payloads = [payload for payload in payloads if payload["event_type"] == "embed.requested"]
+    embedded_payloads = [
+        payload for payload in payloads if payload["event_type"] == "embed.requested"
+    ]
     assert all(payload["provider"] == "unknown" for payload in embedded_payloads)
     assert all(payload["model"] == "unknown" for payload in embedded_payloads)
-    assert payloads[-1]["retrieve_stage"] == "unknown"
 
 
 def test_jsonl_sink_normalizes_non_finite_numbers(tmp_path: Path) -> None:

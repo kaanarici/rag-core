@@ -1,18 +1,10 @@
-"""Configured retrieval: real embeddings + Qdrant (requires credentials).
+"""Retrieve application context with OpenAI embeddings and embedded Qdrant.
 
-Smoke examples use ``build_demo_core`` (deterministic, not semantic). This script
-shows the embed path from https://kaanarici.github.io/rag-core/docs/embed.
-
-Requires:
-  - ``OPENAI_API_KEY`` (or set ``RAG_CORE_EMBEDDING_PROVIDER`` / key envs your doctor accepts)
-  - Network access to the embedding API
-
-Run from repo root::
-
+Install the openai extra, set OPENAI_API_KEY, then run from the repository root:
     uv run python -m examples.configured_retrieval
 
-The command is not executed by default CI because it requires credentials, but
-the file is still source-checked and packaged.
+This example calls a paid external provider. The local checks do not run that
+call. Use examples.ask_folder for real local retrieval without API credentials.
 """
 
 from __future__ import annotations
@@ -29,7 +21,7 @@ from rag_core.config import EmbeddingConfig, QdrantConfig, VectorStoreConfig
 
 EXAMPLES_DIR = Path(__file__).parent
 CORPUS_DIR = EXAMPLES_DIR / "demo_corpus"
-_NAMESPACE = "acme"
+_TENANT_ID = "acme"
 _COLLECTION = "help-center"
 
 
@@ -62,14 +54,14 @@ async def run() -> None:
                 file_bytes=path.read_bytes(),
                 filename=path.name,
                 mime_type="text/markdown",
-                namespace=_NAMESPACE,
+                tenant_id=_TENANT_ID,
                 collection=_COLLECTION,
                 document_id=path.stem,
                 document_key=path.name,
             )
         pack = await core.context(
             query="How can invoices be paid?",
-            namespace=_NAMESPACE,
+            tenant_id=_TENANT_ID,
             collections=[_COLLECTION],
             limit=5,
             rerank=False,

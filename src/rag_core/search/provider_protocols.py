@@ -10,7 +10,6 @@ from rag_core.search.request_models import (
     DeleteFilter,
     RerankResult,
     SearchQuery,
-    SearchSidecarQuery,
     StoredDocumentRecord,
 )
 from rag_core.search.vector_models import SearchResult, SparseVector, VectorPoint
@@ -49,18 +48,19 @@ class ProviderHealthCheck(Protocol):
 
 @runtime_checkable
 class SparseEmbedder(Protocol):
-    """Protocol for sparse embedding (BM25 via FastEmbed)."""
+    """Sparse encoder with a stable model/vocabulary identity for ingest reuse."""
+
+    @property
+    def model_name(self) -> str: ...
 
     def embed_texts(self, texts: list[str]) -> list[SparseVector]: ...
 
     def embed_query(self, query: str) -> SparseVector: ...
 
-    def embed_query_multi(self, query: str) -> dict[str, SparseVector]: ...
-
 
 @runtime_checkable
 class RerankerProvider(Protocol):
-    """Protocol for reranking providers such as Cohere, Voyage, and ZeroEntropy."""
+    """Protocol for reranking providers such as Cohere and Voyage."""
 
     async def rerank(
         self,
@@ -68,41 +68,6 @@ class RerankerProvider(Protocol):
         documents: list[str],
         top_k: int = DEFAULT_SEARCH_LIMIT,
     ) -> list[RerankResult]: ...
-
-
-@runtime_checkable
-class SearchSidecar(Protocol):
-    """Protocol for optional lexical/exact-match sidecars."""
-
-    def upsert_records(self, records: Sequence[object]) -> None: ...
-
-    def delete_document(
-        self,
-        *,
-        namespace: str,
-        document_id: str,
-        collection: str | None = None,
-    ) -> None: ...
-
-    async def search(self, query: SearchSidecarQuery) -> list[SearchResult]: ...
-
-
-@dataclass(frozen=True)
-class QueryPlanCapabilities:
-    """Query-plan stages a vector store can execute without silent downgrade."""
-
-    dense: bool = False
-    sparse: bool = False
-    hybrid_rrf: bool = False
-    hybrid_dbsf: bool = False
-    hybrid_weighted_rrf: bool = False
-    mmr: bool = False
-    boost: bool = False
-    nested_prefetch: bool = False
-
-    @property
-    def hybrid(self) -> bool:
-        return self.hybrid_rrf or self.hybrid_dbsf or self.hybrid_weighted_rrf
 
 
 @dataclass(frozen=True)
@@ -130,10 +95,10 @@ class StoreCapabilities:
     """
 
     per_point_delete: bool
-    document_record_lookup: bool
-    chunk_index_lookup: bool = False
     dense_vector_dimensions: int | None = None
-    query_plan: QueryPlanCapabilities = field(default_factory=QueryPlanCapabilities)
+    hybrid: bool = False
+    lexical: bool = False
+    native_lexical: bool = False
     metadata_filter: MetadataFilterCapabilities = field(
         default_factory=MetadataFilterCapabilities
     )
@@ -143,17 +108,31 @@ class StoreCapabilities:
 class VectorStore(Protocol):
     """Vendor-neutral baseline every vector store adapter must satisfy.
 
-    Methods ``delete_point_ids``, ``get_document_record``, and
-    ``get_chunks_by_index`` are conditionally supported: callers must check
-    ``capabilities`` before invoking them. An adapter that declares the
-    matching capability flag as ``False`` may raise ``NotImplementedError``
-    from the corresponding method.
+    Per-point deletion is gated by ``capabilities.per_point_delete``.
+    Document publication, lookup, scoped search and scoped deletion are required.
+    Raw upsert is a transport primitive; managed ingest uses replace_document.
     """
 
     @property
     def capabilities(self) -> StoreCapabilities: ...
 
+    def bind_embedding_space(self, model_name: str) -> None:
+        """Bind the adapter to one model; readiness must reject incompatible storage."""
+        ...
+
     async def upsert(self, points: Sequence[VectorPoint]) -> None: ...
+
+    async def replace_document(
+        self, record: StoredDocumentRecord, points: Sequence[VectorPoint]
+    ) -> None:
+        """Publish a complete document without overwriting its live chunks.
+
+        Failed staging preserves the previous version. A publication error can
+        mean a lost acknowledgement; callers must reconcile rather than delete.
+        Search exposes only published versions. Lookups report actual and
+        expected chunk counts so incomplete versions cannot be skipped.
+        """
+        ...
 
     async def search(self, query: SearchQuery) -> list[SearchResult]: ...
 
@@ -170,17 +149,8 @@ class VectorStore(Protocol):
     async def get_document_record(
         self,
         *,
-        namespace: str,
+        tenant_id: str,
         collection: str,
         document_id: str | None = None,
         document_key: str | None = None,
     ) -> StoredDocumentRecord | None: ...
-
-    async def get_chunks_by_index(
-        self,
-        *,
-        namespace: str,
-        collection: str,
-        document_id: str,
-        chunk_indices: Sequence[int],
-    ) -> list[SearchResult]: ...

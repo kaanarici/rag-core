@@ -38,7 +38,7 @@ def test_search_result_positional_fields_keep_document_identity_order() -> None:
     assert result.document_id == "doc-1"
     assert result.collection == "corpus-1"
     assert result.document_key == "docs/a.md"
-    assert result.namespace is None
+    assert result.tenant_id is None
 
 
 def test_search_result_text_is_clean_chunk_content_by_contract() -> None:

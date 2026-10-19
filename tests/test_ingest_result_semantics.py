@@ -1,11 +1,12 @@
 from __future__ import annotations
+from typing import NoReturn
 
 import asyncio
 from pathlib import Path
 from typing import Any, cast
 
 from rag_core.core_models import IngestedDocument
-from rag_core.ingest.local import LocalIngestRequest, run_local_ingest
+from rag_core.ingest.local import LocalIngestRequest, run_local_ingest_with_core
 from rag_core.ingest.sources.local import document_key as local_document_key
 
 
@@ -21,7 +22,7 @@ class _MixedStateLocalCore:
         self,
         path: Path,
         *,
-        namespace: str,
+        tenant_id: str,
         collection: str,
         document_key: str,
         metadata: dict[str, str] | None = None,
@@ -31,7 +32,7 @@ class _MixedStateLocalCore:
         self.ingest_calls.append(
             {
                 "path": path,
-                "namespace": namespace,
+                "tenant_id": tenant_id,
                 "collection": collection,
                 "document_key": document_key,
                 "metadata": metadata,
@@ -41,7 +42,7 @@ class _MixedStateLocalCore:
         ingest_state = "unchanged" if path.name == "reference.md" else "created"
         return IngestedDocument(
             document_id=f"doc-{path.stem}",
-            namespace=namespace,
+            tenant_id=tenant_id,
             collection=collection,
             chunk_count=2,
             filename=path.name,
@@ -55,6 +56,9 @@ class _MixedStateLocalCore:
     async def close(self) -> None:
         self.closed = True
 
+    async def delete_document(self, *, document_id: str, tenant_id: str, collection: str) -> NoReturn:
+        raise AssertionError("prune_missing is disabled in this test")
+
 
 def test_local_ingest_result_distinguishes_succeeded_written_and_skipped(
     tmp_path: Path,
@@ -66,16 +70,16 @@ def test_local_ingest_result_distinguishes_succeeded_written_and_skipped(
     core = _MixedStateLocalCore()
 
     result = asyncio.run(
-        run_local_ingest(
-            LocalIngestRequest(path=docs, namespace="acme", collection="help"),
-            core_factory=lambda: core,
+        run_local_ingest_with_core(
+            LocalIngestRequest(path=docs, tenant_id="acme", collection="help"),
+            core=core,
         )
     )
 
     assert result.succeeded_count == 2
     assert result.written_count == 1
     assert result.skipped_count == 1
-    assert core.closed is True
+    assert core.closed is False
     guide_key = local_document_key(docs, docs / "guide.md")
     reference_key = local_document_key(docs, docs / "reference.md")
     assert [record.document_key for record in result.succeeded] == [
@@ -89,9 +93,9 @@ def test_local_ingest_result_distinguishes_succeeded_written_and_skipped(
     assert payload["succeeded_count"] == 2
     assert payload["written_count"] == 1
     assert payload["skipped_count"] == 1
-    succeeded = cast(list[dict[str, object]], payload["succeeded"])
-    written = cast(list[dict[str, object]], payload["written"])
-    skipped = cast(list[dict[str, object]], payload["skipped"])
+    succeeded = cast(list[dict[str, object]], payload["records"])
+    written = [r for r in succeeded if r["ingest_state"] != "unchanged"]
+    skipped = [r for r in succeeded if r["ingest_state"] == "unchanged"]
     assert [record["ingest_state"] for record in succeeded] == [
         "created",
         "unchanged",
